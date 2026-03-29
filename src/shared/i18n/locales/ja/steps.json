@@ -44,7 +44,7 @@
     "wslInstalling": "WSLをインストール中...",
     "wslInstall": "WSLインストール",
     "rebootRequired": "再起動が必要です",
-    "rebootDesc": "WSLのインストールを完了するには、コンピューターを再起動する必要があります。再起動後、EasyClawを再度起動してください。",
+    "rebootDesc": "WSLのインストールを完了するには、コンピューターを再起動する必要があります。再起動後、OpenClaw Installerを再度起動してください。",
     "rebootNow": "今すぐ再起動",
     "ubuntuInstallDesc": "Ubuntuディストリビューションをインストールします。",
     "ubuntuInstalling": "Ubuntuをインストール中...",

@@ -9,7 +9,7 @@ import { runInWsl, readWslFile, writeWslFile } from './wsl-utils'
 import { t } from '../../shared/i18n/main'
 
 interface OnboardConfig {
-  provider: 'anthropic' | 'google' | 'openai' | 'minimax' | 'glm' | 'deepseek' | 'ollama'
+  provider: 'modelfamily' | 'anthropic' | 'google' | 'openai' | 'minimax' | 'glm' | 'deepseek' | 'ollama'
   apiKey?: string
   authMethod?: 'api-key' | 'oauth'
   telegramBotToken?: string
@@ -57,6 +57,7 @@ import { getPathEnv, findBin } from './path-utils'
 const OAUTH_PROFILE_ID = 'openai-codex:default'
 
 const DEFAULT_MODELS: Record<string, string> = {
+  modelfamily: 'modelfamily/claude-opus-4-6',
   anthropic: 'anthropic/claude-sonnet-4-6',
   google: 'google/gemini-3-flash',
   openai: 'openai/gpt-5.4',
@@ -236,7 +237,7 @@ export const runOnboard = async (
       ? ['--auth-choice', 'skip']
       : config.provider === 'ollama'
         ? ['--auth-choice', 'ollama']
-        : config.provider === 'deepseek'
+        : config.provider === 'deepseek' || config.provider === 'modelfamily'
           ? ['--auth-choice', 'skip']
           : {
               anthropic: ['--auth-choice', 'apiKey', '--anthropic-api-key', config.apiKey!],
@@ -320,10 +321,10 @@ export const runOnboard = async (
       }
       cfg.auth.order = { ...cfg.auth.order, 'openai-codex': [OAUTH_PROFILE_ID] }
     }
+    cfg.models = cfg.models ?? {}
+    cfg.models.providers = cfg.models.providers ?? {}
     // DeepSeek: register custom provider (not built-in)
     if (config.provider === 'deepseek' && config.apiKey) {
-      cfg.models = cfg.models ?? {}
-      cfg.models.providers = cfg.models.providers ?? {}
       cfg.models.providers.deepseek = {
         baseUrl: 'https://api.deepseek.com/v1',
         api: 'openai-completions',
@@ -331,6 +332,18 @@ export const runOnboard = async (
         models: [
           { id: 'deepseek-chat', contextWindow: 128000, maxTokens: 8192 },
           { id: 'deepseek-reasoner', contextWindow: 128000, maxTokens: 64000 }
+        ]
+      }
+    }
+    if (config.provider === 'modelfamily' && config.apiKey) {
+      cfg.models.providers.modelfamily = {
+        baseUrl: 'https://www.model-family.com',
+        apiKey: config.apiKey,
+        auth: 'api-key',
+        api: 'anthropic-messages',
+        models: [
+          { id: 'claude-opus-4-6', name: 'Claude Opus 4.6', reasoning: true, contextWindow: 200000, maxTokens: 32768 },
+          { id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6', reasoning: true, contextWindow: 200000, maxTokens: 32768 }
         ]
       }
     }
@@ -584,7 +597,7 @@ export const switchProvider = async (
       ? ['--auth-choice', 'skip']
       : config.provider === 'ollama'
         ? ['--auth-choice', 'ollama']
-        : config.provider === 'deepseek'
+        : config.provider === 'deepseek' || config.provider === 'modelfamily'
           ? ['--auth-choice', 'skip']
           : {
               anthropic: ['--auth-choice', 'apiKey', '--anthropic-api-key', config.apiKey!],
@@ -667,10 +680,10 @@ export const switchProvider = async (
       }
       ocConfig.auth.order = { ...ocConfig.auth.order, 'openai-codex': [OAUTH_PROFILE_ID] }
     }
+    ocConfig.models = ocConfig.models ?? {}
+    ocConfig.models.providers = ocConfig.models.providers ?? {}
     // DeepSeek: register custom provider (not built-in)
     if (config.provider === 'deepseek' && config.apiKey) {
-      ocConfig.models = ocConfig.models ?? {}
-      ocConfig.models.providers = ocConfig.models.providers ?? {}
       ocConfig.models.providers.deepseek = {
         baseUrl: 'https://api.deepseek.com/v1',
         api: 'openai-completions',
@@ -678,6 +691,18 @@ export const switchProvider = async (
         models: [
           { id: 'deepseek-chat', contextWindow: 128000, maxTokens: 8192 },
           { id: 'deepseek-reasoner', contextWindow: 128000, maxTokens: 64000 }
+        ]
+      }
+    }
+    if (config.provider === 'modelfamily' && config.apiKey) {
+      ocConfig.models.providers.modelfamily = {
+        baseUrl: 'https://www.model-family.com',
+        apiKey: config.apiKey,
+        auth: 'api-key',
+        api: 'anthropic-messages',
+        models: [
+          { id: 'claude-opus-4-6', name: 'Claude Opus 4.6', reasoning: true, contextWindow: 200000, maxTokens: 32768 },
+          { id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6', reasoning: true, contextWindow: 200000, maxTokens: 32768 }
         ]
       }
     }

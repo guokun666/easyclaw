@@ -41,7 +41,7 @@
     "switchDone": "プロバイダーの切り替えが完了しました!"
   },
   "tray": {
-    "open": "EasyClawを開く",
+    "open": "OpenClaw Installerを開く",
     "gwRunning": "Gateway実行中",
     "gwStopped": "Gateway停止中",
     "gwStart": "Gatewayを開始",
@@ -49,8 +49,8 @@
     "quit": "終了",
     "notifyRunning": "Gatewayが実行中です",
     "notifyStopped": "Gatewayが停止しました",
-    "tooltipRunning": "EasyClaw - Gateway実行中",
-    "tooltipStopped": "EasyClaw - Gateway停止中"
+    "tooltipRunning": "OpenClaw Installer - Gateway実行中",
+    "tooltipStopped": "OpenClaw Installer - Gateway停止中"
   },
   "gateway": {
     "processExit": "[gateway] プロセス終了 (code: {{code}})",

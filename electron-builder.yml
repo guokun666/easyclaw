@@ -1,5 +1,5 @@
-appId: com.easyclaw.app
-productName: EasyClaw
+appId: com.modelfamily.openclaw.installer
+productName: OpenClaw Installer
 directories:
   buildResources: build
 files:
@@ -13,7 +13,7 @@ asarUnpack:
   - resources/**
 win:
   icon: build/icon.ico
-  executableName: EasyClaw
+  executableName: OpenClawInstaller
   forceCodeSigning: false
   requestedExecutionLevel: asInvoker
   target:
@@ -56,7 +56,7 @@ dmg:
       path: /Applications
 publish:
   provider: github
-  owner: ybgwon96
-  repo: easyclaw
+  owner: model-family
+  repo: openclaw-installer
   releaseType: release
 npmRebuild: false

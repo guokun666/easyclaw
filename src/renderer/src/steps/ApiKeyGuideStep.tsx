@@ -3,6 +3,10 @@ import Button from '../components/Button'
 import { providerConfigs, type Provider, type AuthMethod } from '../constants/providers'
 
 const providerMeta: Record<Provider, { name: string; consoleUrl: string }> = {
+  modelfamily: {
+    name: 'Model Family',
+    consoleUrl: 'https://www.model-family.com'
+  },
   google: {
     name: 'Google Gemini',
     consoleUrl: 'https://aistudio.google.com/apikey'
@@ -34,6 +38,7 @@ const providerMeta: Record<Provider, { name: string; consoleUrl: string }> = {
 }
 
 const providerOrder: Provider[] = [
+  'modelfamily',
   'google',
   'openai',
   'anthropic',
@@ -165,7 +170,7 @@ export default function ApiKeyGuideStep({
               rel="noreferrer"
               className="block text-center text-primary text-xs font-semibold hover:text-primary-light transition-colors py-2"
             >
-              {t(`apiKeyGuide.getApiKey.${provider}`)} &rarr;
+              {provider === 'modelfamily' ? 'Get Model Family API Key' : t(`apiKeyGuide.getApiKey.${provider}`)} &rarr;
             </a>
           )}
           {provider === 'ollama' && (

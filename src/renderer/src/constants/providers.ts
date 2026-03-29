@@ -1,4 +1,4 @@
-export type Provider = 'anthropic' | 'google' | 'openai' | 'minimax' | 'glm' | 'deepseek' | 'ollama'
+export type Provider = 'modelfamily' | 'anthropic' | 'google' | 'openai' | 'minimax' | 'glm' | 'deepseek' | 'ollama'
 export type AuthMethod = 'api-key' | 'oauth'
 
 export interface ModelOption {
@@ -19,6 +19,26 @@ export interface ProviderConfig {
 }
 
 export const providerConfigs: ProviderConfig[] = [
+  {
+    id: 'modelfamily',
+    label: 'Model Family',
+    placeholder: 'mf-... / api key',
+    pattern: /^.{8,}$/,
+    models: [
+      {
+        id: 'modelfamily/claude-opus-4-6',
+        name: 'Claude Opus 4.6',
+        desc: 'Recommended via Model Family',
+        price: 'Custom'
+      },
+      {
+        id: 'modelfamily/claude-sonnet-4-6',
+        name: 'Claude Sonnet 4.6',
+        desc: 'Balanced via Model Family',
+        price: 'Custom'
+      }
+    ]
+  },
   {
     id: 'anthropic',
     label: 'Anthropic',
