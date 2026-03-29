@@ -19,9 +19,9 @@ export default function WelcomeStep({ onNext }: { onNext: () => void }): React.J
 
       <div className="text-center space-y-2">
         <h1 className="text-3xl font-black tracking-tight">
-          Easy
+          OpenClaw
           <span className="bg-gradient-to-r from-primary to-primary-light bg-clip-text text-transparent">
-            Claw
+            {' '}Installer
           </span>
         </h1>
         <p className="text-text-muted text-[15px] font-semibold">{t('welcome.title')}</p>

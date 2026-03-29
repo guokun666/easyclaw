@@ -64,7 +64,7 @@ function App(): React.JSX.Element {
     needNode: false,
     needOpenclaw: false
   })
-  const [provider, setProvider] = useState<Provider>('anthropic')
+  const [provider, setProvider] = useState<Provider>('modelfamily')
   const [modelId, setModelId] = useState<string | undefined>()
   const [authMethod, setAuthMethod] = useState<'api-key' | 'oauth'>('api-key')
   const [botUsername, setBotUsername] = useState<string | undefined>()

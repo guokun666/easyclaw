@@ -44,7 +44,7 @@
     "wslInstalling": "WSL 설치 중...",
     "wslInstall": "WSL 설치",
     "rebootRequired": "재부팅이 필요합니다",
-    "rebootDesc": "WSL 설치를 완료하려면 컴퓨터를 재부팅해야 합니다. 재부팅 후 EasyClaw를 다시 실행해 주세요.",
+    "rebootDesc": "WSL 설치를 완료하려면 컴퓨터를 재부팅해야 합니다. 재부팅 후 OpenClaw Installer를 다시 실행해 주세요.",
     "rebootNow": "지금 재부팅",
     "ubuntuInstallDesc": "Ubuntu 배포판을 설치합니다.",
     "ubuntuInstalling": "Ubuntu 설치 중...",

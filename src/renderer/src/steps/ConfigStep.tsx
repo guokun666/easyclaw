@@ -7,6 +7,7 @@ import { useInstallLogs } from '../hooks/useIpc'
 import type { Provider } from '../constants/providers'
 
 const providerPatterns: Record<Provider, RegExp> = {
+  modelfamily: /^.{8,}$/,
   anthropic: /^sk-ant-/,
   google: /^AIza/,
   openai: /^sk-(?!ant-)/,
@@ -17,6 +18,7 @@ const providerPatterns: Record<Provider, RegExp> = {
 }
 
 const providerPlaceholders: Record<Provider, string> = {
+  modelfamily: 'Model Family API Key',
   anthropic: 'sk-ant-...',
   google: 'AIza...',
   openai: 'sk-...',
@@ -54,7 +56,7 @@ export default function ConfigStep({
   const isOllama = provider === 'ollama'
 
   const pattern = providerPatterns[provider]
-  const label = t(`config.apiKeyLabel.${provider}`)
+  const label = provider === 'modelfamily' ? 'Model Family API Key' : t(`config.apiKeyLabel.${provider}`)
   const placeholder = tp(`apiKeyPlaceholder.${provider}`, providerPlaceholders[provider])
   const apiKeyValid = pattern.test(apiKey)
   const botTokenValid = BOT_TOKEN_PATTERN.test(botToken)
