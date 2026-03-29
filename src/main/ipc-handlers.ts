@@ -52,6 +52,21 @@ const writeSettings = (patch: Record<string, unknown>): void => {
   writeFileSync(getSettingsPath(), JSON.stringify(settings, null, 2))
 }
 
+const getInstallSourceSettings = (): { mirrorBase: string; npmRegistry: string } => {
+  const settings = readSettings()
+  return {
+    mirrorBase: typeof settings.mirrorBase === 'string' ? settings.mirrorBase : '',
+    npmRegistry: typeof settings.npmRegistry === 'string' ? settings.npmRegistry : ''
+  }
+}
+
+const applyInstallSourceSettings = (): void => {
+  const { mirrorBase, npmRegistry } = getInstallSourceSettings()
+  process.env.OPENCLAW_MIRROR_BASE = mirrorBase
+  process.env.MODEL_FAMILY_MIRROR_BASE = mirrorBase
+  process.env.OPENCLAW_NPM_REGISTRY = npmRegistry
+}
+
 export const getSavedLocale = (): string => {
   const settings = readSettings()
   if (typeof settings.language === 'string') return settings.language
@@ -71,8 +86,27 @@ export const registerIpcHandlers = (getWin: () => BrowserWindow | null): void =>
 
   ipcMain.handle('app:version', () => app.getVersion())
 
-  ipcMain.handle('env:check', () => checkEnvironment())
-  ipcMain.handle('openclaw:check-update', () => checkOpenclawUpdate())
+  ipcMain.handle('settings:get-install-sources', () => getInstallSourceSettings())
+  ipcMain.handle(
+    'settings:set-install-sources',
+    (_e, patch: { mirrorBase?: string; npmRegistry?: string }) => {
+      writeSettings({
+        mirrorBase: patch.mirrorBase ?? '',
+        npmRegistry: patch.npmRegistry ?? ''
+      })
+      applyInstallSourceSettings()
+      return { success: true }
+    }
+  )
+
+  ipcMain.handle('env:check', () => {
+    applyInstallSourceSettings()
+    return checkEnvironment()
+  })
+  ipcMain.handle('openclaw:check-update', () => {
+    applyInstallSourceSettings()
+    return checkOpenclawUpdate()
+  })
 
   // WSL-related IPC
   ipcMain.handle('wsl:check', () => checkWslState())
@@ -130,6 +164,7 @@ export const registerIpcHandlers = (getWin: () => BrowserWindow | null): void =>
 
   ipcMain.handle('install:node', async () => {
     try {
+      applyInstallSourceSettings()
       if (platform() === 'win32') {
         await installNodeWsl(win())
       } else {
@@ -149,6 +184,7 @@ export const registerIpcHandlers = (getWin: () => BrowserWindow | null): void =>
 
   ipcMain.handle('install:openclaw', async () => {
     try {
+      applyInstallSourceSettings()
       if (platform() === 'win32') {
         await installOpenClawWsl(win())
       } else {
@@ -285,7 +321,7 @@ export const registerIpcHandlers = (getWin: () => BrowserWindow | null): void =>
 
   ipcMain.handle('newsletter:subscribe', async (_e, email: string) => {
     try {
-      const r = await fetch('https://easyclaw.kr/api/newsletter', {
+      const r = await fetch('https://www.model-family.com/api/newsletter', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, source: 'app' })

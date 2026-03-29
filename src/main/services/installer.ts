@@ -11,6 +11,9 @@ import { t } from '../../shared/i18n/main'
 
 type ProgressCallback = (msg: string) => void
 
+const MIRROR_BASE =
+  process.env.OPENCLAW_MIRROR_BASE || process.env.MODEL_FAMILY_MIRROR_BASE || ''
+
 interface RunError extends Error {
   lines?: string[]
 }
@@ -56,6 +59,28 @@ const downloadFile = (url: string, dest: string, maxRedirects = 5): Promise<void
     }
     follow(url)
   })
+
+const tryDownloadWithFallback = async (
+  candidates: { label: string; url: string }[],
+  dest: string,
+  log: ProgressCallback
+): Promise<void> => {
+  let lastError: Error | null = null
+
+  for (const candidate of candidates) {
+    try {
+      log(`Download source: ${candidate.label}`)
+      await downloadFile(candidate.url, dest)
+      log(`Download source selected: ${candidate.label}`)
+      return
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error))
+      log(`Download source failed: ${candidate.label} (${lastError.message})`)
+    }
+  }
+
+  throw lastError ?? new Error('All download sources failed')
+}
 
 const runWithLog = (
   cmd: string,
@@ -103,6 +128,27 @@ const runWithLog = (
     })
     child.on('error', reject)
   })
+
+const runStepsWithFallback = async (
+  candidates: { label: string; run: () => Promise<unknown> }[],
+  log: ProgressCallback
+): Promise<void> => {
+  let lastError: Error | null = null
+
+  for (const candidate of candidates) {
+    try {
+      log(`Source candidate: ${candidate.label}`)
+      await candidate.run()
+      log(`Source selected: ${candidate.label}`)
+      return
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error))
+      log(`Source failed: ${candidate.label} (${lastError.message})`)
+    }
+  }
+
+  throw lastError ?? new Error('All source candidates failed')
+}
 
 // ─── WSL installation functions (Windows) ───
 
@@ -201,7 +247,26 @@ export const installNodeWsl = async (win: BrowserWindow): Promise<void> => {
 export const installOpenClawWsl = async (win: BrowserWindow): Promise<void> => {
   const log = (msg: string): void => sendProgress(win, msg)
   log(t('installer.ocWslInstalling'))
-  await runInWsl('npm install -g openclaw@latest', 120000)
+  const mirrorTgz = MIRROR_BASE ? `${MIRROR_BASE.replace(/\/$/, '')}/openclaw/latest/openclaw.tgz` : ''
+
+  await runStepsWithFallback(
+    [
+      ...(mirrorTgz
+        ? [
+            {
+              label: 'mirror tarball',
+              run: () => runInWsl(`npm install -g ${mirrorTgz}`, 120000)
+            }
+          ]
+        : []),
+      {
+        label: 'official npm',
+        run: () => runInWsl('npm install -g openclaw@latest', 120000)
+      }
+    ],
+    log
+  )
+
   log(t('installer.ocWslDone'))
 }
 
@@ -209,11 +274,23 @@ export const installOpenClawWsl = async (win: BrowserWindow): Promise<void> => {
 
 export const installNodeMac = async (win: BrowserWindow): Promise<void> => {
   const log = (msg: string): void => sendProgress(win, msg)
-  const url = `https://nodejs.org/dist/v22.14.0/node-v22.14.0.pkg`
+  const nodeVersion = 'v22.14.0'
+  const pkgName = `node-${nodeVersion}.pkg`
+  const officialUrl = `https://nodejs.org/dist/${nodeVersion}/${pkgName}`
+  const mirrorUrl = MIRROR_BASE
+    ? `${MIRROR_BASE.replace(/\/$/, '')}/node/${nodeVersion}/${pkgName}`
+    : ''
   const dest = join(tmpdir(), 'node-installer.pkg')
 
   log(t('installer.nodeDownloading'))
-  await downloadFile(url, dest)
+  await tryDownloadWithFallback(
+    [
+      ...(mirrorUrl ? [{ label: 'mirror', url: mirrorUrl }] : []),
+      { label: 'official', url: officialUrl }
+    ],
+    dest,
+    log
+  )
   log(t('installer.nodeInstallerOpening'))
   await runWithLog('open', ['-W', dest], log)
   log(t('installer.nodeDone'))
@@ -261,9 +338,24 @@ export const installOpenClaw = async (win: BrowserWindow): Promise<void> => {
   await runWithLog('npm', ['config', 'set', 'prefix', npmGlobalDir], log, {
     env: getPathEnv()
   })
-  await runWithLog('npm', ['install', '-g', 'openclaw@latest'], log, {
-    env: getPathEnv()
-  })
+  const mirrorTgz = MIRROR_BASE ? `${MIRROR_BASE.replace(/\/$/, '')}/openclaw/latest/openclaw.tgz` : ''
+  await runStepsWithFallback(
+    [
+      ...(mirrorTgz
+        ? [
+            {
+              label: 'mirror tarball',
+              run: () => runWithLog('npm', ['install', '-g', mirrorTgz], log, { env: getPathEnv() })
+            }
+          ]
+        : []),
+      {
+        label: 'official npm',
+        run: () => runWithLog('npm', ['install', '-g', 'openclaw@latest'], log, { env: getPathEnv() })
+      }
+    ],
+    log
+  )
 
   log(t('installer.ocDone'))
 }

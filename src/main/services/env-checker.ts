@@ -3,6 +3,9 @@ import { platform } from 'os'
 import https from 'https'
 import { checkWslState, runInWsl, type WslState } from './wsl-utils'
 
+const MIRROR_BASE =
+  process.env.OPENCLAW_MIRROR_BASE || process.env.MODEL_FAMILY_MIRROR_BASE || ''
+
 export interface EnvCheckResult {
   os: 'macos' | 'windows' | 'linux'
   nodeInstalled: boolean
@@ -101,6 +104,37 @@ const fetchLatestVersion = (pkg: string): Promise<string> =>
     }, 5000)
   })
 
+const fetchMirrorOpenclawLatestVersion = (): Promise<string | null> =>
+  new Promise((resolve) => {
+    if (!MIRROR_BASE) {
+      resolve(null)
+      return
+    }
+    const base = MIRROR_BASE.replace(/\/$/, '')
+    const req = https.get(`${base}/openclaw/latest/meta.json`, (res) => {
+      if (res.statusCode !== 200) {
+        res.resume()
+        resolve(null)
+        return
+      }
+      let data = ''
+      res.on('data', (chunk) => (data += chunk))
+      res.on('end', () => {
+        try {
+          const json = JSON.parse(data)
+          resolve(typeof json.version === 'string' ? json.version : null)
+        } catch {
+          resolve(null)
+        }
+      })
+    })
+    req.on('error', () => resolve(null))
+    req.setTimeout(5000, () => {
+      req.destroy()
+      resolve(null)
+    })
+  })
+
 const checkNodeAndOpenclaw = async (
   run: (cmd: string, args: string[]) => Promise<string>
 ): Promise<{
@@ -182,7 +216,7 @@ export const checkOpenclawUpdate = async (): Promise<OpenclawUpdateInfo> => {
 
   const getLatestVersion = async (): Promise<string | null> => {
     try {
-      return await fetchLatestVersion('openclaw')
+      return (await fetchMirrorOpenclawLatestVersion()) || (await fetchLatestVersion('openclaw'))
     } catch {
       return null
     }
@@ -236,7 +270,8 @@ export const checkEnvironment = async (): Promise<EnvCheckResult> => {
   let openclawLatestVersion: string | null = null
 
   try {
-    openclawLatestVersion = await fetchLatestVersion('openclaw')
+    openclawLatestVersion =
+      (await fetchMirrorOpenclawLatestVersion()) || (await fetchLatestVersion('openclaw'))
   } catch {
     /* network error — skip */
   }

@@ -26,6 +26,13 @@ interface ElectronAPI {
       wslState?: WslState
     }>
   }
+  settings: {
+    getInstallSources: () => Promise<{ mirrorBase: string; npmRegistry: string }>
+    setInstallSources: (patch: {
+      mirrorBase?: string
+      npmRegistry?: string
+    }) => Promise<{ success: boolean }>
+  }
   install: {
     node: () => Promise<{ success: boolean; error?: string }>
     openclaw: () => Promise<{ success: boolean; error?: string }>
@@ -34,7 +41,7 @@ interface ElectronAPI {
   }
   onboard: {
     run: (config: {
-      provider: 'anthropic' | 'google' | 'openai' | 'minimax' | 'glm' | 'deepseek' | 'ollama'
+      provider: 'modelfamily' | 'anthropic' | 'google' | 'openai' | 'minimax' | 'glm' | 'deepseek' | 'ollama'
       apiKey?: string
       authMethod?: 'api-key' | 'oauth'
       telegramBotToken?: string
@@ -87,7 +94,7 @@ interface ElectronAPI {
       error?: string
     }>
     switchProvider: (config: {
-      provider: 'anthropic' | 'google' | 'openai' | 'minimax' | 'glm' | 'deepseek' | 'ollama'
+      provider: 'modelfamily' | 'modelfamily' | 'anthropic' | 'google' | 'openai' | 'minimax' | 'glm' | 'deepseek' | 'ollama'
       apiKey?: string
       authMethod?: 'api-key' | 'oauth'
       modelId?: string
