@@ -75,13 +75,7 @@ export const applySavedInstallSourceSettings = (): void => {
 }
 
 export const getSavedLocale = (): string => {
-  const settings = readSettings()
-  if (typeof settings.language === 'string') return settings.language
-  const sys = app.getLocale()
-  if (sys.startsWith('ko')) return 'ko'
-  if (sys.startsWith('ja')) return 'ja'
-  if (sys.startsWith('zh')) return 'zh'
-  return 'en'
+  return 'zh'
 }
 
 export const registerIpcHandlers = (getWin: () => BrowserWindow | null): void => {
@@ -413,19 +407,4 @@ export const registerIpcHandlers = (getWin: () => BrowserWindow | null): void =>
   // Backup / restore
   ipcMain.handle('backup:export', () => exportBackup(win()))
   ipcMain.handle('backup:import', () => importBackup(win()))
-
-  // i18n settings
-  ipcMain.handle('i18n:get-locale', () => i18nMain.language || getSavedLocale())
-
-  const SUPPORTED_LANGS = ['ko', 'en', 'ja', 'zh']
-
-  ipcMain.handle('i18n:set-language', async (_e, lng: string) => {
-    if (!SUPPORTED_LANGS.includes(lng)) {
-      return { success: false, error: 'Unsupported language' }
-    }
-    writeSettings({ language: lng })
-    await initI18nMain(lng)
-    rebuildTrayMenu()
-    return { success: true }
-  })
 }

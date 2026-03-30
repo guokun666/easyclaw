@@ -194,11 +194,6 @@ const electronAPI = {
     export: (): Promise<{ success: boolean; error?: string }> =>
       ipcRenderer.invoke('backup:export'),
     import: (): Promise<{ success: boolean; error?: string }> => ipcRenderer.invoke('backup:import')
-  },
-  i18n: {
-    getLocale: (): Promise<string> => ipcRenderer.invoke('i18n:get-locale'),
-    setLanguage: (lng: string): Promise<{ success: boolean }> =>
-      ipcRenderer.invoke('i18n:set-language', lng)
   }
 }
 

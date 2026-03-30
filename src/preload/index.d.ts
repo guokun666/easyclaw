@@ -136,10 +136,6 @@ interface ElectronAPI {
     export: () => Promise<{ success: boolean; error?: string }>
     import: () => Promise<{ success: boolean; error?: string }>
   }
-  i18n: {
-    getLocale: () => Promise<string>
-    setLanguage: (lng: string) => Promise<{ success: boolean; error?: string }>
-  }
 }
 
 declare global {

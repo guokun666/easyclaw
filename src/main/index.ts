@@ -84,7 +84,7 @@ app.on('before-quit', () => {
 
 app.whenReady().then(async () => {
   applySavedInstallSourceSettings()
-  await initI18nMain(getSavedLocale())
+  await initI18nMain()
   electronApp.setAppUserModelId('com.modelfamily.openclaw.installer')
 
   app.on('browser-window-created', (_, window) => {

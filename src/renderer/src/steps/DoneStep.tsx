@@ -6,7 +6,6 @@ import Button from '../components/Button'
 import LogViewer from '../components/LogViewer'
 import ManagementModal from '../components/ManagementModal'
 import ProviderSwitchModal from '../components/ProviderSwitchModal'
-import LanguageSwitcher from '../components/LanguageSwitcher'
 import { useManagement } from '../hooks/useManagement'
 
 const UPDATE_CHECK_INTERVAL = 30 * 60 * 1000 // 30 min
@@ -209,10 +208,6 @@ export default function DoneStep({
 
   return (
     <div className="flex-1 flex flex-col items-center justify-center px-10 gap-3 overflow-hidden">
-      <div className="absolute top-4 right-4">
-        <LanguageSwitcher />
-      </div>
-
       {/* Logo + status */}
       <div className="flex items-center gap-4">
         <div className="relative">

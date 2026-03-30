@@ -1,17 +1,12 @@
 import { useTranslation } from 'react-i18next'
 import LobsterLogo from '../components/LobsterLogo'
 import Button from '../components/Button'
-import LanguageSwitcher from '../components/LanguageSwitcher'
 
 export default function WelcomeStep({ onNext }: { onNext: () => void }): React.JSX.Element {
   const { t } = useTranslation('steps')
 
   return (
     <div className="flex-1 flex flex-col items-center justify-center px-10 gap-7">
-      <div className="absolute top-4 right-4">
-        <LanguageSwitcher />
-      </div>
-
       <div className="relative">
         <div className="absolute inset-0 bg-primary/10 rounded-full blur-3xl scale-150" />
         <LobsterLogo state="idle" size={150} />
