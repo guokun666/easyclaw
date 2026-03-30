@@ -32,6 +32,16 @@ const electronAPI = {
     node: (): Promise<{ success: boolean; error?: string }> => ipcRenderer.invoke('install:node'),
     openclaw: (): Promise<{ success: boolean; error?: string }> =>
       ipcRenderer.invoke('install:openclaw'),
+    onStatus: (
+      cb: (status: { percent: number; stage: string; detail?: string }) => void
+    ): (() => void) => {
+      const handler = (
+        _: unknown,
+        status: { percent: number; stage: string; detail?: string }
+      ): void => cb(status)
+      ipcRenderer.on('install:status', handler)
+      return () => ipcRenderer.removeListener('install:status', handler)
+    },
     onProgress: (cb: (msg: string) => void): (() => void) => {
       const handler = (_: unknown, msg: string): void => cb(msg)
       ipcRenderer.on('install:progress', handler)

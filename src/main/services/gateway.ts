@@ -1,6 +1,6 @@
 import { spawn, ChildProcess } from 'child_process'
 import { platform } from 'os'
-import { getPathEnv, findBin } from './path-utils'
+import { getPathEnv, resolvePreferredBin } from './path-utils'
 import { checkPort } from './troubleshooter'
 import { t } from '../../shared/i18n/main'
 
@@ -24,7 +24,7 @@ const emitLog = (msg: string): void => {
 }
 
 const runGateway = (args: string[]): Promise<string> => {
-  const openclaw = findBin('openclaw')
+  const openclaw = resolvePreferredBin('openclaw')
   const fullArgs = ['gateway', ...args]
 
   return new Promise((resolve, reject) => {
@@ -166,7 +166,7 @@ const runDoctorFix = (): Promise<void> =>
       cmd = 'wsl'
       args = ['-d', 'Ubuntu', '-u', 'root', '--', 'bash', '-lc', 'openclaw doctor --fix']
     } else {
-      cmd = findBin('openclaw')
+      cmd = resolvePreferredBin('openclaw')
       args = ['doctor', '--fix']
     }
 

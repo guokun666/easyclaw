@@ -75,6 +75,10 @@
     "restartNow": "지금 재시작"
   },
   "logViewer": {
-    "waiting": "대기 중..."
+    "waiting": "대기 중...",
+    "expand": "펼치기",
+    "collapse": "접기",
+    "copy": "복사",
+    "copied": "복사됨"
   }
 }

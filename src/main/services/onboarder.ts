@@ -9,7 +9,15 @@ import { runInWsl, readWslFile, writeWslFile } from './wsl-utils'
 import { t } from '../../shared/i18n/main'
 
 interface OnboardConfig {
-  provider: 'modelfamily' | 'anthropic' | 'google' | 'openai' | 'minimax' | 'glm' | 'deepseek' | 'ollama'
+  provider:
+    | 'modelfamily'
+    | 'anthropic'
+    | 'google'
+    | 'openai'
+    | 'minimax'
+    | 'glm'
+    | 'deepseek'
+    | 'ollama'
   apiKey?: string
   authMethod?: 'api-key' | 'oauth'
   telegramBotToken?: string
@@ -52,7 +60,7 @@ const waitTelegramClear = async (token: string): Promise<void> => {
   }
 }
 
-import { getPathEnv, findBin } from './path-utils'
+import { getPathEnv, resolvePreferredBin } from './path-utils'
 
 const OAUTH_PROFILE_ID = 'openai-codex:default'
 
@@ -141,7 +149,7 @@ export const runOnboard = async (
 
   const isWindows = platform() === 'win32'
   const isMac = platform() === 'darwin'
-  const ocBin = isWindows ? 'openclaw' : findBin('openclaw')
+  const ocBin = isWindows ? 'openclaw' : resolvePreferredBin('openclaw')
   const fixPath = join(homedir(), '.openclaw', 'ipv4-fix.js')
   const runCmd = createRunCmd()
 
@@ -342,8 +350,20 @@ export const runOnboard = async (
         auth: 'api-key',
         api: 'anthropic-messages',
         models: [
-          { id: 'claude-opus-4-6', name: 'Claude Opus 4.6', reasoning: true, contextWindow: 200000, maxTokens: 32768 },
-          { id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6', reasoning: true, contextWindow: 200000, maxTokens: 32768 }
+          {
+            id: 'claude-opus-4-6',
+            name: 'Claude Opus 4.6',
+            reasoning: true,
+            contextWindow: 200000,
+            maxTokens: 32768
+          },
+          {
+            id: 'claude-sonnet-4-6',
+            name: 'Claude Sonnet 4.6',
+            reasoning: true,
+            contextWindow: 200000,
+            maxTokens: 32768
+          }
         ]
       }
     }
@@ -512,7 +532,7 @@ export const switchProvider = async (
 
   const isWindows = platform() === 'win32'
   const isMac = platform() === 'darwin'
-  const ocBin = isWindows ? 'openclaw' : findBin('openclaw')
+  const ocBin = isWindows ? 'openclaw' : resolvePreferredBin('openclaw')
   const runCmd = createRunCmd()
 
   log(t('onboarder.switchStarting'))
@@ -701,8 +721,20 @@ export const switchProvider = async (
         auth: 'api-key',
         api: 'anthropic-messages',
         models: [
-          { id: 'claude-opus-4-6', name: 'Claude Opus 4.6', reasoning: true, contextWindow: 200000, maxTokens: 32768 },
-          { id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6', reasoning: true, contextWindow: 200000, maxTokens: 32768 }
+          {
+            id: 'claude-opus-4-6',
+            name: 'Claude Opus 4.6',
+            reasoning: true,
+            contextWindow: 200000,
+            maxTokens: 32768
+          },
+          {
+            id: 'claude-sonnet-4-6',
+            name: 'Claude Sonnet 4.6',
+            reasoning: true,
+            contextWindow: 200000,
+            maxTokens: 32768
+          }
         ]
       }
     }

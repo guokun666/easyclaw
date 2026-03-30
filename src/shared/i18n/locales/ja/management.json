@@ -75,6 +75,10 @@
     "restartNow": "今すぐ再起動"
   },
   "logViewer": {
-    "waiting": "待機中..."
+    "waiting": "待機中...",
+    "expand": "展開",
+    "collapse": "折りたたむ",
+    "copy": "コピー",
+    "copied": "コピー済み"
   }
 }

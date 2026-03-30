@@ -75,6 +75,10 @@
     "restartNow": "立即重启"
   },
   "logViewer": {
-    "waiting": "等待中..."
+    "waiting": "等待中...",
+    "expand": "展开",
+    "collapse": "收起",
+    "copy": "复制",
+    "copied": "已复制"
   }
 }

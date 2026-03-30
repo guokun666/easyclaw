@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import LobsterLogo from '../components/LobsterLogo'
 import Button from '../components/Button'
+import InstallProgressCard from '../components/InstallProgressCard'
 import LogViewer from '../components/LogViewer'
 import { useInstallLogs } from '../hooks/useIpc'
 
@@ -20,7 +21,7 @@ export default function InstallStep({
   onDone: () => void
 }): React.JSX.Element {
   const { t } = useTranslation('steps')
-  const { logs, error, clearLogs } = useInstallLogs()
+  const { logs, error, status, clearLogs } = useInstallLogs()
   const [installing, setInstalling] = useState(false)
   const [done, setDone] = useState(false)
   const [failed, setFailed] = useState(false)
@@ -80,107 +81,112 @@ export default function InstallStep({
   const logoState = installing ? 'loading' : failed ? 'error' : done ? 'success' : 'idle'
 
   return (
-    <div className="flex-1 flex flex-col px-8 gap-4 justify-center">
-      <div className="flex items-center gap-4">
-        <LobsterLogo state={logoState} size={56} />
-        <div>
-          <h2 className="text-lg font-extrabold">
-            {done
-              ? t('install.done')
-              : failed
-                ? t('install.failed')
-                : installing
-                  ? t('install.progress')
-                  : t('install.ready')}
-          </h2>
-          <p className="text-text-muted text-xs font-medium">
-            {installing
-              ? t('install.wait')
-              : done
-                ? t('install.allReady')
-                : failed
-                  ? t('install.checkLog')
-                  : t('install.desc')}
-          </p>
-        </div>
-      </div>
-
-      <div className="space-y-2">
-        {needs.needNode && (
-          <div className="glass-card px-4 py-2.5 text-xs font-semibold flex items-center gap-2">
-            <span className="text-primary">01</span> {t('install.nodejs')}
-          </div>
-        )}
-        {needs.needOpenclaw && (
-          <div className="glass-card px-4 py-2.5 text-xs font-semibold flex items-center gap-2">
-            <span className="text-primary">{needs.needNode ? '02' : '01'}</span>{' '}
-            {t('install.openclaw')}
-          </div>
-        )}
-      </div>
-
-      <div className="glass-card p-4 space-y-3">
-        <button
-          type="button"
-          onClick={() => setShowAdvanced((prev) => !prev)}
-          className="w-full flex items-center justify-between text-left"
-        >
+    <div className="flex-1 w-full overflow-y-auto">
+      <div className="flex flex-col px-8 py-12 pb-28 gap-4 min-h-full justify-center">
+        <div className="flex items-center gap-4">
+          <LobsterLogo state={logoState} size={56} />
           <div>
-            <div className="text-sm font-bold">{t('install.advancedTitle')}</div>
-            <div className="text-xs text-text-muted">{t('install.advancedDesc')}</div>
+            <h2 className="text-lg font-extrabold">
+              {done
+                ? t('install.done')
+                : failed
+                  ? t('install.failed')
+                  : installing
+                    ? t('install.progress')
+                    : t('install.ready')}
+            </h2>
+            <p className="text-text-muted text-xs font-medium">
+              {installing
+                ? t('install.wait')
+                : done
+                  ? t('install.allReady')
+                  : failed
+                    ? t('install.checkLog')
+                    : t('install.desc')}
+            </p>
           </div>
-          <span className="text-text-muted text-xs">{showAdvanced ? '▲' : '▼'}</span>
-        </button>
+        </div>
 
-        {showAdvanced && (
-          <div className="space-y-3">
-            <div className="space-y-1">
-              <label className="text-xs font-semibold">{t('install.sourceModeLabel')}</label>
-              <select
-                value={sourceMode}
-                onChange={(e) => setSourceMode(e.target.value as InstallSourceMode)}
-                className="w-full bg-bg-input rounded-xl px-4 py-2.5 text-xs outline-none border border-glass-border focus:border-primary"
-              >
-                <option value="auto">{t('install.sourceMode.auto')}</option>
-                <option value="official">{t('install.sourceMode.official')}</option>
-                <option value="mirror">{t('install.sourceMode.mirror')}</option>
-              </select>
+        <div className="space-y-2">
+          {needs.needNode && (
+            <div className="glass-card px-4 py-2.5 text-xs font-semibold flex items-center gap-2">
+              <span className="text-primary">01</span> {t('install.nodejs')}
             </div>
-            {sourcesMessage && <p className="text-xs text-success font-medium">{sourcesMessage}</p>}
-            {sourcesError && <p className="text-xs text-error font-medium">{sourcesError}</p>}
-            <div className="flex justify-end">
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={saveInstallSources}
-                disabled={savingSources || installing}
-              >
-                {savingSources ? t('install.savingSources') : t('install.saveSources')}
-              </Button>
+          )}
+          {needs.needOpenclaw && (
+            <div className="glass-card px-4 py-2.5 text-xs font-semibold flex items-center gap-2">
+              <span className="text-primary">{needs.needNode ? '02' : '01'}</span>{' '}
+              {t('install.openclaw')}
             </div>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
 
-      {(installing || logs.length > 0) && <LogViewer lines={logs} />}
-      {error && <p className="text-error text-xs font-medium">{error}</p>}
+        <div className="glass-card p-4 space-y-3">
+          <button
+            type="button"
+            onClick={() => setShowAdvanced((prev) => !prev)}
+            className="w-full flex items-center justify-between text-left"
+          >
+            <div>
+              <div className="text-sm font-bold">{t('install.advancedTitle')}</div>
+              <div className="text-xs text-text-muted">{t('install.advancedDesc')}</div>
+            </div>
+            <span className="text-text-muted text-xs">{showAdvanced ? '▲' : '▼'}</span>
+          </button>
 
-      <div className="flex gap-3 justify-end mt-1">
-        {failed && (
-          <Button variant="secondary" size="sm" onClick={runInstall}>
-            {t('install.retryBtn')}
-          </Button>
-        )}
-        {!done && !installing && !failed && (
-          <Button variant="primary" size="lg" onClick={runInstall}>
-            {t('install.startBtn')}
-          </Button>
-        )}
-        {done && (
-          <Button variant="primary" size="lg" onClick={onDone}>
-            {t('install.nextBtn')}
-          </Button>
-        )}
+          {showAdvanced && (
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <label className="text-xs font-semibold">{t('install.sourceModeLabel')}</label>
+                <select
+                  value={sourceMode}
+                  onChange={(e) => setSourceMode(e.target.value as InstallSourceMode)}
+                  className="w-full bg-bg-input rounded-xl px-4 py-2.5 text-xs outline-none border border-glass-border focus:border-primary"
+                >
+                  <option value="auto">{t('install.sourceMode.auto')}</option>
+                  <option value="official">{t('install.sourceMode.official')}</option>
+                  <option value="mirror">{t('install.sourceMode.mirror')}</option>
+                </select>
+              </div>
+              {sourcesMessage && (
+                <p className="text-xs text-success font-medium">{sourcesMessage}</p>
+              )}
+              {sourcesError && <p className="text-xs text-error font-medium">{sourcesError}</p>}
+              <div className="flex justify-end">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={saveInstallSources}
+                  disabled={savingSources || installing}
+                >
+                  {savingSources ? t('install.savingSources') : t('install.saveSources')}
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {(installing || status || logs.length > 0) && <InstallProgressCard status={status} />}
+        {(installing || logs.length > 0) && <LogViewer lines={logs} />}
+        {error && <p className="text-error text-xs font-medium">{error}</p>}
+
+        <div className="flex gap-3 justify-end mt-1">
+          {failed && (
+            <Button variant="secondary" size="sm" onClick={runInstall}>
+              {t('install.retryBtn')}
+            </Button>
+          )}
+          {!done && !installing && !failed && (
+            <Button variant="primary" size="lg" onClick={runInstall}>
+              {t('install.startBtn')}
+            </Button>
+          )}
+          {done && (
+            <Button variant="primary" size="lg" onClick={onDone}>
+              {t('install.nextBtn')}
+            </Button>
+          )}
+        </div>
       </div>
     </div>
   )

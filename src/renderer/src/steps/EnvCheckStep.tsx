@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import LobsterLogo from '../components/LobsterLogo'
 import Button from '../components/Button'
+import InstallProgressCard from '../components/InstallProgressCard'
 import LogViewer from '../components/LogViewer'
 import { useInstallLogs } from '../hooks/useIpc'
 
@@ -64,7 +65,7 @@ export default function EnvCheckStep({
   const [savingSources, setSavingSources] = useState(false)
   const [sourcesMessage, setSourcesMessage] = useState<string | null>(null)
   const [sourcesError, setSourcesError] = useState<string | null>(null)
-  const { logs, error, clearLogs } = useInstallLogs()
+  const { logs, error, status, clearLogs } = useInstallLogs()
 
   const wslStateLabel = (state?: WslState): string => {
     switch (state) {
@@ -150,126 +151,133 @@ export default function EnvCheckStep({
   }
 
   return (
-    <div className="flex-1 flex flex-col items-center pt-16 px-8 gap-5">
-      <LobsterLogo state={checking ? 'loading' : allReady ? 'success' : 'idle'} size={72} />
+    <div className="flex-1 w-full overflow-y-auto">
+      <div className="flex flex-col items-center pt-16 px-8 pb-28 gap-5 min-h-full">
+        <LobsterLogo state={checking ? 'loading' : allReady ? 'success' : 'idle'} size={72} />
 
-      <h2 className="text-lg font-extrabold">{t('envCheck.title')}</h2>
+        <h2 className="text-lg font-extrabold">{t('envCheck.title')}</h2>
 
-      {checking ? (
-        <p className="text-text-muted text-sm animate-pulse">{t('envCheck.scanning')}</p>
-      ) : env ? (
-        <div className="w-full max-w-xs space-y-2.5">
-          <CheckRow
-            label={t('envCheck.os')}
-            ok={true}
-            detail={env.os === 'macos' ? 'macOS' : env.os === 'windows' ? 'Windows' : 'Linux'}
-          />
-          {env.os === 'windows' && (
+        {checking ? (
+          <p className="text-text-muted text-sm animate-pulse">{t('envCheck.scanning')}</p>
+        ) : env ? (
+          <div className="w-full max-w-xs space-y-2.5">
             <CheckRow
-              label={t('envCheck.wsl')}
-              ok={env.wslState === 'ready'}
-              detail={wslStateLabel(env.wslState)}
+              label={t('envCheck.os')}
+              ok={true}
+              detail={env.os === 'macos' ? 'macOS' : env.os === 'windows' ? 'Windows' : 'Linux'}
             />
-          )}
-          <CheckRow
-            label={t('envCheck.nodejs')}
-            ok={env.nodeVersionOk}
-            detail={env.nodeInstalled ? `v${env.nodeVersion}` : t('common:status.notInstalled')}
-          />
-          <CheckRow
-            label={t('envCheck.openclaw')}
-            ok={env.openclawInstalled}
-            detail={
-              env.openclawInstalled ? `v${env.openclawVersion}` : t('common:status.notInstalled')
-            }
-          />
-          {hasUpdate && (
+            {env.os === 'windows' && (
+              <CheckRow
+                label={t('envCheck.wsl')}
+                ok={env.wslState === 'ready'}
+                detail={wslStateLabel(env.wslState)}
+              />
+            )}
+            <CheckRow
+              label={t('envCheck.nodejs')}
+              ok={env.nodeVersionOk}
+              detail={env.nodeInstalled ? `v${env.nodeVersion}` : t('common:status.notInstalled')}
+            />
+            <CheckRow
+              label={t('envCheck.openclaw')}
+              ok={env.openclawInstalled}
+              detail={
+                env.openclawInstalled ? `v${env.openclawVersion}` : t('common:status.notInstalled')
+              }
+            />
+            {hasUpdate && (
+              <button
+                onClick={handleUpdate}
+                disabled={updating}
+                className="w-full text-xs text-center py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-accent transition-colors disabled:opacity-50"
+              >
+                {updating
+                  ? t('common:status.updating')
+                  : `v${env.openclawLatestVersion} ${t('envCheck.updateAvailable')}`}
+              </button>
+            )}
+          </div>
+        ) : null}
+
+        <Button
+          variant="primary"
+          size="lg"
+          onClick={handleContinue}
+          disabled={checking || updating}
+          loading={checking || updating}
+        >
+          {checking
+            ? t('envCheck.checkBtn')
+            : updating
+              ? t('common:status.updating')
+              : allReady
+                ? t('envCheck.nextBtn')
+                : t('envCheck.installBtn')}
+        </Button>
+
+        {!checking && (
+          <div className="w-full max-w-xs glass-card p-4 space-y-3">
             <button
-              onClick={handleUpdate}
-              disabled={updating}
-              className="w-full text-xs text-center py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-accent transition-colors disabled:opacity-50"
+              type="button"
+              onClick={() => setShowSourceSettings((prev) => !prev)}
+              className="w-full flex items-center justify-between text-left"
             >
-              {updating
-                ? t('common:status.updating')
-                : `v${env.openclawLatestVersion} ${t('envCheck.updateAvailable')}`}
+              <div>
+                <div className="text-sm font-bold">{t('install.advancedTitle')}</div>
+                <div className="text-xs text-text-muted">{t('install.advancedDesc')}</div>
+              </div>
+              <span className="text-text-muted text-xs">{showSourceSettings ? '▲' : '▼'}</span>
             </button>
-          )}
-        </div>
-      ) : null}
 
-      <Button
-        variant="primary"
-        size="lg"
-        onClick={handleContinue}
-        disabled={checking || updating}
-        loading={checking || updating}
-      >
-        {checking
-          ? t('envCheck.checkBtn')
-          : updating
-            ? t('common:status.updating')
-            : allReady
-              ? t('envCheck.nextBtn')
-              : t('envCheck.installBtn')}
-      </Button>
+            {showSourceSettings && (
+              <div className="space-y-3">
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold">{t('install.sourceModeLabel')}</label>
+                  <select
+                    value={sourceMode}
+                    onChange={(e) => setSourceMode(e.target.value as InstallSourceMode)}
+                    className="w-full bg-bg-input rounded-xl px-4 py-2.5 text-xs outline-none border border-glass-border focus:border-primary"
+                  >
+                    <option value="auto">{t('install.sourceMode.auto')}</option>
+                    <option value="official">{t('install.sourceMode.official')}</option>
+                    <option value="mirror">{t('install.sourceMode.mirror')}</option>
+                  </select>
+                </div>
 
-      {!checking && (
-        <div className="w-full max-w-xs glass-card p-4 space-y-3">
-          <button
-            type="button"
-            onClick={() => setShowSourceSettings((prev) => !prev)}
-            className="w-full flex items-center justify-between text-left"
-          >
-            <div>
-              <div className="text-sm font-bold">{t('install.advancedTitle')}</div>
-              <div className="text-xs text-text-muted">{t('install.advancedDesc')}</div>
-            </div>
-            <span className="text-text-muted text-xs">{showSourceSettings ? '▲' : '▼'}</span>
-          </button>
+                {sourcesMessage && (
+                  <p className="text-xs text-success font-medium">{sourcesMessage}</p>
+                )}
+                {sourcesError && <p className="text-xs text-error font-medium">{sourcesError}</p>}
 
-          {showSourceSettings && (
-            <div className="space-y-3">
-              <div className="space-y-1">
-                <label className="text-xs font-semibold">{t('install.sourceModeLabel')}</label>
-                <select
-                  value={sourceMode}
-                  onChange={(e) => setSourceMode(e.target.value as InstallSourceMode)}
-                  className="w-full bg-bg-input rounded-xl px-4 py-2.5 text-xs outline-none border border-glass-border focus:border-primary"
-                >
-                  <option value="auto">{t('install.sourceMode.auto')}</option>
-                  <option value="official">{t('install.sourceMode.official')}</option>
-                  <option value="mirror">{t('install.sourceMode.mirror')}</option>
-                </select>
+                <div className="flex justify-end">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={saveInstallSources}
+                    disabled={savingSources || updating}
+                  >
+                    {savingSources ? t('install.savingSources') : t('install.saveSources')}
+                  </Button>
+                </div>
               </div>
+            )}
+          </div>
+        )}
 
-              {sourcesMessage && (
-                <p className="text-xs text-success font-medium">{sourcesMessage}</p>
-              )}
-              {sourcesError && <p className="text-xs text-error font-medium">{sourcesError}</p>}
-
-              <div className="flex justify-end">
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={saveInstallSources}
-                  disabled={savingSources || updating}
-                >
-                  {savingSources ? t('install.savingSources') : t('install.saveSources')}
-                </Button>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {(updating || logs.length > 0) && (
-        <div className="w-full max-w-xs">
-          <LogViewer lines={logs} />
-        </div>
-      )}
-      {(updateError || error) && (
-        <p className="w-full max-w-xs text-error text-xs font-medium">{updateError || error}</p>
-      )}
+        {(updating || status || logs.length > 0) && (
+          <div className="w-full max-w-xs">
+            <InstallProgressCard status={status} />
+          </div>
+        )}
+        {(updating || logs.length > 0) && (
+          <div className="w-full max-w-xs">
+            <LogViewer lines={logs} />
+          </div>
+        )}
+        {(updateError || error) && (
+          <p className="w-full max-w-xs text-error text-xs font-medium">{updateError || error}</p>
+        )}
+      </div>
     </div>
   )
 }

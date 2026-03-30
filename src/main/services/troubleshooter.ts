@@ -1,7 +1,7 @@
 import { spawn } from 'child_process'
 import { platform } from 'os'
 import { BrowserWindow } from 'electron'
-import { getPathEnv, findBin } from './path-utils'
+import { getPathEnv, resolvePreferredBin } from './path-utils'
 
 const exec = (
   cmd: string,
@@ -45,8 +45,8 @@ export const runDoctorFix = async (win: BrowserWindow): Promise<{ success: boole
     cmd = 'wsl'
     args = ['-d', 'Ubuntu', '-u', 'root', '--', 'bash', '-lc', 'openclaw doctor --fix']
   } else {
-    cmd = findBin('npm')
-    args = ['exec', '--', 'openclaw', 'doctor', '--fix']
+    cmd = resolvePreferredBin('openclaw')
+    args = ['doctor', '--fix']
   }
 
   return new Promise((resolve) => {

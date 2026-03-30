@@ -1,12 +1,13 @@
 import { spawn } from 'child_process'
 import { StringDecoder } from 'string_decoder'
-import { createWriteStream, existsSync, mkdirSync } from 'fs'
-import { tmpdir, homedir } from 'os'
+import { createWriteStream } from 'fs'
+import { tmpdir } from 'os'
 import { join } from 'path'
 import https from 'https'
 import { BrowserWindow } from 'electron'
 import { checkWslState, runInWsl, WSL_STATE_ORDER, type WslState } from './wsl-utils'
 import { getPathEnv } from './path-utils'
+import { getManagedNpmEnv } from './npm-paths'
 import { t } from '../../shared/i18n/main'
 import {
   getNodeMacDownloadCandidates,
@@ -21,11 +22,31 @@ interface RunError extends Error {
   lines?: string[]
 }
 
+interface InstallStatusPayload {
+  percent: number
+  stage: string
+  detail?: string
+}
+
 const sendProgress = (win: BrowserWindow, msg: string): void => {
   win.webContents.send('install:progress', msg)
 }
 
-const downloadFile = (url: string, dest: string, maxRedirects = 5): Promise<void> =>
+const sendStatus = (win: BrowserWindow, percent: number, stage: string, detail?: string): void => {
+  const payload: InstallStatusPayload = {
+    percent: Math.max(0, Math.min(100, Math.round(percent))),
+    stage,
+    detail
+  }
+  win.webContents.send('install:status', payload)
+}
+
+const downloadFile = (
+  url: string,
+  dest: string,
+  onProgress?: (downloadedBytes: number, totalBytes: number | null) => void,
+  maxRedirects = 5
+): Promise<void> =>
   new Promise((resolve, reject) => {
     let redirectCount = 0
     const follow = (u: string): void => {
@@ -50,6 +71,12 @@ const downloadFile = (url: string, dest: string, maxRedirects = 5): Promise<void
             reject(new Error(`HTTP ${res.statusCode}`))
             return
           }
+          const totalBytes = Number(res.headers['content-length'] ?? 0) || null
+          let downloadedBytes = 0
+          res.on('data', (chunk) => {
+            downloadedBytes += chunk.length
+            onProgress?.(downloadedBytes, totalBytes)
+          })
           const file = createWriteStream(dest)
           res.pipe(file)
           file.on('finish', () => {
@@ -66,14 +93,17 @@ const downloadFile = (url: string, dest: string, maxRedirects = 5): Promise<void
 const tryDownloadWithFallback = async (
   candidates: { label: string; url: string }[],
   dest: string,
-  log: ProgressCallback
+  log: ProgressCallback,
+  onCandidate?: (candidate: { label: string; url: string }) => void,
+  onProgress?: (downloadedBytes: number, totalBytes: number | null) => void
 ): Promise<void> => {
   let lastError: Error | null = null
 
   for (const candidate of candidates) {
     try {
+      onCandidate?.(candidate)
       log(`Download source: ${candidate.label}`)
-      await downloadFile(candidate.url, dest)
+      await downloadFile(candidate.url, dest, onProgress)
       log(`Download source selected: ${candidate.label}`)
       return
     } catch (error) {
@@ -163,6 +193,7 @@ export const installWsl = async (
   const log = (msg: string): void => sendProgress(win, msg)
   const baseline = prevState ?? (await checkWslState())
 
+  sendStatus(win, 5, t('installer.wslInstalling'))
   log(t('installer.wslInstalling'))
   log(t('installer.wslAdminPrompt'))
 
@@ -207,10 +238,12 @@ export const installWsl = async (
   }
 
   // Verify actual WSL state regardless of exit code
+  sendStatus(win, 80, t('installer.wslCheckingState'))
   log(t('installer.wslCheckingState'))
   const newState = await checkWslState()
 
   if (newState === 'ready') {
+    sendStatus(win, 100, t('installer.wslDone'))
     log(t('installer.wslDone'))
     return { needsReboot: false, state: newState }
   }
@@ -218,6 +251,7 @@ export const installWsl = async (
   const improved = WSL_STATE_ORDER.indexOf(newState) > WSL_STATE_ORDER.indexOf(baseline)
 
   if (newState === 'needs_reboot' || improved) {
+    sendStatus(win, 100, t('installer.wslDone'))
     log(t('installer.wslDone'))
     return { needsReboot: newState === 'needs_reboot', state: newState }
   }
@@ -230,6 +264,7 @@ export const installWsl = async (
 export const installNodeWsl = async (win: BrowserWindow): Promise<void> => {
   const log = (msg: string): void => sendProgress(win, msg)
 
+  sendStatus(win, 10, t('installer.wslPackages'))
   log(t('installer.wslPackages'))
   try {
     await runInWsl('apt-get update && apt-get install -y curl ca-certificates gnupg', 60000)
@@ -237,18 +272,21 @@ export const installNodeWsl = async (win: BrowserWindow): Promise<void> => {
     log(t('installer.aptFailed'))
   }
 
+  sendStatus(win, 45, t('installer.nodeWslInstalling'))
   log(t('installer.nodeWslInstalling'))
   const candidates = getNodeWslSetupCandidates()
   let lastError: Error | null = null
 
   for (const candidate of candidates) {
     try {
+      sendStatus(win, 55, t('installer.nodeWslInstalling'), candidate.label)
       log(`Source candidate: ${candidate.label}`)
       await runInWsl(
         `curl -fsSL ${candidate.scriptUrl} | bash - && apt-get install -y nodejs`,
         120000
       )
       log(`Source selected: ${candidate.label}`)
+      sendStatus(win, 100, t('installer.nodeWslDone'))
       log(t('installer.nodeWslDone'))
       return
     } catch (error) {
@@ -263,20 +301,24 @@ export const installNodeWsl = async (win: BrowserWindow): Promise<void> => {
 /** Install openclaw globally inside WSL Ubuntu */
 export const installOpenClawWsl = async (win: BrowserWindow): Promise<void> => {
   const log = (msg: string): void => sendProgress(win, msg)
+  sendStatus(win, 10, t('installer.ocWslInstalling'))
   log(t('installer.ocWslInstalling'))
 
   await runStepsWithFallback(
     getOpenclawPackageCandidates().map((candidate) => ({
       label: candidate.label,
-      run: () =>
-        runInWsl(
+      run: () => {
+        sendStatus(win, 55, t('installer.ocWslInstalling'), candidate.label)
+        return runInWsl(
           `npm_config_registry=${candidate.registry} npm install -g ${candidate.packageName}`,
           120000
         )
+      }
     })),
     log
   )
 
+  sendStatus(win, 100, t('installer.ocWslDone'))
   log(t('installer.ocWslDone'))
 }
 
@@ -287,10 +329,25 @@ export const installNodeMac = async (win: BrowserWindow): Promise<void> => {
   const nodeVersion = 'v22.16.0'
   const dest = join(tmpdir(), 'node-installer.pkg')
 
+  sendStatus(win, 5, t('installer.nodeDownloading'))
   log(t('installer.nodeDownloading'))
-  await tryDownloadWithFallback(getNodeMacDownloadCandidates(nodeVersion), dest, log)
+  await tryDownloadWithFallback(
+    getNodeMacDownloadCandidates(nodeVersion),
+    dest,
+    log,
+    (candidate) => {
+      sendStatus(win, 10, t('installer.nodeDownloading'), candidate.label)
+    },
+    (downloadedBytes, totalBytes) => {
+      if (!totalBytes) return
+      const percent = 10 + (downloadedBytes / totalBytes) * 70
+      sendStatus(win, percent, t('installer.nodeDownloading'))
+    }
+  )
+  sendStatus(win, 88, t('installer.nodeInstallerOpening'))
   log(t('installer.nodeInstallerOpening'))
   await runWithLog('open', ['-W', dest], log)
+  sendStatus(win, 100, t('installer.nodeDone'))
   log(t('installer.nodeDone'))
 }
 
@@ -322,30 +379,26 @@ const ensureXcodeCli = async (log: ProgressCallback): Promise<void> => {
 
 export const installOpenClaw = async (win: BrowserWindow): Promise<void> => {
   const log = (msg: string): void => sendProgress(win, msg)
+  sendStatus(win, 5, t('installer.ocInstalling'))
   log(t('installer.ocInstalling'))
 
   await ensureXcodeCli(log)
-  const npmCacheDir = join(homedir(), '.npm')
-  if (existsSync(npmCacheDir)) {
-    const uid = process.getuid?.() ?? 501
-    const gid = process.getgid?.() ?? 20
-    await runWithLog('chown', ['-R', `${uid}:${gid}`, npmCacheDir], log).catch(() => {})
-  }
-  const npmGlobalDir = join(homedir(), '.npm-global')
-  if (!existsSync(npmGlobalDir)) mkdirSync(npmGlobalDir, { recursive: true })
-  await runWithLog('npm', ['config', 'set', 'prefix', npmGlobalDir], log, {
-    env: getPathEnv()
-  })
+  sendStatus(win, 20, t('installer.ocInstalling'))
+  const npmEnv = getManagedNpmEnv(getPathEnv())
+
   await runStepsWithFallback(
     getOpenclawPackageCandidates().map((candidate) => ({
       label: candidate.label,
-      run: () =>
-        runWithLog('npm', ['install', '-g', candidate.packageName], log, {
-          env: getNpmCommandEnv(candidate.registry, getPathEnv())
+      run: () => {
+        sendStatus(win, 55, t('installer.ocInstalling'), candidate.label)
+        return runWithLog('npm', ['install', '-g', candidate.packageName], log, {
+          env: getNpmCommandEnv(candidate.registry, npmEnv)
         })
+      }
     })),
     log
   )
 
+  sendStatus(win, 100, t('installer.ocDone'))
   log(t('installer.ocDone'))
 }

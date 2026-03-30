@@ -75,6 +75,10 @@
     "restartNow": "Restart Now"
   },
   "logViewer": {
-    "waiting": "Waiting..."
+    "waiting": "Waiting...",
+    "expand": "Expand",
+    "collapse": "Collapse",
+    "copy": "Copy",
+    "copied": "Copied"
   }
 }

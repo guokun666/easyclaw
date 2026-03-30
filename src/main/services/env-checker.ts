@@ -3,6 +3,8 @@ import { platform } from 'os'
 import https from 'https'
 import { checkWslState, runInWsl, type WslState } from './wsl-utils'
 import { getOpenclawMetaCandidates } from './install-sources'
+import { getPathEnv, resolvePreferredBin } from './path-utils'
+import { getManagedNpmEnv } from './npm-paths'
 
 export interface EnvCheckResult {
   os: 'macos' | 'windows' | 'linux'
@@ -15,26 +17,11 @@ export interface EnvCheckResult {
   wslState?: WslState
 }
 
-const PATH_EXTENSIONS = [
-  '/usr/local/bin',
-  '/opt/homebrew/bin',
-  process.env.NVM_BIN ?? '',
-  `${process.env.HOME}/.volta/bin`,
-  `${process.env.HOME}/.npm-global/bin`,
-  '/usr/bin',
-  '/bin'
-]
-  .filter(Boolean)
-  .join(':')
+type CommandRunner = (cmd: string, args: string[], env?: NodeJS.ProcessEnv) => Promise<string>
 
-const getEnv = (): NodeJS.ProcessEnv => ({
-  ...process.env,
-  PATH: `${PATH_EXTENSIONS}:${process.env.PATH ?? ''}`
-})
-
-const runCommand = (cmd: string, args: string[]): Promise<string> =>
+const runCommand: CommandRunner = (cmd, args, env = getPathEnv()): Promise<string> =>
   new Promise((resolve, reject) => {
-    const child = spawn(cmd, args, { env: getEnv() })
+    const child = spawn(cmd, args, { env })
 
     const timer = setTimeout(() => {
       child.kill()
@@ -60,6 +47,15 @@ const runCommand = (cmd: string, args: string[]): Promise<string> =>
 const parseVersion = (raw: string): string | null => {
   const match = raw.match(/v?(\d+\.\d+\.\d+)/)
   return match ? match[1] : null
+}
+
+const parseOpenclawVersionFromNpmList = (raw: string): string | null => {
+  try {
+    const json = JSON.parse(raw)
+    return json.dependencies?.openclaw?.version ?? null
+  } catch {
+    return null
+  }
 }
 
 const semverGte = (version: string, min: string): boolean => {
@@ -115,8 +111,43 @@ const fetchOpenclawLatestVersion = async (): Promise<string | null> => {
   return null
 }
 
+const getOpenclawVersion = async (
+  run: CommandRunner,
+  envCandidates?: Array<NodeJS.ProcessEnv | undefined>
+): Promise<string | null> => {
+  const openclawBin = resolvePreferredBin('openclaw')
+  const npmBin = resolvePreferredBin('npm')
+  const candidates =
+    envCandidates && envCandidates.length > 0
+      ? envCandidates
+      : [undefined as NodeJS.ProcessEnv | undefined]
+
+  for (const env of candidates) {
+    try {
+      const raw = await run(openclawBin, ['--version'], env)
+      const version = parseVersion(raw)
+      if (version) return version
+    } catch {
+      /* try next candidate */
+    }
+  }
+
+  for (const env of candidates) {
+    try {
+      const raw = await run(npmBin, ['list', '-g', 'openclaw', '--json'], env)
+      const version = parseOpenclawVersionFromNpmList(raw)
+      if (version) return version
+    } catch {
+      /* try next candidate */
+    }
+  }
+
+  return null
+}
+
 const checkNodeAndOpenclaw = async (
-  run: (cmd: string, args: string[]) => Promise<string>
+  run: CommandRunner,
+  envCandidates?: Array<NodeJS.ProcessEnv | undefined>
 ): Promise<{
   nodeInstalled: boolean
   nodeVersion: string | null
@@ -131,7 +162,7 @@ const checkNodeAndOpenclaw = async (
   let openclawVersion: string | null = null
 
   try {
-    const raw = await run('node', ['--version'])
+    const raw = await run('node', ['--version'], envCandidates?.[0])
     nodeVersion = parseVersion(raw)
     nodeInstalled = nodeVersion !== null
     nodeVersionOk = nodeVersion ? semverGte(nodeVersion, '22.16.0') : false
@@ -139,29 +170,9 @@ const checkNodeAndOpenclaw = async (
     /* not installed */
   }
 
-  try {
-    const raw = await run('npm', ['list', '-g', 'openclaw', '--json'])
-    const json = JSON.parse(raw)
-    const deps = json.dependencies?.openclaw
-    if (deps) {
-      openclawInstalled = true
-      openclawVersion = deps.version ?? null
-    }
-  } catch {
-    /* not installed */
-  }
-
-  if (!openclawInstalled || !openclawVersion) {
-    try {
-      const raw = await run('openclaw', ['--version'])
-      const ver = parseVersion(raw)
-      if (ver) {
-        openclawInstalled = true
-        openclawVersion = ver
-      }
-    } catch {
-      /* not installed */
-    }
+  openclawVersion = await getOpenclawVersion(run, envCandidates)
+  if (openclawVersion) {
+    openclawInstalled = true
   }
 
   return { nodeInstalled, nodeVersion, nodeVersionOk, openclawInstalled, openclawVersion }
@@ -179,15 +190,13 @@ export const checkOpenclawUpdate = async (): Promise<OpenclawUpdateInfo> => {
     try {
       if (os === 'windows') {
         const shellEscape = (s: string): string => `'${s.replace(/'/g, "'\\''")}'`
-        const wslRun = (cmd: string, args: string[]): Promise<string> =>
+        const wslRun: CommandRunner = (cmd, args): Promise<string> =>
           runInWsl(`${cmd} ${args.map(shellEscape).join(' ')}`)
-        const raw = await wslRun('npm', ['list', '-g', 'openclaw', '--json'])
-        const json = JSON.parse(raw)
-        return json.dependencies?.openclaw?.version ?? null
+        return getOpenclawVersion(wslRun)
       } else {
-        const raw = await runCommand('npm', ['list', '-g', 'openclaw', '--json'])
-        const json = JSON.parse(raw)
-        return json.dependencies?.openclaw?.version ?? null
+        const baseEnv = getPathEnv()
+        const managedEnv = getManagedNpmEnv(baseEnv)
+        return getOpenclawVersion(runCommand, [managedEnv, baseEnv])
       }
     } catch {
       return null
@@ -226,7 +235,7 @@ export const checkEnvironment = async (): Promise<EnvCheckResult> => {
 
     if (wslState === 'ready') {
       const shellEscape = (s: string): string => `'${s.replace(/'/g, "'\\''")}'`
-      const wslRun = (cmd: string, args: string[]): Promise<string> =>
+      const wslRun: CommandRunner = (cmd, args): Promise<string> =>
         runInWsl(`${cmd} ${args.map(shellEscape).join(' ')}`)
 
       const result = await checkNodeAndOpenclaw(wslRun)
@@ -239,7 +248,9 @@ export const checkEnvironment = async (): Promise<EnvCheckResult> => {
     // Keep all false if wslState !== 'ready'
   } else {
     // macOS / Linux
-    const result = await checkNodeAndOpenclaw(runCommand)
+    const baseEnv = getPathEnv()
+    const managedEnv = getManagedNpmEnv(baseEnv)
+    const result = await checkNodeAndOpenclaw(runCommand, [managedEnv, baseEnv])
     nodeInstalled = result.nodeInstalled
     nodeVersion = result.nodeVersion
     nodeVersionOk = result.nodeVersionOk

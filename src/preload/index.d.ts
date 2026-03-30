@@ -37,6 +37,9 @@ interface ElectronAPI {
   install: {
     node: () => Promise<{ success: boolean; error?: string }>
     openclaw: () => Promise<{ success: boolean; error?: string }>
+    onStatus: (
+      cb: (status: { percent: number; stage: string; detail?: string }) => void
+    ) => () => void
     onProgress: (cb: (msg: string) => void) => () => void
     onError: (cb: (msg: string) => void) => () => void
   }
