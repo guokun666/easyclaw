@@ -1,5 +1,10 @@
 {
   "desc": {
+    "modelfamily/claude-opus-4-6": "Model Family 제공 (추천)",
+    "modelfamily/claude-sonnet-4-6": "Model Family 제공 (균형형)",
+    "modelfamily/gpt-5.4": "Model Family 제공 (고성능)",
+    "modelfamily/gpt-5.4-mini": "Model Family 제공 (빠르고 경제적)",
+    "modelfamily/o4-mini": "Model Family 제공 (추론)",
     "anthropic/claude-sonnet-4-6": "최신 균형 (추천)",
     "anthropic/claude-opus-4-6": "최신 최고 성능",
     "anthropic/claude-sonnet-4-5": "균형",

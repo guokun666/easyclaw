@@ -44,6 +44,24 @@ export const providerConfigs: ProviderConfig[] = [
         name: 'Claude Sonnet 4.6',
         desc: 'Balanced via Model Family',
         price: 'Custom'
+      },
+      {
+        id: 'modelfamily/gpt-5.4',
+        name: 'GPT-5.4',
+        desc: 'Top Performance via Model Family',
+        price: 'Custom'
+      },
+      {
+        id: 'modelfamily/gpt-5.4-mini',
+        name: 'GPT-5.4 Mini',
+        desc: 'Fast & Affordable via Model Family',
+        price: 'Custom'
+      },
+      {
+        id: 'modelfamily/o4-mini',
+        name: 'o4-mini',
+        desc: 'Reasoning via Model Family',
+        price: 'Custom'
       }
     ]
   },

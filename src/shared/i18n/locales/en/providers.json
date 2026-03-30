@@ -1,5 +1,10 @@
 {
   "desc": {
+    "modelfamily/claude-opus-4-6": "Recommended via Model Family",
+    "modelfamily/claude-sonnet-4-6": "Balanced via Model Family",
+    "modelfamily/gpt-5.4": "Top Performance via Model Family",
+    "modelfamily/gpt-5.4-mini": "Fast & Affordable via Model Family",
+    "modelfamily/o4-mini": "Reasoning via Model Family",
     "anthropic/claude-sonnet-4-6": "Latest Balanced (Recommended)",
     "anthropic/claude-opus-4-6": "Latest Top Performance",
     "anthropic/claude-sonnet-4-5": "Balanced",

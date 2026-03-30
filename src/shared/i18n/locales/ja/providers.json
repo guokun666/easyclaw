@@ -1,5 +1,10 @@
 {
   "desc": {
+    "modelfamily/claude-opus-4-6": "Model Family 経由（推奨）",
+    "modelfamily/claude-sonnet-4-6": "Model Family 経由（バランス型）",
+    "modelfamily/gpt-5.4": "Model Family 経由（高性能）",
+    "modelfamily/gpt-5.4-mini": "Model Family 経由（高速かつ低コスト）",
+    "modelfamily/o4-mini": "Model Family 経由（推論）",
     "anthropic/claude-sonnet-4-6": "最新バランス型 (推奨)",
     "anthropic/claude-opus-4-6": "最新最高性能",
     "anthropic/claude-sonnet-4-5": "バランス型",

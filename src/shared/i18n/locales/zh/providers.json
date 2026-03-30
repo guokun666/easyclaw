@@ -1,5 +1,10 @@
 {
   "desc": {
+    "modelfamily/claude-opus-4-6": "通过 Model Family 提供（推荐）",
+    "modelfamily/claude-sonnet-4-6": "通过 Model Family 提供（均衡）",
+    "modelfamily/gpt-5.4": "通过 Model Family 提供（高性能）",
+    "modelfamily/gpt-5.4-mini": "通过 Model Family 提供（快速且经济）",
+    "modelfamily/o4-mini": "通过 Model Family 提供（推理）",
     "anthropic/claude-sonnet-4-6": "最新均衡（推荐）",
     "anthropic/claude-opus-4-6": "最新最强性能",
     "anthropic/claude-sonnet-4-5": "均衡",
