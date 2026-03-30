@@ -67,7 +67,12 @@ const electronAPI = {
         | 'ollama'
       apiKey?: string
       authMethod?: 'api-key' | 'oauth'
+      channelType?: 'feishu' | 'wechat' | 'telegram'
       telegramBotToken?: string
+      feishuAppId?: string
+      feishuAppSecret?: string
+      wechatAppId?: string
+      wechatAppSecret?: string
       modelId?: string
     }): Promise<{ success: boolean; error?: string; botUsername?: string }> =>
       ipcRenderer.invoke('onboard:run', config)
@@ -153,7 +158,12 @@ const electronAPI = {
   config: {
     read: (): Promise<{
       success: boolean
-      config: { provider?: string; model?: string; hasTelegram?: boolean } | null
+      config: {
+        provider?: string
+        model?: string
+        hasChannel?: boolean
+        channelType?: 'feishu' | 'wechat' | 'telegram'
+      } | null
       error?: string
     }> => ipcRenderer.invoke('config:read'),
     switchProvider: (config: {

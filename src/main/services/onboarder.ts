@@ -20,12 +20,76 @@ interface OnboardConfig {
     | 'ollama'
   apiKey?: string
   authMethod?: 'api-key' | 'oauth'
+  channelType?: 'feishu' | 'wechat' | 'telegram'
   telegramBotToken?: string
+  feishuAppId?: string
+  feishuAppSecret?: string
+  wechatAppId?: string
+  wechatAppSecret?: string
   modelId?: string
 }
 
 interface OnboardResult {
   botUsername?: string
+}
+
+const getChannelPatch = (
+  config: OnboardConfig
+): { key: string; value: Record<string, unknown> } | null => {
+  if (config.channelType === 'telegram' && config.telegramBotToken) {
+    return {
+      key: 'telegram',
+      value: {
+        enabled: true,
+        botToken: config.telegramBotToken,
+        dmPolicy: 'open',
+        allowFrom: ['*'],
+        groups: { '*': { requireMention: true } }
+      }
+    }
+  }
+
+  if (config.channelType === 'feishu' && config.feishuAppId && config.feishuAppSecret) {
+    return {
+      key: 'feishu',
+      value: {
+        enabled: true,
+        dmPolicy: 'pairing',
+        accounts: {
+          main: {
+            appId: config.feishuAppId,
+            appSecret: config.feishuAppSecret,
+            name: 'EasyClaw'
+          }
+        }
+      }
+    }
+  }
+
+  if (config.channelType === 'wechat' && config.wechatAppId && config.wechatAppSecret) {
+    return {
+      key: 'wechat',
+      value: {
+        enabled: true,
+        appId: config.wechatAppId,
+        appSecret: config.wechatAppSecret,
+        transport: 'reserved',
+        note: 'Reserved by EasyClaw for future WeChat channel support'
+      }
+    }
+  }
+
+  return null
+}
+
+const getActiveChannelType = (
+  channels?: Record<string, unknown>
+): 'feishu' | 'wechat' | 'telegram' | undefined => {
+  if (!channels) return undefined
+  if ((channels.telegram as { botToken?: string } | undefined)?.botToken) return 'telegram'
+  if ((channels.feishu as { enabled?: boolean } | undefined)?.enabled) return 'feishu'
+  if ((channels.wechat as { enabled?: boolean } | undefined)?.enabled) return 'wechat'
+  return undefined
 }
 
 const telegramGet = (url: string): Promise<{ ok: boolean; [k: string]: unknown }> =>
@@ -424,24 +488,18 @@ export const runOnboard = async (
   }
 
   let botUsername: string | undefined
+  const channelPatch = getChannelPatch(config)
 
-  if (config.telegramBotToken) {
-    log(t('onboarder.addingTelegram'))
-    const telegramChannel = {
-      enabled: true,
-      botToken: config.telegramBotToken,
-      dmPolicy: 'open',
-      allowFrom: ['*'],
-      groups: { '*': { requireMention: true } }
-    }
+  if (channelPatch) {
+    log(t(`onboarder.channelAdding.${channelPatch.key}`))
 
     if (isWindows) {
       try {
         const raw = await readWslFile('/root/.openclaw/openclaw.json')
         const ocConfig = JSON.parse(raw)
-        ocConfig.channels = { ...ocConfig.channels, telegram: telegramChannel }
+        ocConfig.channels = { ...ocConfig.channels, [channelPatch.key]: channelPatch.value }
         await writeWslFile('/root/.openclaw/openclaw.json', JSON.stringify(ocConfig, null, 2))
-        log(t('onboarder.telegramDone'))
+        log(t(`onboarder.channelDone.${channelPatch.key}`))
       } catch {
         log(t('onboarder.configNotFound'))
       }
@@ -449,19 +507,18 @@ export const runOnboard = async (
       const configPath = join(homedir(), '.openclaw', 'openclaw.json')
       if (existsSync(configPath)) {
         const ocConfig = JSON.parse(readFileSync(configPath, 'utf-8'))
-        ocConfig.channels = { ...ocConfig.channels, telegram: telegramChannel }
+        ocConfig.channels = { ...ocConfig.channels, [channelPatch.key]: channelPatch.value }
         writeFileSync(configPath, JSON.stringify(ocConfig, null, 2), { mode: 0o600 })
-        log(t('onboarder.telegramDone'))
+        log(t(`onboarder.channelDone.${channelPatch.key}`))
       } else {
         log(t('onboarder.configNotFound'))
       }
     }
-
-    botUsername = await fetchBotUsername(config.telegramBotToken)
   }
 
-  if (config.telegramBotToken) {
-    log(t('onboarder.checkingTelegram'))
+  if (config.channelType === 'telegram' && config.telegramBotToken) {
+    botUsername = await fetchBotUsername(config.telegramBotToken)
+    log(t('onboarder.channelChecking.telegram'))
     await waitTelegramClear(config.telegramBotToken)
   }
 
@@ -491,7 +548,8 @@ export const runOnboard = async (
 export interface CurrentConfig {
   provider?: string
   model?: string
-  hasTelegram?: boolean
+  hasChannel?: boolean
+  channelType?: 'feishu' | 'wechat' | 'telegram'
 }
 
 export const readCurrentConfig = async (): Promise<CurrentConfig | null> => {
@@ -508,10 +566,11 @@ export const readCurrentConfig = async (): Promise<CurrentConfig | null> => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const cfg = JSON.parse(raw) as any
     const model = cfg?.agents?.defaults?.model?.primary as string | undefined
-    const hasTelegram = !!cfg?.channels?.telegram?.botToken
+    const channelType = getActiveChannelType(cfg?.channels)
+    const hasChannel = !!channelType
     // Extract provider from model ID (e.g. "anthropic/claude-sonnet-4-6" → "anthropic")
     const provider = model?.split('/')[0]
-    return { provider, model, hasTelegram }
+    return { provider, model, hasChannel, channelType }
   } catch {
     return null
   }
@@ -537,7 +596,8 @@ export const switchProvider = async (
 
   log(t('onboarder.switchStarting'))
 
-  // 1. Preserve existing Telegram token
+  // 1. Preserve existing channel config
+  let savedChannels: Record<string, unknown> | null = null
   let savedTelegram: Record<string, unknown> | null = null
   try {
     let raw: string
@@ -548,6 +608,9 @@ export const switchProvider = async (
     }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const cfg = JSON.parse(raw) as any
+    if (cfg?.channels && typeof cfg.channels === 'object') {
+      savedChannels = cfg.channels
+    }
     if (cfg?.channels?.telegram?.botToken) {
       savedTelegram = cfg.channels.telegram
     }
@@ -683,7 +746,7 @@ export const switchProvider = async (
   const patchSwitchConfig = (
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ocConfig: any,
-    telegram: Record<string, unknown> | null
+    channels: Record<string, unknown> | null
   ): void => {
     ocConfig.agents = ocConfig.agents ?? {}
     ocConfig.agents.defaults = ocConfig.agents.defaults ?? {}
@@ -750,9 +813,9 @@ export const switchProvider = async (
         }
       }
     }
-    // Restore Telegram token
-    if (telegram) {
-      ocConfig.channels = { ...ocConfig.channels, telegram }
+    // Restore previous channel config
+    if (channels) {
+      ocConfig.channels = { ...ocConfig.channels, ...channels }
     }
   }
 
@@ -760,7 +823,7 @@ export const switchProvider = async (
     try {
       const raw = await readWslFile('/root/.openclaw/openclaw.json')
       const ocConfig = JSON.parse(raw)
-      patchSwitchConfig(ocConfig, savedTelegram)
+      patchSwitchConfig(ocConfig, savedChannels)
       await writeWslFile('/root/.openclaw/openclaw.json', JSON.stringify(ocConfig, null, 2))
     } catch {
       /* config not found */
@@ -769,7 +832,7 @@ export const switchProvider = async (
     const configPath = join(homedir(), '.openclaw', 'openclaw.json')
     if (existsSync(configPath)) {
       const ocConfig = JSON.parse(readFileSync(configPath, 'utf-8'))
-      patchSwitchConfig(ocConfig, savedTelegram)
+      patchSwitchConfig(ocConfig, savedChannels)
       writeFileSync(configPath, JSON.stringify(ocConfig, null, 2), { mode: 0o600 })
     }
   }

@@ -13,6 +13,7 @@ import TelegramGuideStep from './steps/TelegramGuideStep'
 import ConfigStep from './steps/ConfigStep'
 import DoneStep from './steps/DoneStep'
 import TroubleshootStep from './steps/TroubleshootStep'
+import type { ChannelType } from './steps/TelegramGuideStep'
 
 type WslState =
   | 'not_available'
@@ -67,6 +68,7 @@ function App(): React.JSX.Element {
   const [provider, setProvider] = useState<Provider>('modelfamily')
   const [modelId, setModelId] = useState<string | undefined>()
   const [authMethod, setAuthMethod] = useState<'api-key' | 'oauth'>('api-key')
+  const [channelType, setChannelType] = useState<ChannelType>('feishu')
   const [botUsername, setBotUsername] = useState<string | undefined>()
   const [isWindows, setIsWindows] = useState(false)
   const [wslState, setWslState] = useState<WslState>('ready')
@@ -162,18 +164,26 @@ function App(): React.JSX.Element {
               onNext={next}
             />
           )}
-          {currentStep === 'telegramGuide' && <TelegramGuideStep onNext={next} />}
+          {currentStep === 'telegramGuide' && (
+            <TelegramGuideStep
+              channelType={channelType}
+              onSelectChannel={setChannelType}
+              onNext={next}
+            />
+          )}
           {currentStep === 'config' && (
             <ConfigStep
               provider={provider}
               authMethod={authMethod}
               modelId={modelId}
+              channelType={channelType}
               onDone={handleDone}
             />
           )}
           {currentStep === 'done' && (
             <DoneStep
               botUsername={botUsername}
+              channelType={channelType}
               onTroubleshoot={() => goTo('troubleshoot')}
               onUninstallDone={() => {
                 window.electronAPI.wizard.clearState()

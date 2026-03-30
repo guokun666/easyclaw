@@ -56,7 +56,12 @@ interface ElectronAPI {
         | 'ollama'
       apiKey?: string
       authMethod?: 'api-key' | 'oauth'
+      channelType?: 'feishu' | 'wechat' | 'telegram'
       telegramBotToken?: string
+      feishuAppId?: string
+      feishuAppSecret?: string
+      wechatAppId?: string
+      wechatAppSecret?: string
       modelId?: string
     }) => Promise<{ success: boolean; error?: string; botUsername?: string }>
   }
@@ -102,7 +107,12 @@ interface ElectronAPI {
   config: {
     read: () => Promise<{
       success: boolean
-      config: { provider?: string; model?: string; hasTelegram?: boolean } | null
+      config: {
+        provider?: string
+        model?: string
+        hasChannel?: boolean
+        channelType?: 'feishu' | 'wechat' | 'telegram'
+      } | null
       error?: string
     }>
     switchProvider: (config: {

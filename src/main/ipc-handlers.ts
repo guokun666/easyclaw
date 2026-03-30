@@ -221,7 +221,12 @@ export const registerIpcHandlers = (getWin: () => BrowserWindow | null): void =>
           | 'ollama'
         apiKey?: string
         authMethod?: 'api-key' | 'oauth'
+        channelType?: 'feishu' | 'wechat' | 'telegram'
         telegramBotToken?: string
+        feishuAppId?: string
+        feishuAppSecret?: string
+        wechatAppId?: string
+        wechatAppSecret?: string
         modelId?: string
       }
     ) => {

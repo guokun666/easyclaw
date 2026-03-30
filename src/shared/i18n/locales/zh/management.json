@@ -7,7 +7,11 @@
     "changeModel": "更改",
     "ocUpdateAvailable": "OpenClaw v{{latest}} 可更新",
     "ocCurrentVersion": "当前 v{{current}}",
-    "openTelegram": "打开 Telegram",
+    "openChannel": {
+      "feishu": "打开飞书",
+      "wechat": "微信待接入",
+      "telegram": "打开 Telegram"
+    },
     "restartBtn": "重启",
     "stopBtn": "停止",
     "startBtn": "重新启动",

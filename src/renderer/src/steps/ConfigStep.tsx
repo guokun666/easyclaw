@@ -5,6 +5,7 @@ import Button from '../components/Button'
 import LogViewer from '../components/LogViewer'
 import { useInstallLogs } from '../hooks/useIpc'
 import type { Provider } from '../constants/providers'
+import type { ChannelType } from './TelegramGuideStep'
 
 const providerPatterns: Record<Provider, RegExp> = {
   modelfamily: /^.{8,}$/,
@@ -28,12 +29,15 @@ const providerPlaceholders: Record<Provider, string> = {
   ollama: ''
 }
 
-const BOT_TOKEN_PATTERN = /^\d+:[A-Za-z0-9_-]+$/
+const TELEGRAM_BOT_TOKEN_PATTERN = /^\d+:[A-Za-z0-9_-]+$/
+const FEISHU_APP_ID_PATTERN = /^cli_[A-Za-z0-9]+$/
+const GENERIC_APP_SECRET_PATTERN = /^.{8,}$/
 
 interface Props {
   provider: Provider
   authMethod?: 'api-key' | 'oauth'
   modelId?: string
+  channelType: ChannelType
   onDone: (botUsername?: string) => void
 }
 
@@ -41,12 +45,17 @@ export default function ConfigStep({
   provider,
   authMethod,
   modelId,
+  channelType,
   onDone
 }: Props): React.JSX.Element {
   const { t } = useTranslation(['steps', 'common'])
   const { t: tp } = useTranslation('providers')
   const [apiKey, setApiKey] = useState('')
-  const [botToken, setBotToken] = useState('')
+  const [telegramBotToken, setTelegramBotToken] = useState('')
+  const [feishuAppId, setFeishuAppId] = useState('')
+  const [feishuAppSecret, setFeishuAppSecret] = useState('')
+  const [wechatAppId, setWechatAppId] = useState('')
+  const [wechatAppSecret, setWechatAppSecret] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [oauthDone, setOauthDone] = useState(false)
@@ -56,15 +65,26 @@ export default function ConfigStep({
   const isOllama = provider === 'ollama'
 
   const pattern = providerPatterns[provider]
-  const label = provider === 'modelfamily' ? 'Model Family API Key' : t(`config.apiKeyLabel.${provider}`)
+  const label =
+    provider === 'modelfamily' ? 'Model Family API Key' : t(`config.apiKeyLabel.${provider}`)
   const placeholder = tp(`apiKeyPlaceholder.${provider}`, providerPlaceholders[provider])
   const apiKeyValid = pattern.test(apiKey)
-  const botTokenValid = BOT_TOKEN_PATTERN.test(botToken)
+  const telegramBotTokenValid = TELEGRAM_BOT_TOKEN_PATTERN.test(telegramBotToken)
+  const feishuAppIdValid = FEISHU_APP_ID_PATTERN.test(feishuAppId)
+  const feishuAppSecretValid = GENERIC_APP_SECRET_PATTERN.test(feishuAppSecret)
+  const wechatAppIdValid = GENERIC_APP_SECRET_PATTERN.test(wechatAppId)
+  const wechatAppSecretValid = GENERIC_APP_SECRET_PATTERN.test(wechatAppSecret)
+  const channelValid =
+    channelType === 'telegram'
+      ? telegramBotTokenValid
+      : channelType === 'feishu'
+        ? feishuAppIdValid && feishuAppSecretValid
+        : wechatAppIdValid && wechatAppSecretValid
   const canSave = isOAuth
-    ? oauthDone && botTokenValid && !saving
+    ? oauthDone && channelValid && !saving
     : isOllama
-      ? botTokenValid && !saving
-      : apiKeyValid && botTokenValid && !saving
+      ? channelValid && !saving
+      : apiKeyValid && channelValid && !saving
 
   const handleOAuthLogin = async (): Promise<void> => {
     setOauthLoading(true)
@@ -96,7 +116,12 @@ export default function ConfigStep({
         provider,
         ...(isOAuth || isOllama ? {} : { apiKey }),
         authMethod: authMethod ?? 'api-key',
-        telegramBotToken: botToken || undefined,
+        channelType,
+        telegramBotToken: telegramBotToken || undefined,
+        feishuAppId: feishuAppId || undefined,
+        feishuAppSecret: feishuAppSecret || undefined,
+        wechatAppId: wechatAppId || undefined,
+        wechatAppSecret: wechatAppSecret || undefined,
         modelId
       })
       if (result.success) {
@@ -198,24 +223,119 @@ export default function ConfigStep({
           </div>
         )}
 
-        <div className="space-y-1.5">
-          <label className="text-sm font-bold">
-            {t('config.telegramToken')}{' '}
-            <span className="text-error text-xs">{t('config.required')}</span>
-          </label>
-          <input
-            type="text"
-            placeholder="123456:ABCDEF..."
-            value={botToken}
-            onChange={(e) => setBotToken(e.target.value)}
-            className={`w-full bg-bg-input rounded-xl px-4 py-2.5 text-sm font-mono outline-none border transition-all duration-200 placeholder:text-text-muted/30 ${
-              botToken && !botTokenValid
-                ? 'border-error/50 focus:border-error'
-                : 'border-glass-border focus:border-primary focus:shadow-[0_0_0_3px_var(--color-primary-glow)]'
-            }`}
-          />
-          {botToken && !botTokenValid && (
-            <p className="text-error text-[11px] font-medium">{t('config.telegramHint')}</p>
+        <div className="space-y-3">
+          <div>
+            <label className="text-sm font-bold">
+              {t('config.channelLabel')}{' '}
+              <span className="text-error text-xs">{t('config.required')}</span>
+            </label>
+            <p className="text-xs text-text-muted mt-1">
+              {t(`config.channelTypeDesc.${channelType}`)}
+            </p>
+          </div>
+
+          {channelType === 'telegram' && (
+            <div className="space-y-1.5">
+              <label className="text-sm font-bold">
+                {t('config.telegramToken')}{' '}
+                <span className="text-error text-xs">{t('config.required')}</span>
+              </label>
+              <input
+                type="text"
+                placeholder="123456:ABCDEF..."
+                value={telegramBotToken}
+                onChange={(e) => setTelegramBotToken(e.target.value)}
+                className={`w-full bg-bg-input rounded-xl px-4 py-2.5 text-sm font-mono outline-none border transition-all duration-200 placeholder:text-text-muted/30 ${
+                  telegramBotToken && !telegramBotTokenValid
+                    ? 'border-error/50 focus:border-error'
+                    : 'border-glass-border focus:border-primary focus:shadow-[0_0_0_3px_var(--color-primary-glow)]'
+                }`}
+              />
+              {telegramBotToken && !telegramBotTokenValid && (
+                <p className="text-error text-[11px] font-medium">{t('config.telegramHint')}</p>
+              )}
+            </div>
+          )}
+
+          {channelType === 'feishu' && (
+            <>
+              <div className="space-y-1.5">
+                <label className="text-sm font-bold">
+                  {t('config.feishuAppId')}{' '}
+                  <span className="text-error text-xs">{t('config.required')}</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="cli_xxxxxxxxxxxxx"
+                  value={feishuAppId}
+                  onChange={(e) => setFeishuAppId(e.target.value)}
+                  className={`w-full bg-bg-input rounded-xl px-4 py-2.5 text-sm font-mono outline-none border transition-all duration-200 placeholder:text-text-muted/30 ${
+                    feishuAppId && !feishuAppIdValid
+                      ? 'border-error/50 focus:border-error'
+                      : 'border-glass-border focus:border-primary focus:shadow-[0_0_0_3px_var(--color-primary-glow)]'
+                  }`}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-bold">
+                  {t('config.feishuAppSecret')}{' '}
+                  <span className="text-error text-xs">{t('config.required')}</span>
+                </label>
+                <input
+                  type="password"
+                  placeholder={t('config.feishuSecretHint')}
+                  value={feishuAppSecret}
+                  onChange={(e) => setFeishuAppSecret(e.target.value)}
+                  className={`w-full bg-bg-input rounded-xl px-4 py-2.5 text-sm font-mono outline-none border transition-all duration-200 placeholder:text-text-muted/30 ${
+                    feishuAppSecret && !feishuAppSecretValid
+                      ? 'border-error/50 focus:border-error'
+                      : 'border-glass-border focus:border-primary focus:shadow-[0_0_0_3px_var(--color-primary-glow)]'
+                  }`}
+                />
+              </div>
+            </>
+          )}
+
+          {channelType === 'wechat' && (
+            <>
+              <div className="space-y-1.5">
+                <label className="text-sm font-bold">
+                  {t('config.wechatAppId')}{' '}
+                  <span className="text-error text-xs">{t('config.required')}</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder={t('config.wechatAppIdHint')}
+                  value={wechatAppId}
+                  onChange={(e) => setWechatAppId(e.target.value)}
+                  className={`w-full bg-bg-input rounded-xl px-4 py-2.5 text-sm font-mono outline-none border transition-all duration-200 placeholder:text-text-muted/30 ${
+                    wechatAppId && !wechatAppIdValid
+                      ? 'border-error/50 focus:border-error'
+                      : 'border-glass-border focus:border-primary focus:shadow-[0_0_0_3px_var(--color-primary-glow)]'
+                  }`}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-bold">
+                  {t('config.wechatAppSecret')}{' '}
+                  <span className="text-error text-xs">{t('config.required')}</span>
+                </label>
+                <input
+                  type="password"
+                  placeholder={t('config.wechatSecretHint')}
+                  value={wechatAppSecret}
+                  onChange={(e) => setWechatAppSecret(e.target.value)}
+                  className={`w-full bg-bg-input rounded-xl px-4 py-2.5 text-sm font-mono outline-none border transition-all duration-200 placeholder:text-text-muted/30 ${
+                    wechatAppSecret && !wechatAppSecretValid
+                      ? 'border-error/50 focus:border-error'
+                      : 'border-glass-border focus:border-primary focus:shadow-[0_0_0_3px_var(--color-primary-glow)]'
+                  }`}
+                />
+              </div>
+              <p className="text-warning text-[11px] font-medium">
+                {t('config.wechatReservedNote')}
+              </p>
+            </>
           )}
         </div>
 

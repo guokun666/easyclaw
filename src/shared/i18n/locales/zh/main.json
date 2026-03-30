@@ -28,10 +28,20 @@
     "starting": "开始 OpenClaw 初始配置...",
     "configCreatedSkipGw": "配置文件创建完成（跳过 gateway 验证）",
     "basicDone": "基本配置完成！",
-    "addingTelegram": "正在添加 Telegram 频道...",
-    "telegramDone": "Telegram 频道添加完成！",
+    "channelAdding": {
+      "feishu": "正在添加飞书渠道...",
+      "wechat": "正在写入微信预留配置...",
+      "telegram": "正在添加 Telegram 渠道..."
+    },
+    "channelDone": {
+      "feishu": "飞书渠道添加完成！",
+      "wechat": "微信预留配置已写入！",
+      "telegram": "Telegram 渠道添加完成！"
+    },
     "configNotFound": "找不到 OpenClaw 配置文件",
-    "checkingTelegram": "正在检查 Telegram 连接状态...",
+    "channelChecking": {
+      "telegram": "正在检查 Telegram 连接状态..."
+    },
     "cleaningGateway": "正在清理现有 Gateway...",
     "startingGateway": "正在启动 Gateway...",
     "switchStarting": "开始切换提供商...",

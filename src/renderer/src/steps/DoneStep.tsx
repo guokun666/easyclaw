@@ -7,15 +7,18 @@ import LogViewer from '../components/LogViewer'
 import ManagementModal from '../components/ManagementModal'
 import ProviderSwitchModal from '../components/ProviderSwitchModal'
 import { useManagement } from '../hooks/useManagement'
+import type { ChannelType } from './TelegramGuideStep'
 
 const UPDATE_CHECK_INTERVAL = 30 * 60 * 1000 // 30 min
 
 export default function DoneStep({
   botUsername,
+  channelType,
   onTroubleshoot,
   onUninstallDone
 }: {
   botUsername?: string
+  channelType: ChannelType
   onTroubleshoot?: () => void
   onUninstallDone?: () => void
 }): React.JSX.Element {
@@ -42,6 +45,14 @@ export default function DoneStep({
   tRef.current = t
 
   const { uninstall, backup } = useManagement(setStatus)
+  const channelOpenUrl =
+    channelType === 'telegram'
+      ? botUsername
+        ? `tg://resolve?domain=${botUsername}`
+        : 'tg://'
+      : channelType === 'feishu'
+        ? 'https://www.feishu.cn/'
+        : null
 
   // Check for OpenClaw updates
   const checkOpenclawUpdate = useCallback(async () => {
@@ -301,12 +312,10 @@ export default function DoneStep({
           <Button
             variant="primary"
             size="lg"
-            onClick={() => {
-              const url = botUsername ? `tg://resolve?domain=${botUsername}` : 'tg://'
-              window.open(url, '_blank')
-            }}
+            onClick={() => channelOpenUrl && window.open(channelOpenUrl, '_blank')}
+            disabled={!channelOpenUrl}
           >
-            {t('done.openTelegram')}
+            {t(`done.openChannel.${channelType}`)}
           </Button>
         )}
         {status === 'running' ? (
