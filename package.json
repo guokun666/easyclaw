@@ -31,6 +31,8 @@
     "build:linux": "electron-vite build && electron-builder --linux",
     "build:win-local": "npm run build && electron-builder --win --publish never",
     "build:mac-local": "npm run build && electron-builder --mac --publish never",
+    "package:local": "node scripts/package.mjs local",
+    "package:all": "node scripts/package.mjs cloud",
     "release": "node scripts/release.mjs"
   },
   "dependencies": {
