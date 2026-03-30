@@ -3,7 +3,13 @@ import { useTranslation } from 'react-i18next'
 import Button from './Button'
 import LogViewer from './LogViewer'
 import { useInstallLogs } from '../hooks/useIpc'
-import { providerConfigs, type Provider, type AuthMethod } from '../constants/providers'
+import {
+  providerConfigs,
+  visibleProviderConfigs,
+  visibleProviderIds,
+  type Provider,
+  type AuthMethod
+} from '../constants/providers'
 
 type Phase = 'form' | 'progress' | 'done' | 'error'
 
@@ -23,7 +29,10 @@ export default function ProviderSwitchModal({
   const { t } = useTranslation('management')
   const { t: tp } = useTranslation('providers')
   const [phase, setPhase] = useState<Phase>('form')
-  const initProvider = (currentProvider as Provider) || 'anthropic'
+  const initProvider =
+    currentProvider && visibleProviderIds.includes(currentProvider as Provider)
+      ? (currentProvider as Provider)
+      : 'modelfamily'
   const [provider, setProvider] = useState<Provider>(initProvider)
   const initConfig = providerConfigs.find((p) => p.id === initProvider)!
   const initModelId =
@@ -102,7 +111,7 @@ export default function ProviderSwitchModal({
           <div className="space-y-3 overflow-y-auto min-h-0">
             {/* Provider tabs */}
             <div className="flex flex-wrap gap-1.5">
-              {providerConfigs.map((p) => (
+              {visibleProviderConfigs.map((p) => (
                 <button
                   key={p.id}
                   onClick={() => handleProviderChange(p.id)}

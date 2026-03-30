@@ -122,6 +122,7 @@ npm install
 
 ```bash
 npm run dev
+npm run dev:local
 npm run build
 npm run lint
 npm run format
@@ -129,6 +130,10 @@ npm run typecheck
 npm run package:local
 npm run package:all
 ```
+
+开发期推荐：
+
+- `npm run dev:local`：本地启动 Electron 开发环境，热更新生效，不会打包成 `.app`、`.dmg` 或 `.exe`
 
 平台构建：
 

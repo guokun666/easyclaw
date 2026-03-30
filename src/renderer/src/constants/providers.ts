@@ -1,4 +1,12 @@
-export type Provider = 'modelfamily' | 'anthropic' | 'google' | 'openai' | 'minimax' | 'glm' | 'deepseek' | 'ollama'
+export type Provider =
+  | 'modelfamily'
+  | 'anthropic'
+  | 'google'
+  | 'openai'
+  | 'minimax'
+  | 'glm'
+  | 'deepseek'
+  | 'ollama'
 export type AuthMethod = 'api-key' | 'oauth'
 
 export interface ModelOption {
@@ -262,3 +270,9 @@ export const providerConfigs: ProviderConfig[] = [
     ]
   }
 ]
+
+export const visibleProviderIds: Provider[] = ['modelfamily', 'openai', 'anthropic']
+
+export const visibleProviderConfigs = providerConfigs.filter((provider) =>
+  visibleProviderIds.includes(provider.id)
+)

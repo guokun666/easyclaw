@@ -28,21 +28,21 @@ var PRODUCTS = {
     steps: ['steps.download', 'steps.install', 'steps.chat'],
     providers: [
       {
+        id: 'modelfamily',
+        name: 'Model Family',
+        model: 'Claude Opus 4.6',
+        price: 'Custom',
+        color: '#f97316',
+        recommended: true,
+        url: 'https://www.model-family.com'
+      },
+      {
         id: 'anthropic',
         name: 'Anthropic',
         model: 'Claude Sonnet 4.6',
-        price: '$1 / $5',
+        price: '$3 / $15',
         color: '#d97706',
-        recommended: true,
         url: 'https://console.anthropic.com/settings/keys?utm_source=easyclaw&utm_medium=referral'
-      },
-      {
-        id: 'google',
-        name: 'Google',
-        model: 'Gemini 3.1 Pro',
-        price: '$2 / $12',
-        color: '#4285f4',
-        url: 'https://aistudio.google.com/apikey?utm_source=easyclaw&utm_medium=referral'
       },
       {
         id: 'openai',
@@ -51,38 +51,6 @@ var PRODUCTS = {
         price: '$2.5 / $15',
         color: '#10a37f',
         url: 'https://platform.openai.com/api-keys?utm_source=easyclaw&utm_medium=referral'
-      },
-      {
-        id: 'deepseek',
-        name: 'DeepSeek',
-        model: 'DeepSeek V3.2',
-        price: '$0.28 / $0.40',
-        color: '#4f8df5',
-        url: 'https://platform.deepseek.com/api_keys?utm_source=easyclaw&utm_medium=referral'
-      },
-      {
-        id: 'minimax',
-        name: 'MiniMax',
-        model: 'M2.7',
-        price: '$0.3 / $2.4',
-        color: '#a855f7',
-        url: 'https://platform.minimaxi.com/user-center/basic-information/interface-key?utm_source=easyclaw&utm_medium=referral'
-      },
-      {
-        id: 'glm',
-        name: 'Z.AI',
-        model: 'GLM-5',
-        price: '$1 / $1',
-        color: '#ef4444',
-        url: 'https://open.bigmodel.cn/usercenter/apikeys?utm_source=easyclaw&utm_medium=referral'
-      },
-      {
-        id: 'ollama',
-        name: 'Ollama',
-        model: 'Llama 3.3',
-        price: 'Free',
-        color: '#f0f0f0',
-        url: 'https://ollama.com/download?utm_source=easyclaw&utm_medium=referral'
       }
     ]
   },
