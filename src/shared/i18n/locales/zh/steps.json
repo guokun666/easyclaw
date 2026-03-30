@@ -112,14 +112,14 @@
     "channels": {
       "feishu": {
         "title": "飞书",
-        "desc": "默认推荐，适合团队内部使用",
+        "desc": "默认推荐，支持一键安装，也可手动填写凭证",
         "cta": "前往飞书开放平台 ->",
         "url": "https://open.feishu.cn/"
       },
       "wechat": {
         "title": "微信",
-        "desc": "先预留配置项，后续再接自动接入",
-        "note": "微信当前为预留配置，不会自动打通 OpenClaw 渠道。"
+        "desc": "通过一键安装向导接入微信渠道",
+        "note": "微信仅支持一键式安装，执行后请按命令输出完成扫码或确认。"
       },
       "telegram": {
         "title": "Telegram",
@@ -131,26 +131,20 @@
     "guides": {
       "feishu": {
         "steps": [
-          { "title": "创建企业自建应用", "desc": "在飞书开放平台创建一个企业自建应用。" },
-          { "title": "开启机器人能力", "desc": "为应用开启机器人或消息相关权限。" },
-          { "title": "获取 App ID", "desc": "在应用凭证页复制 App ID。" },
-          { "title": "获取 App Secret", "desc": "在应用凭证页复制 App Secret。" },
-          { "title": "回到安装器填写", "desc": "在下一步中填入 App ID 和 App Secret。" }
+          { "title": "默认推荐一键安装", "desc": "下一步可直接执行飞书官方工具，自动创建并配置渠道。" },
+          { "title": "自动开启流式响应", "desc": "安装完成后会自动写入 streaming 配置并重启网关。" },
+          { "title": "扫码完成授权", "desc": "脚本会继续触发飞书 Oauth 授权，请扫描输出中的二维码。" },
+          { "title": "也支持手动模式", "desc": "如果你已准备好飞书应用凭证，也可以切换为手动填写 App ID 和 Secret。" },
+          { "title": "保留实时日志", "desc": "二维码和命令输出会实时显示在日志区域，方便复制和排查。" }
         ]
       },
       "wechat": {
         "steps": [
-          {
-            "title": "确认渠道方案",
-            "desc": "先确认你后续要对接的是公众号、企业微信还是其它微信入口。"
-          },
-          { "title": "准备应用标识", "desc": "预留填写 AppID 或同类标识字段。" },
-          { "title": "准备应用密钥", "desc": "预留填写 Secret 或同类密钥字段。" },
-          { "title": "暂不自动接入", "desc": "当前安装器只保存预留配置，不会自动创建微信机器人。" },
-          {
-            "title": "后续再接实现",
-            "desc": "等你补完服务端或插件实现后，可继续复用这套配置入口。"
-          }
+          { "title": "执行一键安装命令", "desc": "下一步会运行微信官方 CLI 安装流程。" },
+          { "title": "保持窗口开启", "desc": "日志会实时输出，请保持安装器窗口处于前台以便查看二维码。" },
+          { "title": "扫码或确认", "desc": "如果命令输出二维码或确认提示，请按终端说明完成。" },
+          { "title": "等待命令结束", "desc": "安装器会等待命令退出，再确认渠道安装结果。" },
+          { "title": "当前仅支持一键式", "desc": "微信没有手动凭证模式入口，统一通过 CLI 安装。" }
         ]
       },
       "telegram": {
@@ -182,21 +176,31 @@
     "ollamaInfo": "Ollama 必须已安装并正在运行",
     "channelLabel": "消息渠道",
     "channelTypeDesc": {
-      "feishu": "填写飞书应用凭证，安装器会写入飞书渠道配置。",
-      "wechat": "填写微信预留配置，当前仅保存配置项，不自动接入。",
+      "feishu": "默认推荐一键安装，也支持切换到手动填写飞书应用凭证。",
+      "wechat": "将执行微信一键安装命令，并实时显示扫码或确认输出。",
       "telegram": "填写 Telegram Bot Token，安装器会写入 Telegram 渠道配置。"
+    },
+    "channelSetupModeLabel": "飞书配置方式",
+    "channelSetupMode": {
+      "one-click": {
+        "title": "一键安装",
+        "desc": "推荐，自动执行安装、开启流式响应并拉起授权"
+      },
+      "manual": {
+        "title": "手动填写",
+        "desc": "适合已创建飞书应用并持有 App ID / Secret 的场景"
+      }
     },
     "required": "必填",
     "telegramToken": "Telegram Bot Token",
     "telegramHint": "正确格式：123456:ABCDEF...",
+    "feishuOneClickTitle": "飞书一键安装",
+    "feishuOneClickDesc": "会自动执行飞书安装工具、开启 channels.feishu.streaming、重启 Gateway，并继续触发 Oauth 授权二维码。",
     "feishuAppId": "飞书 App ID",
     "feishuAppSecret": "飞书 App Secret",
     "feishuSecretHint": "请输入飞书应用密钥",
-    "wechatAppId": "微信 App ID",
-    "wechatAppSecret": "微信 App Secret",
-    "wechatAppIdHint": "请输入微信应用标识",
-    "wechatSecretHint": "请输入微信应用密钥",
-    "wechatReservedNote": "微信当前仅为预留配置入口，后续可再接入正式实现。",
+    "wechatOneClickTitle": "微信一键安装",
+    "wechatOneClickDesc": "会直接执行 npx 安装命令，并实时显示二维码或交互提示。微信当前不提供手动填写模式。",
     "errorOccurred": "配置过程中发生错误",
     "savingBtn": "保存中...",
     "saveBtn": "保存配置",

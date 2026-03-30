@@ -32,6 +32,7 @@ const providerPlaceholders: Record<Provider, string> = {
 const TELEGRAM_BOT_TOKEN_PATTERN = /^\d+:[A-Za-z0-9_-]+$/
 const FEISHU_APP_ID_PATTERN = /^cli_[A-Za-z0-9]+$/
 const GENERIC_APP_SECRET_PATTERN = /^.{8,}$/
+type ChannelSetupMode = 'one-click' | 'manual'
 
 interface Props {
   provider: Provider
@@ -52,10 +53,9 @@ export default function ConfigStep({
   const { t: tp } = useTranslation('providers')
   const [apiKey, setApiKey] = useState('')
   const [telegramBotToken, setTelegramBotToken] = useState('')
+  const [feishuSetupMode, setFeishuSetupMode] = useState<ChannelSetupMode>('one-click')
   const [feishuAppId, setFeishuAppId] = useState('')
   const [feishuAppSecret, setFeishuAppSecret] = useState('')
-  const [wechatAppId, setWechatAppId] = useState('')
-  const [wechatAppSecret, setWechatAppSecret] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [oauthDone, setOauthDone] = useState(false)
@@ -72,14 +72,12 @@ export default function ConfigStep({
   const telegramBotTokenValid = TELEGRAM_BOT_TOKEN_PATTERN.test(telegramBotToken)
   const feishuAppIdValid = FEISHU_APP_ID_PATTERN.test(feishuAppId)
   const feishuAppSecretValid = GENERIC_APP_SECRET_PATTERN.test(feishuAppSecret)
-  const wechatAppIdValid = GENERIC_APP_SECRET_PATTERN.test(wechatAppId)
-  const wechatAppSecretValid = GENERIC_APP_SECRET_PATTERN.test(wechatAppSecret)
   const channelValid =
     channelType === 'telegram'
       ? telegramBotTokenValid
       : channelType === 'feishu'
-        ? feishuAppIdValid && feishuAppSecretValid
-        : wechatAppIdValid && wechatAppSecretValid
+        ? feishuSetupMode === 'one-click' || (feishuAppIdValid && feishuAppSecretValid)
+        : true
   const canSave = isOAuth
     ? oauthDone && channelValid && !saving
     : isOllama
@@ -117,11 +115,15 @@ export default function ConfigStep({
         ...(isOAuth || isOllama ? {} : { apiKey }),
         authMethod: authMethod ?? 'api-key',
         channelType,
+        channelSetupMode:
+          channelType === 'feishu'
+            ? feishuSetupMode
+            : channelType === 'wechat'
+              ? 'one-click'
+              : 'manual',
         telegramBotToken: telegramBotToken || undefined,
         feishuAppId: feishuAppId || undefined,
         feishuAppSecret: feishuAppSecret || undefined,
-        wechatAppId: wechatAppId || undefined,
-        wechatAppSecret: wechatAppSecret || undefined,
         modelId
       })
       if (result.success) {
@@ -258,84 +260,85 @@ export default function ConfigStep({
           )}
 
           {channelType === 'feishu' && (
-            <>
+            <div className="space-y-3">
               <div className="space-y-1.5">
-                <label className="text-sm font-bold">
-                  {t('config.feishuAppId')}{' '}
-                  <span className="text-error text-xs">{t('config.required')}</span>
-                </label>
-                <input
-                  type="text"
-                  placeholder="cli_xxxxxxxxxxxxx"
-                  value={feishuAppId}
-                  onChange={(e) => setFeishuAppId(e.target.value)}
-                  className={`w-full bg-bg-input rounded-xl px-4 py-2.5 text-sm font-mono outline-none border transition-all duration-200 placeholder:text-text-muted/30 ${
-                    feishuAppId && !feishuAppIdValid
-                      ? 'border-error/50 focus:border-error'
-                      : 'border-glass-border focus:border-primary focus:shadow-[0_0_0_3px_var(--color-primary-glow)]'
-                  }`}
-                />
+                <label className="text-sm font-bold">{t('config.channelSetupModeLabel')}</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {(['one-click', 'manual'] as ChannelSetupMode[]).map((mode) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      onClick={() => setFeishuSetupMode(mode)}
+                      className={`glass-card px-3 py-2 text-left transition-all ${
+                        feishuSetupMode === mode ? 'border-primary/50 bg-primary/10' : ''
+                      }`}
+                    >
+                      <div className="text-sm font-bold">
+                        {t(`config.channelSetupMode.${mode}.title`)}
+                      </div>
+                      <div className="text-[11px] text-text-muted leading-snug mt-1">
+                        {t(`config.channelSetupMode.${mode}.desc`)}
+                      </div>
+                    </button>
+                  ))}
+                </div>
               </div>
-              <div className="space-y-1.5">
-                <label className="text-sm font-bold">
-                  {t('config.feishuAppSecret')}{' '}
-                  <span className="text-error text-xs">{t('config.required')}</span>
-                </label>
-                <input
-                  type="password"
-                  placeholder={t('config.feishuSecretHint')}
-                  value={feishuAppSecret}
-                  onChange={(e) => setFeishuAppSecret(e.target.value)}
-                  className={`w-full bg-bg-input rounded-xl px-4 py-2.5 text-sm font-mono outline-none border transition-all duration-200 placeholder:text-text-muted/30 ${
-                    feishuAppSecret && !feishuAppSecretValid
-                      ? 'border-error/50 focus:border-error'
-                      : 'border-glass-border focus:border-primary focus:shadow-[0_0_0_3px_var(--color-primary-glow)]'
-                  }`}
-                />
-              </div>
-            </>
+
+              {feishuSetupMode === 'one-click' ? (
+                <div className="glass-card px-4 py-3 space-y-1.5">
+                  <p className="text-sm font-bold">{t('config.feishuOneClickTitle')}</p>
+                  <p className="text-xs text-text-muted leading-relaxed">
+                    {t('config.feishuOneClickDesc')}
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-bold">
+                      {t('config.feishuAppId')}{' '}
+                      <span className="text-error text-xs">{t('config.required')}</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="cli_xxxxxxxxxxxxx"
+                      value={feishuAppId}
+                      onChange={(e) => setFeishuAppId(e.target.value)}
+                      className={`w-full bg-bg-input rounded-xl px-4 py-2.5 text-sm font-mono outline-none border transition-all duration-200 placeholder:text-text-muted/30 ${
+                        feishuAppId && !feishuAppIdValid
+                          ? 'border-error/50 focus:border-error'
+                          : 'border-glass-border focus:border-primary focus:shadow-[0_0_0_3px_var(--color-primary-glow)]'
+                      }`}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-bold">
+                      {t('config.feishuAppSecret')}{' '}
+                      <span className="text-error text-xs">{t('config.required')}</span>
+                    </label>
+                    <input
+                      type="password"
+                      placeholder={t('config.feishuSecretHint')}
+                      value={feishuAppSecret}
+                      onChange={(e) => setFeishuAppSecret(e.target.value)}
+                      className={`w-full bg-bg-input rounded-xl px-4 py-2.5 text-sm font-mono outline-none border transition-all duration-200 placeholder:text-text-muted/30 ${
+                        feishuAppSecret && !feishuAppSecretValid
+                          ? 'border-error/50 focus:border-error'
+                          : 'border-glass-border focus:border-primary focus:shadow-[0_0_0_3px_var(--color-primary-glow)]'
+                      }`}
+                    />
+                  </div>
+                </>
+              )}
+            </div>
           )}
 
           {channelType === 'wechat' && (
-            <>
-              <div className="space-y-1.5">
-                <label className="text-sm font-bold">
-                  {t('config.wechatAppId')}{' '}
-                  <span className="text-error text-xs">{t('config.required')}</span>
-                </label>
-                <input
-                  type="text"
-                  placeholder={t('config.wechatAppIdHint')}
-                  value={wechatAppId}
-                  onChange={(e) => setWechatAppId(e.target.value)}
-                  className={`w-full bg-bg-input rounded-xl px-4 py-2.5 text-sm font-mono outline-none border transition-all duration-200 placeholder:text-text-muted/30 ${
-                    wechatAppId && !wechatAppIdValid
-                      ? 'border-error/50 focus:border-error'
-                      : 'border-glass-border focus:border-primary focus:shadow-[0_0_0_3px_var(--color-primary-glow)]'
-                  }`}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-sm font-bold">
-                  {t('config.wechatAppSecret')}{' '}
-                  <span className="text-error text-xs">{t('config.required')}</span>
-                </label>
-                <input
-                  type="password"
-                  placeholder={t('config.wechatSecretHint')}
-                  value={wechatAppSecret}
-                  onChange={(e) => setWechatAppSecret(e.target.value)}
-                  className={`w-full bg-bg-input rounded-xl px-4 py-2.5 text-sm font-mono outline-none border transition-all duration-200 placeholder:text-text-muted/30 ${
-                    wechatAppSecret && !wechatAppSecretValid
-                      ? 'border-error/50 focus:border-error'
-                      : 'border-glass-border focus:border-primary focus:shadow-[0_0_0_3px_var(--color-primary-glow)]'
-                  }`}
-                />
-              </div>
-              <p className="text-warning text-[11px] font-medium">
-                {t('config.wechatReservedNote')}
+            <div className="glass-card px-4 py-3 space-y-1.5">
+              <p className="text-sm font-bold">{t('config.wechatOneClickTitle')}</p>
+              <p className="text-xs text-text-muted leading-relaxed">
+                {t('config.wechatOneClickDesc')}
               </p>
-            </>
+            </div>
           )}
         </div>
 

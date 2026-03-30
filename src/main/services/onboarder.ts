@@ -6,6 +6,7 @@ import { join } from 'path'
 import https from 'https'
 import { BrowserWindow } from 'electron'
 import { runInWsl, readWslFile, writeWslFile } from './wsl-utils'
+import { getManagedNpmEnv } from './npm-paths'
 import { t } from '../../shared/i18n/main'
 
 interface OnboardConfig {
@@ -21,11 +22,10 @@ interface OnboardConfig {
   apiKey?: string
   authMethod?: 'api-key' | 'oauth'
   channelType?: 'feishu' | 'wechat' | 'telegram'
+  channelSetupMode?: 'one-click' | 'manual'
   telegramBotToken?: string
   feishuAppId?: string
   feishuAppSecret?: string
-  wechatAppId?: string
-  wechatAppSecret?: string
   modelId?: string
 }
 
@@ -62,19 +62,6 @@ const getChannelPatch = (
             name: 'EasyClaw'
           }
         }
-      }
-    }
-  }
-
-  if (config.channelType === 'wechat' && config.wechatAppId && config.wechatAppSecret) {
-    return {
-      key: 'wechat',
-      value: {
-        enabled: true,
-        appId: config.wechatAppId,
-        appSecret: config.wechatAppSecret,
-        transport: 'reserved',
-        note: 'Reserved by EasyClaw for future WeChat channel support'
       }
     }
   }
@@ -152,6 +139,31 @@ const createRunCmd = (): ((
   onLog: (msg: string) => void
 ) => Promise<void>) => {
   const isWindows = platform() === 'win32'
+  const stripAnsi = (value: string): string =>
+    value.replace(/\u001B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g, '')
+
+  const emitChunk = (
+    decoder: StringDecoder,
+    chunk: Buffer,
+    buffer: { current: string },
+    onLog: (msg: string) => void
+  ): void => {
+    const text = buffer.current + stripAnsi(decoder.write(chunk))
+    const parts = text.split(/\r\n|\n|\r/)
+    buffer.current = parts.pop() ?? ''
+    for (const part of parts) onLog(part)
+  }
+
+  const flushChunk = (
+    decoder: StringDecoder,
+    buffer: { current: string },
+    onLog: (msg: string) => void
+  ): void => {
+    const rest = stripAnsi(decoder.end())
+    const finalText = buffer.current + rest
+    if (finalText) onLog(finalText)
+    buffer.current = ''
+  }
 
   return (cmd, args, onLog) =>
     new Promise((resolve, reject) => {
@@ -169,19 +181,149 @@ const createRunCmd = (): ((
       }
 
       const child = spawn(fullCmd, fullArgs, {
-        env: isWindows ? process.env : getPathEnv()
+        env: isWindows ? process.env : getManagedNpmEnv(getPathEnv())
       })
 
       const outDecoder = new StringDecoder('utf8')
       const errDecoder = new StringDecoder('utf8')
-      child.stdout.on('data', (d) => outDecoder.write(d).split('\n').filter(Boolean).forEach(onLog))
-      child.stderr.on('data', (d) => errDecoder.write(d).split('\n').filter(Boolean).forEach(onLog))
+      const stdoutBuffer = { current: '' }
+      const stderrBuffer = { current: '' }
+      child.stdout.on('data', (d: Buffer) => emitChunk(outDecoder, d, stdoutBuffer, onLog))
+      child.stderr.on('data', (d: Buffer) => emitChunk(errDecoder, d, stderrBuffer, onLog))
       child.on('close', (code) => {
+        flushChunk(outDecoder, stdoutBuffer, onLog)
+        flushChunk(errDecoder, stderrBuffer, onLog)
         if (code === 0) resolve()
         else reject(new Error(`Command failed with exit code ${code}`))
       })
       child.on('error', reject)
     })
+}
+
+const getConfigPath = (): string => join(homedir(), '.openclaw', 'openclaw.json')
+
+const readOpenClawConfig = async (): Promise<Record<string, unknown> | null> => {
+  if (platform() === 'win32') {
+    try {
+      return JSON.parse(await readWslFile('/root/.openclaw/openclaw.json'))
+    } catch {
+      return null
+    }
+  }
+
+  const configPath = getConfigPath()
+  if (!existsSync(configPath)) return null
+  return JSON.parse(readFileSync(configPath, 'utf-8'))
+}
+
+const writeOpenClawConfig = async (config: Record<string, unknown>): Promise<void> => {
+  const serialized = JSON.stringify(config, null, 2)
+
+  if (platform() === 'win32') {
+    await writeWslFile('/root/.openclaw/openclaw.json', serialized)
+    return
+  }
+
+  writeFileSync(getConfigPath(), serialized, { mode: 0o600 })
+}
+
+const hasOpenClawConfig = async (): Promise<boolean> => {
+  if (platform() === 'win32') {
+    try {
+      await readWslFile('/root/.openclaw/openclaw.json')
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  return existsSync(getConfigPath())
+}
+
+const ensureCommandAvailable = async (commandName: 'npm' | 'npx'): Promise<void> => {
+  if (platform() === 'win32') {
+    try {
+      await runInWsl(`command -v ${commandName} >/dev/null 2>&1`, 10000)
+      return
+    } catch {
+      throw new Error(t('onboarder.npxRequired'))
+    }
+  }
+
+  const resolved = resolvePreferredBin(commandName)
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const child = spawn(resolved, ['--version'], {
+        env: getManagedNpmEnv(getPathEnv())
+      })
+      child.on('close', (code) => {
+        if (code === 0) resolve()
+        else reject(new Error(String(code)))
+      })
+      child.on('error', reject)
+    })
+  } catch {
+    throw new Error(t('onboarder.npxRequired'))
+  }
+}
+
+const runChannelCommand = async (
+  runCmd: (cmd: string, args: string[], onLog: (msg: string) => void) => Promise<void>,
+  onLog: (msg: string) => void,
+  command: string,
+  args: string[]
+): Promise<void> => {
+  await runCmd(command, args, onLog)
+}
+
+const runOneClickChannelSetup = async (
+  config: OnboardConfig,
+  runCmd: (cmd: string, args: string[], onLog: (msg: string) => void) => Promise<void>,
+  onLog: (msg: string) => void,
+  ocBin: string
+): Promise<void> => {
+  if (config.channelType === 'wechat') {
+    await ensureCommandAvailable('npm')
+    await ensureCommandAvailable('npx')
+    onLog(t('onboarder.channelOneClick.wechat'))
+    await runChannelCommand(
+      runCmd,
+      onLog,
+      platform() === 'win32' ? 'npx' : resolvePreferredBin('npx'),
+      ['-y', '@tencent-weixin/openclaw-weixin-cli@latest', 'install']
+    )
+    onLog(t('onboarder.channelDone.wechat'))
+    return
+  }
+
+  if (config.channelType !== 'feishu' || config.channelSetupMode !== 'one-click') return
+
+  await ensureCommandAvailable('npm')
+  await ensureCommandAvailable('npx')
+  onLog(t('onboarder.channelOneClick.feishu'))
+  await runChannelCommand(
+    runCmd,
+    onLog,
+    platform() === 'win32' ? 'npx' : resolvePreferredBin('npx'),
+    ['-y', '@larksuite/openclaw-lark-tools', 'install']
+  )
+
+  if (!(await hasOpenClawConfig())) {
+    throw new Error(t('onboarder.openclawNotInitialized'))
+  }
+
+  onLog(t('onboarder.feishuStreaming'))
+  await runChannelCommand(runCmd, onLog, ocBin, [
+    'config',
+    'set',
+    'channels.feishu.streaming',
+    'true'
+  ])
+  onLog(t('onboarder.gatewayRestarting'))
+  await runChannelCommand(runCmd, onLog, ocBin, ['gateway', 'restart'])
+  onLog(t('onboarder.feishuAuthPrompt'))
+  await runChannelCommand(runCmd, onLog, ocBin, ['feishu', 'auth'])
+  onLog(t('onboarder.channelDone.feishu'))
 }
 
 const wslKillOpenclaw = (): Promise<void> =>
@@ -446,22 +588,10 @@ export const runOnboard = async (
   }
 
   // Patch config file
-  if (isWindows) {
-    try {
-      const raw = await readWslFile('/root/.openclaw/openclaw.json')
-      const ocConfig = JSON.parse(raw)
-      patchConfig(ocConfig)
-      await writeWslFile('/root/.openclaw/openclaw.json', JSON.stringify(ocConfig, null, 2))
-    } catch {
-      /* config not found — skip patch */
-    }
-  } else {
-    const modelConfigPath = join(homedir(), '.openclaw', 'openclaw.json')
-    if (existsSync(modelConfigPath)) {
-      const ocConfig = JSON.parse(readFileSync(modelConfigPath, 'utf-8'))
-      patchConfig(ocConfig)
-      writeFileSync(modelConfigPath, JSON.stringify(ocConfig, null, 2), { mode: 0o600 })
-    }
+  const baseConfig = await readOpenClawConfig()
+  if (baseConfig) {
+    patchConfig(baseConfig)
+    await writeOpenClawConfig(baseConfig)
   }
   log(t('onboarder.basicDone'))
 
@@ -488,33 +618,29 @@ export const runOnboard = async (
   }
 
   let botUsername: string | undefined
-  const channelPatch = getChannelPatch(config)
+  const channelPatch =
+    config.channelType === 'feishu' && config.channelSetupMode !== 'manual'
+      ? null
+      : getChannelPatch(config)
 
   if (channelPatch) {
     log(t(`onboarder.channelAdding.${channelPatch.key}`))
 
-    if (isWindows) {
-      try {
-        const raw = await readWslFile('/root/.openclaw/openclaw.json')
-        const ocConfig = JSON.parse(raw)
-        ocConfig.channels = { ...ocConfig.channels, [channelPatch.key]: channelPatch.value }
-        await writeWslFile('/root/.openclaw/openclaw.json', JSON.stringify(ocConfig, null, 2))
-        log(t(`onboarder.channelDone.${channelPatch.key}`))
-      } catch {
-        log(t('onboarder.configNotFound'))
-      }
+    const channelConfig = await readOpenClawConfig()
+    if (channelConfig) {
+      const existingChannels =
+        channelConfig.channels && typeof channelConfig.channels === 'object'
+          ? (channelConfig.channels as Record<string, unknown>)
+          : {}
+      channelConfig.channels = { ...existingChannels, [channelPatch.key]: channelPatch.value }
+      await writeOpenClawConfig(channelConfig)
+      log(t(`onboarder.channelDone.${channelPatch.key}`))
     } else {
-      const configPath = join(homedir(), '.openclaw', 'openclaw.json')
-      if (existsSync(configPath)) {
-        const ocConfig = JSON.parse(readFileSync(configPath, 'utf-8'))
-        ocConfig.channels = { ...ocConfig.channels, [channelPatch.key]: channelPatch.value }
-        writeFileSync(configPath, JSON.stringify(ocConfig, null, 2), { mode: 0o600 })
-        log(t(`onboarder.channelDone.${channelPatch.key}`))
-      } else {
-        log(t('onboarder.configNotFound'))
-      }
+      log(t('onboarder.configNotFound'))
     }
   }
+
+  await runOneClickChannelSetup(config, runCmd, log, ocBin)
 
   if (config.channelType === 'telegram' && config.telegramBotToken) {
     botUsername = await fetchBotUsername(config.telegramBotToken)

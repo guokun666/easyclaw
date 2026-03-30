@@ -222,11 +222,10 @@ export const registerIpcHandlers = (getWin: () => BrowserWindow | null): void =>
         apiKey?: string
         authMethod?: 'api-key' | 'oauth'
         channelType?: 'feishu' | 'wechat' | 'telegram'
+        channelSetupMode?: 'one-click' | 'manual'
         telegramBotToken?: string
         feishuAppId?: string
         feishuAppSecret?: string
-        wechatAppId?: string
-        wechatAppSecret?: string
         modelId?: string
       }
     ) => {

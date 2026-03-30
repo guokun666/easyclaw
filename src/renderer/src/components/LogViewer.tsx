@@ -85,15 +85,14 @@ export default function LogViewer({ lines }: { lines: string[] }): React.JSX.Ele
       </div>
 
       <div
-        className={`p-3 overflow-y-auto font-mono text-[11px] leading-5 text-text-muted ${expanded ? EXPANDED_HEIGHT : COLLAPSED_HEIGHT}`}
+        className={`p-3 overflow-auto font-mono text-[11px] leading-5 text-text-muted whitespace-pre ${expanded ? EXPANDED_HEIGHT : COLLAPSED_HEIGHT}`}
       >
         {displayLines.length === 0 && (
           <span className="opacity-40 italic">{t('logViewer.waiting')}</span>
         )}
         {displayLines.map((line, i) => (
-          <div key={i} className="break-all hover:text-text/80 transition-colors">
-            <span className="text-primary/30 mr-2 select-none">&gt;</span>
-            {line}
+          <div key={i} className="hover:text-text/80 transition-colors">
+            {line || ' '}
           </div>
         ))}
         <div ref={bottomRef} />

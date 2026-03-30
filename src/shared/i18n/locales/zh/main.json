@@ -30,15 +30,24 @@
     "basicDone": "基本配置完成！",
     "channelAdding": {
       "feishu": "正在添加飞书渠道...",
-      "wechat": "正在写入微信预留配置...",
+      "wechat": "正在准备微信渠道安装...",
       "telegram": "正在添加 Telegram 渠道..."
     },
     "channelDone": {
       "feishu": "飞书渠道添加完成！",
-      "wechat": "微信预留配置已写入！",
+      "wechat": "微信渠道安装完成！",
       "telegram": "Telegram 渠道添加完成！"
     },
+    "channelOneClick": {
+      "feishu": "正在执行飞书一键安装命令...",
+      "wechat": "正在执行微信一键安装命令..."
+    },
     "configNotFound": "找不到 OpenClaw 配置文件",
+    "npxRequired": "未检测到 npm / npx。请先在环境安装步骤安装 Node.js，然后重试渠道配置。",
+    "openclawNotInitialized": "OpenClaw 尚未初始化完成，无法继续执行飞书自动配置。",
+    "feishuStreaming": "正在开启飞书流式响应...",
+    "gatewayRestarting": "正在重启 Gateway...",
+    "feishuAuthPrompt": "飞书应用已创建，请扫描下方二维码完成最后的 Oauth 授权。",
     "channelChecking": {
       "telegram": "正在检查 Telegram 连接状态..."
     },

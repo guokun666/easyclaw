@@ -9,7 +9,7 @@
     "ocCurrentVersion": "当前 v{{current}}",
     "openChannel": {
       "feishu": "打开飞书",
-      "wechat": "微信待接入",
+      "wechat": "微信需在命令中完成",
       "telegram": "打开 Telegram"
     },
     "restartBtn": "重启",

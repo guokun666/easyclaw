@@ -57,11 +57,10 @@ interface ElectronAPI {
       apiKey?: string
       authMethod?: 'api-key' | 'oauth'
       channelType?: 'feishu' | 'wechat' | 'telegram'
+      channelSetupMode?: 'one-click' | 'manual'
       telegramBotToken?: string
       feishuAppId?: string
       feishuAppSecret?: string
-      wechatAppId?: string
-      wechatAppSecret?: string
       modelId?: string
     }) => Promise<{ success: boolean; error?: string; botUsername?: string }>
   }
