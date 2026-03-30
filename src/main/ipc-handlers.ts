@@ -3,8 +3,6 @@ import { spawn } from 'child_process'
 import { platform } from 'os'
 import { join } from 'path'
 import { existsSync, readFileSync, writeFileSync, unlinkSync } from 'fs'
-import i18nMain, { initI18nMain } from '../shared/i18n/main'
-import { rebuildTrayMenu } from './services/tray-manager'
 import { checkEnvironment, checkOpenclawUpdate } from './services/env-checker'
 import { checkPort, runDoctorFix } from './services/troubleshooter'
 import {

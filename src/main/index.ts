@@ -1,11 +1,7 @@
 import { app, BrowserWindow, shell } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer } from '@electron-toolkit/utils'
-import {
-  registerIpcHandlers,
-  getSavedLocale,
-  applySavedInstallSourceSettings
-} from './ipc-handlers'
+import { registerIpcHandlers, applySavedInstallSourceSettings } from './ipc-handlers'
 import { createTray, startPolling, destroyTray } from './services/tray-manager'
 import { setupAutoUpdater, checkForUpdates } from './services/updater'
 import { startGateway } from './services/gateway'

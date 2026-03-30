@@ -386,21 +386,11 @@ function safeHtml(val) {
 }
 
 function detectLang() {
-  var saved = localStorage.getItem(STORAGE_KEY)
-  if (saved && SUPPORTED_LANGS.indexOf(saved) !== -1) return saved
-
-  var nav = (navigator.language || '').toLowerCase()
-  if (nav.startsWith('ko')) return 'ko'
-  if (nav.startsWith('ja')) return 'ja'
-  if (nav.startsWith('zh')) return 'zh'
-  return 'en'
+  return 'zh'
 }
 
 function setLang(lang) {
-  if (SUPPORTED_LANGS.indexOf(lang) === -1) lang = DEFAULT_LANG
-  _currentLang = lang
-  localStorage.setItem(STORAGE_KEY, lang)
-  applyLang(lang)
+  applyLang('zh')
 }
 
 function applyLang(lang) {
@@ -419,10 +409,6 @@ function applyLang(lang) {
     var key = el.getAttribute('data-i18n-html')
     if (t[key] != null) el.innerHTML = safeHtml(t[key])
   })
-
-  var selector = document.getElementById('lang-selector')
-  if (selector) selector.value = lang
-
   if (typeof refreshProduct === 'function') refreshProduct()
 }
 
@@ -431,14 +417,5 @@ function getCurrentLang() {
 }
 
 ;(function initI18n() {
-  var lang = detectLang()
-  applyLang(lang)
-
-  var selector = document.getElementById('lang-selector')
-  if (selector) {
-    selector.value = lang
-    selector.addEventListener('change', function () {
-      setLang(this.value)
-    })
-  }
+  applyLang('zh')
 })()
