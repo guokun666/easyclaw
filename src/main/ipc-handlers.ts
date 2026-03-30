@@ -27,6 +27,7 @@ import { checkForUpdates, downloadUpdate, installUpdate } from './services/updat
 import { uninstallOpenClaw } from './services/uninstaller'
 import { exportBackup, importBackup } from './services/backup'
 import { loginOpenAICodex } from './services/oauth'
+import type { InstallSourceMode } from './services/install-sources'
 
 interface WizardPersistedState {
   step: string
@@ -52,19 +53,25 @@ const writeSettings = (patch: Record<string, unknown>): void => {
   writeFileSync(getSettingsPath(), JSON.stringify(settings, null, 2))
 }
 
-const getInstallSourceSettings = (): { mirrorBase: string; npmRegistry: string } => {
+const getInstallSourceSettings = (): {
+  sourceMode: InstallSourceMode
+} => {
   const settings = readSettings()
   return {
-    mirrorBase: typeof settings.mirrorBase === 'string' ? settings.mirrorBase : '',
-    npmRegistry: typeof settings.npmRegistry === 'string' ? settings.npmRegistry : ''
+    sourceMode:
+      settings.sourceMode === 'official' || settings.sourceMode === 'mirror'
+        ? settings.sourceMode
+        : 'auto'
   }
 }
 
 const applyInstallSourceSettings = (): void => {
-  const { mirrorBase, npmRegistry } = getInstallSourceSettings()
-  process.env.OPENCLAW_MIRROR_BASE = mirrorBase
-  process.env.MODEL_FAMILY_MIRROR_BASE = mirrorBase
-  process.env.OPENCLAW_NPM_REGISTRY = npmRegistry
+  const { sourceMode } = getInstallSourceSettings()
+  process.env.OPENCLAW_INSTALL_SOURCE_MODE = sourceMode
+}
+
+export const applySavedInstallSourceSettings = (): void => {
+  applyInstallSourceSettings()
 }
 
 export const getSavedLocale = (): string => {
@@ -89,10 +96,14 @@ export const registerIpcHandlers = (getWin: () => BrowserWindow | null): void =>
   ipcMain.handle('settings:get-install-sources', () => getInstallSourceSettings())
   ipcMain.handle(
     'settings:set-install-sources',
-    (_e, patch: { mirrorBase?: string; npmRegistry?: string }) => {
+    (
+      _e,
+      patch: {
+        sourceMode?: InstallSourceMode
+      }
+    ) => {
       writeSettings({
-        mirrorBase: patch.mirrorBase ?? '',
-        npmRegistry: patch.npmRegistry ?? ''
+        sourceMode: patch.sourceMode ?? 'auto'
       })
       applyInstallSourceSettings()
       return { success: true }
@@ -207,7 +218,15 @@ export const registerIpcHandlers = (getWin: () => BrowserWindow | null): void =>
     async (
       _e,
       config: {
-        provider: 'modelfamily' | 'anthropic' | 'google' | 'openai' | 'minimax' | 'glm' | 'deepseek' | 'ollama'
+        provider:
+          | 'modelfamily'
+          | 'anthropic'
+          | 'google'
+          | 'openai'
+          | 'minimax'
+          | 'glm'
+          | 'deepseek'
+          | 'ollama'
         apiKey?: string
         authMethod?: 'api-key' | 'oauth'
         telegramBotToken?: string
@@ -254,7 +273,15 @@ export const registerIpcHandlers = (getWin: () => BrowserWindow | null): void =>
     async (
       _e,
       config: {
-        provider: 'modelfamily' | 'anthropic' | 'google' | 'openai' | 'minimax' | 'glm' | 'deepseek' | 'ollama'
+        provider:
+          | 'modelfamily'
+          | 'anthropic'
+          | 'google'
+          | 'openai'
+          | 'minimax'
+          | 'glm'
+          | 'deepseek'
+          | 'ollama'
         apiKey?: string
         authMethod?: 'api-key' | 'oauth'
         modelId?: string

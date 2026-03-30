@@ -8,11 +8,14 @@ import { BrowserWindow } from 'electron'
 import { checkWslState, runInWsl, WSL_STATE_ORDER, type WslState } from './wsl-utils'
 import { getPathEnv } from './path-utils'
 import { t } from '../../shared/i18n/main'
+import {
+  getNodeMacDownloadCandidates,
+  getNodeWslSetupCandidates,
+  getNpmCommandEnv,
+  getOpenclawPackageCandidates
+} from './install-sources'
 
 type ProgressCallback = (msg: string) => void
-
-const MIRROR_BASE =
-  process.env.OPENCLAW_MIRROR_BASE || process.env.MODEL_FAMILY_MIRROR_BASE || ''
 
 interface RunError extends Error {
   lines?: string[]
@@ -235,35 +238,42 @@ export const installNodeWsl = async (win: BrowserWindow): Promise<void> => {
   }
 
   log(t('installer.nodeWslInstalling'))
-  await runInWsl(
-    'curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && apt-get install -y nodejs',
-    120000
-  )
+  const candidates = getNodeWslSetupCandidates()
+  let lastError: Error | null = null
 
-  log(t('installer.nodeWslDone'))
+  for (const candidate of candidates) {
+    try {
+      log(`Source candidate: ${candidate.label}`)
+      await runInWsl(
+        `curl -fsSL ${candidate.scriptUrl} | bash - && apt-get install -y nodejs`,
+        120000
+      )
+      log(`Source selected: ${candidate.label}`)
+      log(t('installer.nodeWslDone'))
+      return
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error))
+      log(`Source failed: ${candidate.label} (${lastError.message})`)
+    }
+  }
+
+  throw lastError ?? new Error('All source candidates failed')
 }
 
 /** Install openclaw globally inside WSL Ubuntu */
 export const installOpenClawWsl = async (win: BrowserWindow): Promise<void> => {
   const log = (msg: string): void => sendProgress(win, msg)
   log(t('installer.ocWslInstalling'))
-  const mirrorTgz = MIRROR_BASE ? `${MIRROR_BASE.replace(/\/$/, '')}/openclaw/latest/openclaw.tgz` : ''
 
   await runStepsWithFallback(
-    [
-      ...(mirrorTgz
-        ? [
-            {
-              label: 'mirror tarball',
-              run: () => runInWsl(`npm install -g ${mirrorTgz}`, 120000)
-            }
-          ]
-        : []),
-      {
-        label: 'official npm',
-        run: () => runInWsl('npm install -g openclaw@latest', 120000)
-      }
-    ],
+    getOpenclawPackageCandidates().map((candidate) => ({
+      label: candidate.label,
+      run: () =>
+        runInWsl(
+          `npm_config_registry=${candidate.registry} npm install -g ${candidate.packageName}`,
+          120000
+        )
+    })),
     log
   )
 
@@ -274,23 +284,11 @@ export const installOpenClawWsl = async (win: BrowserWindow): Promise<void> => {
 
 export const installNodeMac = async (win: BrowserWindow): Promise<void> => {
   const log = (msg: string): void => sendProgress(win, msg)
-  const nodeVersion = 'v22.14.0'
-  const pkgName = `node-${nodeVersion}.pkg`
-  const officialUrl = `https://nodejs.org/dist/${nodeVersion}/${pkgName}`
-  const mirrorUrl = MIRROR_BASE
-    ? `${MIRROR_BASE.replace(/\/$/, '')}/node/${nodeVersion}/${pkgName}`
-    : ''
+  const nodeVersion = 'v22.16.0'
   const dest = join(tmpdir(), 'node-installer.pkg')
 
   log(t('installer.nodeDownloading'))
-  await tryDownloadWithFallback(
-    [
-      ...(mirrorUrl ? [{ label: 'mirror', url: mirrorUrl }] : []),
-      { label: 'official', url: officialUrl }
-    ],
-    dest,
-    log
-  )
+  await tryDownloadWithFallback(getNodeMacDownloadCandidates(nodeVersion), dest, log)
   log(t('installer.nodeInstallerOpening'))
   await runWithLog('open', ['-W', dest], log)
   log(t('installer.nodeDone'))
@@ -338,22 +336,14 @@ export const installOpenClaw = async (win: BrowserWindow): Promise<void> => {
   await runWithLog('npm', ['config', 'set', 'prefix', npmGlobalDir], log, {
     env: getPathEnv()
   })
-  const mirrorTgz = MIRROR_BASE ? `${MIRROR_BASE.replace(/\/$/, '')}/openclaw/latest/openclaw.tgz` : ''
   await runStepsWithFallback(
-    [
-      ...(mirrorTgz
-        ? [
-            {
-              label: 'mirror tarball',
-              run: () => runWithLog('npm', ['install', '-g', mirrorTgz], log, { env: getPathEnv() })
-            }
-          ]
-        : []),
-      {
-        label: 'official npm',
-        run: () => runWithLog('npm', ['install', '-g', 'openclaw@latest'], log, { env: getPathEnv() })
-      }
-    ],
+    getOpenclawPackageCandidates().map((candidate) => ({
+      label: candidate.label,
+      run: () =>
+        runWithLog('npm', ['install', '-g', candidate.packageName], log, {
+          env: getNpmCommandEnv(candidate.registry, getPathEnv())
+        })
+    })),
     log
   )
 

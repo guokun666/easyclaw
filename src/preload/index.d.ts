@@ -27,10 +27,11 @@ interface ElectronAPI {
     }>
   }
   settings: {
-    getInstallSources: () => Promise<{ mirrorBase: string; npmRegistry: string }>
+    getInstallSources: () => Promise<{
+      sourceMode: 'auto' | 'official' | 'mirror'
+    }>
     setInstallSources: (patch: {
-      mirrorBase?: string
-      npmRegistry?: string
+      sourceMode?: 'auto' | 'official' | 'mirror'
     }) => Promise<{ success: boolean }>
   }
   install: {
@@ -41,7 +42,15 @@ interface ElectronAPI {
   }
   onboard: {
     run: (config: {
-      provider: 'modelfamily' | 'anthropic' | 'google' | 'openai' | 'minimax' | 'glm' | 'deepseek' | 'ollama'
+      provider:
+        | 'modelfamily'
+        | 'anthropic'
+        | 'google'
+        | 'openai'
+        | 'minimax'
+        | 'glm'
+        | 'deepseek'
+        | 'ollama'
       apiKey?: string
       authMethod?: 'api-key' | 'oauth'
       telegramBotToken?: string
@@ -94,7 +103,16 @@ interface ElectronAPI {
       error?: string
     }>
     switchProvider: (config: {
-      provider: 'modelfamily' | 'modelfamily' | 'anthropic' | 'google' | 'openai' | 'minimax' | 'glm' | 'deepseek' | 'ollama'
+      provider:
+        | 'modelfamily'
+        | 'modelfamily'
+        | 'anthropic'
+        | 'google'
+        | 'openai'
+        | 'minimax'
+        | 'glm'
+        | 'deepseek'
+        | 'ollama'
       apiKey?: string
       authMethod?: 'api-key' | 'oauth'
       modelId?: string

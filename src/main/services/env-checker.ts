@@ -2,9 +2,7 @@ import { spawn } from 'child_process'
 import { platform } from 'os'
 import https from 'https'
 import { checkWslState, runInWsl, type WslState } from './wsl-utils'
-
-const MIRROR_BASE =
-  process.env.OPENCLAW_MIRROR_BASE || process.env.MODEL_FAMILY_MIRROR_BASE || ''
+import { getOpenclawMetaCandidates } from './install-sources'
 
 export interface EnvCheckResult {
   os: 'macos' | 'windows' | 'linux'
@@ -72,13 +70,13 @@ const semverGte = (version: string, min: string): boolean => {
   return a3 >= b3
 }
 
-const fetchLatestVersion = (pkg: string): Promise<string> =>
+const fetchLatestVersion = (url: string): Promise<string> =>
   new Promise((resolve, reject) => {
-    const req = https.get(`https://registry.npmjs.org/${pkg}/latest`, (res) => {
+    const req = https.get(url, (res) => {
       if (res.statusCode !== 200) {
         clearTimeout(timer)
         res.resume()
-        reject(new Error(`npm registry HTTP ${res.statusCode}`))
+        reject(new Error(`HTTP ${res.statusCode}`))
         return
       }
       let data = ''
@@ -104,36 +102,18 @@ const fetchLatestVersion = (pkg: string): Promise<string> =>
     }, 5000)
   })
 
-const fetchMirrorOpenclawLatestVersion = (): Promise<string | null> =>
-  new Promise((resolve) => {
-    if (!MIRROR_BASE) {
-      resolve(null)
-      return
+const fetchOpenclawLatestVersion = async (): Promise<string | null> => {
+  for (const candidate of getOpenclawMetaCandidates()) {
+    try {
+      const version = await fetchLatestVersion(candidate.url)
+      if (version) return version
+    } catch {
+      /* try next candidate */
     }
-    const base = MIRROR_BASE.replace(/\/$/, '')
-    const req = https.get(`${base}/openclaw/latest/meta.json`, (res) => {
-      if (res.statusCode !== 200) {
-        res.resume()
-        resolve(null)
-        return
-      }
-      let data = ''
-      res.on('data', (chunk) => (data += chunk))
-      res.on('end', () => {
-        try {
-          const json = JSON.parse(data)
-          resolve(typeof json.version === 'string' ? json.version : null)
-        } catch {
-          resolve(null)
-        }
-      })
-    })
-    req.on('error', () => resolve(null))
-    req.setTimeout(5000, () => {
-      req.destroy()
-      resolve(null)
-    })
-  })
+  }
+
+  return null
+}
 
 const checkNodeAndOpenclaw = async (
   run: (cmd: string, args: string[]) => Promise<string>
@@ -216,7 +196,7 @@ export const checkOpenclawUpdate = async (): Promise<OpenclawUpdateInfo> => {
 
   const getLatestVersion = async (): Promise<string | null> => {
     try {
-      return (await fetchMirrorOpenclawLatestVersion()) || (await fetchLatestVersion('openclaw'))
+      return await fetchOpenclawLatestVersion()
     } catch {
       return null
     }
@@ -270,8 +250,7 @@ export const checkEnvironment = async (): Promise<EnvCheckResult> => {
   let openclawLatestVersion: string | null = null
 
   try {
-    openclawLatestVersion =
-      (await fetchMirrorOpenclawLatestVersion()) || (await fetchLatestVersion('openclaw'))
+    openclawLatestVersion = await fetchOpenclawLatestVersion()
   } catch {
     /* network error — skip */
   }

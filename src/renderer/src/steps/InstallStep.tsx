@@ -10,6 +10,8 @@ interface InstallNeeds {
   needOpenclaw: boolean
 }
 
+type InstallSourceMode = 'auto' | 'official' | 'mirror'
+
 export default function InstallStep({
   needs,
   onDone
@@ -23,16 +25,14 @@ export default function InstallStep({
   const [done, setDone] = useState(false)
   const [failed, setFailed] = useState(false)
   const [showAdvanced, setShowAdvanced] = useState(false)
-  const [mirrorBase, setMirrorBase] = useState('')
-  const [npmRegistry, setNpmRegistry] = useState('')
+  const [sourceMode, setSourceMode] = useState<InstallSourceMode>('auto')
   const [savingSources, setSavingSources] = useState(false)
   const [sourcesMessage, setSourcesMessage] = useState<string | null>(null)
   const [sourcesError, setSourcesError] = useState<string | null>(null)
 
   useEffect(() => {
     window.electronAPI.settings.getInstallSources().then((settings) => {
-      setMirrorBase(settings.mirrorBase || '')
-      setNpmRegistry(settings.npmRegistry || '')
+      setSourceMode(settings.sourceMode || 'auto')
     })
   }, [])
 
@@ -63,8 +63,7 @@ export default function InstallStep({
     setSourcesError(null)
     try {
       const result = await window.electronAPI.settings.setInstallSources({
-        mirrorBase: mirrorBase.trim(),
-        npmRegistry: npmRegistry.trim()
+        sourceMode
       })
       if (result.success) {
         setSourcesMessage(t('install.saveSourcesSuccess'))
@@ -76,7 +75,7 @@ export default function InstallStep({
     } finally {
       setSavingSources(false)
     }
-  }, [mirrorBase, npmRegistry, t])
+  }, [sourceMode, t])
 
   const logoState = installing ? 'loading' : failed ? 'error' : done ? 'success' : 'idle'
 
@@ -136,24 +135,16 @@ export default function InstallStep({
         {showAdvanced && (
           <div className="space-y-3">
             <div className="space-y-1">
-              <label className="text-xs font-semibold">{t('install.mirrorBaseLabel')}</label>
-              <input
-                type="text"
-                value={mirrorBase}
-                onChange={(e) => setMirrorBase(e.target.value)}
-                placeholder={t('install.mirrorBasePlaceholder')}
+              <label className="text-xs font-semibold">{t('install.sourceModeLabel')}</label>
+              <select
+                value={sourceMode}
+                onChange={(e) => setSourceMode(e.target.value as InstallSourceMode)}
                 className="w-full bg-bg-input rounded-xl px-4 py-2.5 text-xs outline-none border border-glass-border focus:border-primary"
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs font-semibold">{t('install.npmRegistryLabel')}</label>
-              <input
-                type="text"
-                value={npmRegistry}
-                onChange={(e) => setNpmRegistry(e.target.value)}
-                placeholder={t('install.npmRegistryPlaceholder')}
-                className="w-full bg-bg-input rounded-xl px-4 py-2.5 text-xs outline-none border border-glass-border focus:border-primary"
-              />
+              >
+                <option value="auto">{t('install.sourceMode.auto')}</option>
+                <option value="official">{t('install.sourceMode.official')}</option>
+                <option value="mirror">{t('install.sourceMode.mirror')}</option>
+              </select>
             </div>
             {sourcesMessage && <p className="text-xs text-success font-medium">{sourcesMessage}</p>}
             {sourcesError && <p className="text-xs text-error font-medium">{sourcesError}</p>}

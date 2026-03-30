@@ -70,11 +70,13 @@
     "nodejs": "Node.js 22 LTS",
     "openclaw": "OpenClaw",
     "advancedTitle": "高级安装源",
-    "advancedDesc": "可选：设置镜像源地址或自定义 npm registry",
-    "mirrorBaseLabel": "镜像源地址",
-    "mirrorBasePlaceholder": "https://your-server.example.com/openclaw-mirror",
-    "npmRegistryLabel": "NPM Registry 地址",
-    "npmRegistryPlaceholder": "https://registry.npmjs.org",
+    "advancedDesc": "可选：切换官方源或公共镜像源，auto 会自动选择可用方案",
+    "sourceModeLabel": "下载/更新策略",
+    "sourceMode": {
+      "auto": "自动（优先镜像，失败后官方）",
+      "official": "仅官方",
+      "mirror": "仅镜像"
+    },
     "savingSources": "保存中...",
     "saveSources": "保存安装源",
     "saveSourcesSuccess": "安装源已保存",

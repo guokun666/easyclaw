@@ -70,11 +70,13 @@
     "nodejs": "Node.js 22 LTS",
     "openclaw": "OpenClaw",
     "advancedTitle": "Advanced install sources",
-    "advancedDesc": "Optional: set mirror base or custom npm registry",
-    "mirrorBaseLabel": "Mirror Base URL",
-    "mirrorBasePlaceholder": "https://your-server.example.com/openclaw-mirror",
-    "npmRegistryLabel": "NPM Registry URL",
-    "npmRegistryPlaceholder": "https://registry.npmjs.org",
+    "advancedDesc": "Optional: switch between official and public mirror sources. Auto will try the mirror first.",
+    "sourceModeLabel": "Download/update strategy",
+    "sourceMode": {
+      "auto": "Auto (prefer mirror, then official)",
+      "official": "Official only",
+      "mirror": "Mirror only"
+    },
     "savingSources": "Saving...",
     "saveSources": "Save sources",
     "saveSourcesSuccess": "Install sources saved",

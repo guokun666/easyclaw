@@ -21,11 +21,11 @@ const electronAPI = {
     }> => ipcRenderer.invoke('env:check')
   },
   settings: {
-    getInstallSources: (): Promise<{ mirrorBase: string; npmRegistry: string }> =>
-      ipcRenderer.invoke('settings:get-install-sources'),
+    getInstallSources: (): Promise<{
+      sourceMode: 'auto' | 'official' | 'mirror'
+    }> => ipcRenderer.invoke('settings:get-install-sources'),
     setInstallSources: (patch: {
-      mirrorBase?: string
-      npmRegistry?: string
+      sourceMode?: 'auto' | 'official' | 'mirror'
     }): Promise<{ success: boolean }> => ipcRenderer.invoke('settings:set-install-sources', patch)
   },
   install: {
@@ -45,7 +45,16 @@ const electronAPI = {
   },
   onboard: {
     run: (config: {
-      provider: 'modelfamily' | 'modelfamily' | 'anthropic' | 'google' | 'openai' | 'minimax' | 'glm' | 'deepseek' | 'ollama'
+      provider:
+        | 'modelfamily'
+        | 'modelfamily'
+        | 'anthropic'
+        | 'google'
+        | 'openai'
+        | 'minimax'
+        | 'glm'
+        | 'deepseek'
+        | 'ollama'
       apiKey?: string
       authMethod?: 'api-key' | 'oauth'
       telegramBotToken?: string
@@ -138,7 +147,15 @@ const electronAPI = {
       error?: string
     }> => ipcRenderer.invoke('config:read'),
     switchProvider: (config: {
-      provider: 'modelfamily' | 'anthropic' | 'google' | 'openai' | 'minimax' | 'glm' | 'deepseek' | 'ollama'
+      provider:
+        | 'modelfamily'
+        | 'anthropic'
+        | 'google'
+        | 'openai'
+        | 'minimax'
+        | 'glm'
+        | 'deepseek'
+        | 'ollama'
       apiKey?: string
       authMethod?: 'api-key' | 'oauth'
       modelId?: string

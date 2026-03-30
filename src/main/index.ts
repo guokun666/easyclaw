@@ -1,7 +1,11 @@
 import { app, BrowserWindow, shell } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer } from '@electron-toolkit/utils'
-import { registerIpcHandlers, getSavedLocale } from './ipc-handlers'
+import {
+  registerIpcHandlers,
+  getSavedLocale,
+  applySavedInstallSourceSettings
+} from './ipc-handlers'
 import { createTray, startPolling, destroyTray } from './services/tray-manager'
 import { setupAutoUpdater, checkForUpdates } from './services/updater'
 import { startGateway } from './services/gateway'
@@ -79,6 +83,7 @@ app.on('before-quit', () => {
 })
 
 app.whenReady().then(async () => {
+  applySavedInstallSourceSettings()
   await initI18nMain(getSavedLocale())
   electronApp.setAppUserModelId('com.modelfamily.openclaw.installer')
 

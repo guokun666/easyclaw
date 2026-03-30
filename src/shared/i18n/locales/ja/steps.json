@@ -69,6 +69,18 @@
     "desc": "以下の項目をインストールします",
     "nodejs": "Node.js 22 LTS",
     "openclaw": "OpenClaw",
+    "advancedTitle": "高度なインストールソース",
+    "advancedDesc": "任意: 公式ソースと公開ミラーを切り替えます。auto は利用可能なミラーを先に試します。",
+    "sourceModeLabel": "ダウンロード/更新戦略",
+    "sourceMode": {
+      "auto": "自動（ミラー優先、失敗時は公式）",
+      "official": "公式のみ",
+      "mirror": "ミラーのみ"
+    },
+    "savingSources": "保存中...",
+    "saveSources": "ソースを保存",
+    "saveSourcesSuccess": "インストールソースを保存しました",
+    "saveSourcesError": "インストールソースの保存に失敗しました",
     "retryBtn": "再試行",
     "startBtn": "インストール開始",
     "nextBtn": "次のステップへ"
