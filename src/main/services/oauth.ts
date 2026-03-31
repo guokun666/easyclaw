@@ -1,4 +1,4 @@
-import { BrowserWindow } from 'electron'
+import { shell } from 'electron'
 import { randomBytes, createHash } from 'crypto'
 import { createServer, type Server } from 'http'
 import { join } from 'path'
@@ -201,7 +201,7 @@ const saveCredentials = async (creds: {
   }
 }
 
-export const loginOpenAICodex = async (win: BrowserWindow): Promise<void> => {
+export const loginOpenAICodex = async (): Promise<void> => {
   const { verifier, challenge } = generatePKCE()
   const state = randomBytes(16).toString('hex')
   const authUrl = buildAuthUrl(challenge, state)
@@ -209,38 +209,19 @@ export const loginOpenAICodex = async (win: BrowserWindow): Promise<void> => {
   // Start callback server
   const { server, waitForCode } = await startCallbackServer(state)
 
-  // Open auth URL in BrowserWindow
-  const authWindow = new BrowserWindow({
-    width: 800,
-    height: 700,
-    title: 'OpenAI Login',
-    titleBarStyle: 'default',
-    parent: win,
-    modal: true,
-    closable: true,
-    webPreferences: {
-      nodeIntegration: false,
-      contextIsolation: true
-    }
-  })
-  authWindow.loadURL(authUrl)
-
   let resolved = false
   const cleanup = (): void => {
     if (resolved) return
     resolved = true
     server.close()
-    if (!authWindow.isDestroyed()) authWindow.close()
   }
 
   try {
-    // Race: callback server vs window close
-    const codePromise = waitForCode()
-    const closePromise = new Promise<null>((resolve) => {
-      authWindow.once('closed', () => resolve(null))
-    })
+    // Open the OAuth flow in the system browser. OpenAI auth is more reliable
+    // there than inside an embedded Electron webview.
+    await shell.openExternal(authUrl)
 
-    const code = await Promise.race([codePromise, closePromise])
+    const code = await waitForCode()
     if (!code) {
       cleanup()
       throw new Error('cancelled')

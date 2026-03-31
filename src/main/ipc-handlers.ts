@@ -251,7 +251,7 @@ export const registerIpcHandlers = (getWin: () => BrowserWindow | null): void =>
 
   ipcMain.handle('oauth:openai-codex', async () => {
     try {
-      await loginOpenAICodex(win())
+      await loginOpenAICodex()
       return { success: true }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)

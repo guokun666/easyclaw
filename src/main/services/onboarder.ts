@@ -763,6 +763,30 @@ const runOneClickChannelSetup = async (
   onLog(t('onboarder.channelDone.feishu'))
 }
 
+const ensureFeishuStreamingEnabled = async (
+  config: OnboardConfig,
+  runCmd: (cmd: string, args: string[], onLog: (msg: string) => void) => Promise<void>,
+  onLog: (msg: string) => void,
+  ocBin: string
+): Promise<void> => {
+  if (config.channelType !== 'feishu') return
+
+  if (!(await hasOpenClawConfig())) {
+    throw new Error(t('onboarder.openclawNotInitialized'))
+  }
+
+  onLog(t('onboarder.feishuStreaming'))
+  await runChannelCommand(runCmd, onLog, ocBin, [
+    'config',
+    'set',
+    'channels.feishu.streaming',
+    'true'
+  ])
+
+  onLog(t('onboarder.gatewayRestarting'))
+  await runChannelCommand(runCmd, onLog, ocBin, ['gateway', 'restart'])
+}
+
 const wslKillOpenclaw = (): Promise<void> =>
   new Promise((resolve) => {
     const child = spawn('wsl', [
@@ -1129,6 +1153,11 @@ export const runOnboard = async (
     status(68, t('onboarder.status.launchingWechat'))
   }
   await runOneClickChannelSetup(win, config, runCmd, log, ocBin, status)
+
+  if (config.channelType === 'feishu') {
+    status(78, t('onboarder.feishuStreaming'))
+    await ensureFeishuStreamingEnabled(config, runCmd, log, ocBin)
+  }
 
   if (config.channelType === 'telegram' && config.telegramBotToken) {
     status(78, t('onboarder.status.checkingTelegram'))
