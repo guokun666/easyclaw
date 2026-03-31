@@ -178,6 +178,21 @@ const electronAPI = {
       } | null
       error?: string
     }> => ipcRenderer.invoke('config:read'),
+    validateApiKey: (config: {
+      provider:
+        | 'modelfamily'
+        | 'anthropic'
+        | 'google'
+        | 'openai'
+        | 'minimax'
+        | 'glm'
+        | 'deepseek'
+        | 'ollama'
+      apiKey?: string
+      authMethod?: 'api-key' | 'oauth'
+      modelId?: string
+    }): Promise<{ success: boolean; error?: string }> =>
+      ipcRenderer.invoke('config:validate-api-key', config),
     switchProvider: (config: {
       provider:
         | 'modelfamily'

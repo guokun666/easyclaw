@@ -12,7 +12,12 @@ import {
   installNodeWsl,
   installOpenClawWsl
 } from './services/installer'
-import { runOnboard, readCurrentConfig, switchProvider } from './services/onboarder'
+import {
+  runOnboard,
+  readCurrentConfig,
+  switchProvider,
+  validateProviderApiKey
+} from './services/onboarder'
 import {
   startGateway,
   stopGateway,
@@ -263,6 +268,33 @@ export const registerIpcHandlers = (getWin: () => BrowserWindow | null): void =>
       return { success: false, config: null, error: e instanceof Error ? e.message : String(e) }
     }
   })
+
+  ipcMain.handle(
+    'config:validate-api-key',
+    async (
+      _e,
+      config: {
+        provider:
+          | 'modelfamily'
+          | 'anthropic'
+          | 'google'
+          | 'openai'
+          | 'minimax'
+          | 'glm'
+          | 'deepseek'
+          | 'ollama'
+        apiKey?: string
+        authMethod?: 'api-key' | 'oauth'
+        modelId?: string
+      }
+    ) => {
+      try {
+        return await validateProviderApiKey(config)
+      } catch (e) {
+        return { success: false, error: e instanceof Error ? e.message : String(e) }
+      }
+    }
+  )
 
   ipcMain.handle(
     'config:switch-provider',

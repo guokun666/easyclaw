@@ -31,10 +31,12 @@
       "initializing": "初始化 OpenClaw",
       "stoppingOldGateway": "停止旧 Gateway",
       "applyingConfig": "写入基础配置",
+      "validatingProvider": "校验模型提供方令牌",
       "configuringChannel": "写入渠道配置",
       "launchingFeishu": "启动飞书一键安装",
       "launchingWechat": "启动微信一键安装",
       "waitingExternal": "等待外部终端完成授权",
+      "validatingFeishu": "校验飞书令牌与连通性",
       "checkingTelegram": "检查 Telegram 状态",
       "finishing": "收尾并启动 Gateway",
       "completed": "配置完成"
@@ -62,8 +64,25 @@
     "embeddedTerminalFallback": "嵌入式终端启动失败，正在回退到系统 Terminal。",
     "externalTerminalOpened": "已在 Terminal 中打开交互安装窗口，请在外部终端完成扫码或授权。",
     "feishuStreaming": "正在开启飞书流式响应...",
+    "feishuDiagnosing": "正在校验飞书令牌与 API 连通性...",
+    "feishuDiagnosePassed": "飞书令牌校验通过，API 连通性正常。",
     "gatewayRestarting": "正在重启 Gateway...",
     "feishuAuthPrompt": "飞书应用已创建，请扫描下方二维码完成最后的 Oauth 授权。",
+    "feishuChatAuthPrompt": "如后续需要补用户权限授权，请在飞书中向机器人发送 /feishu auth。",
+    "providerValidating": {
+      "modelfamily": "正在校验 Model Family API Key..."
+    },
+    "providerValidatePassed": {
+      "modelfamily": "Model Family API Key 校验通过。"
+    },
+    "providerValidateSkipped": {
+      "modelfamily": "Model Family API Key 校验未完成，已跳过阻塞校验：{{message}}"
+    },
+    "providerValidateFailed": {
+      "modelfamily": "Model Family API Key 校验失败：{{message}}",
+      "openai": "OpenAI API Key 校验失败：{{message}}",
+      "anthropic": "Anthropic API Key 校验失败：{{message}}"
+    },
     "channelChecking": {
       "telegram": "正在检查 Telegram 连接状态..."
     },

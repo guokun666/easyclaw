@@ -12,8 +12,8 @@ import type { ChannelType } from './TelegramGuideStep'
 const UPDATE_CHECK_INTERVAL = 30 * 60 * 1000 // 30 min
 
 export default function DoneStep({
-  botUsername,
-  channelType,
+  botUsername: _botUsername,
+  channelType: _channelType,
   onTroubleshoot,
   onUninstallDone
 }: {
@@ -45,14 +45,6 @@ export default function DoneStep({
   tRef.current = t
 
   const { uninstall, backup } = useManagement(setStatus)
-  const channelOpenUrl =
-    channelType === 'telegram'
-      ? botUsername
-        ? `tg://resolve?domain=${botUsername}`
-        : 'tg://'
-      : channelType === 'feishu'
-        ? 'https://www.feishu.cn/'
-        : null
 
   // Check for OpenClaw updates
   const checkOpenclawUpdate = useCallback(async () => {
@@ -187,21 +179,6 @@ export default function DoneStep({
     setStatus('stopped')
   }
 
-  const handleStart = async (): Promise<void> => {
-    setStatus('starting')
-    setLogs([])
-    setHasError(false)
-    const r = await window.electronAPI.gateway.start()
-    setStatus(r.success ? 'running' : 'stopped')
-    if (!r.success) {
-      setHasError(true)
-      if (r.error) {
-        setLogs((prev) => [...prev, tRef.current('done.errorPrefix', { msg: r.error })])
-        setShowLogs(true)
-      }
-    }
-  }
-
   const handleRestart = useCallback(async (): Promise<void> => {
     setStatus('starting')
     setLogs([])
@@ -308,16 +285,6 @@ export default function DoneStep({
 
       {/* Action buttons */}
       <div className="flex gap-3">
-        {status === 'running' && (
-          <Button
-            variant="primary"
-            size="lg"
-            onClick={() => channelOpenUrl && window.open(channelOpenUrl, '_blank')}
-            disabled={!channelOpenUrl}
-          >
-            {t(`done.openChannel.${channelType}`)}
-          </Button>
-        )}
         {status === 'running' ? (
           <>
             <Button variant="secondary" size="sm" onClick={handleRestart}>
@@ -327,10 +294,6 @@ export default function DoneStep({
               {t('done.stopBtn')}
             </Button>
           </>
-        ) : status === 'stopped' ? (
-          <Button variant="secondary" size="sm" onClick={handleStart}>
-            {t('done.startBtn')}
-          </Button>
         ) : null}
       </div>
 

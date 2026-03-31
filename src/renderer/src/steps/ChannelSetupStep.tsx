@@ -42,8 +42,8 @@ export default function ChannelSetupStep({
   }
 
   return (
-    <div className="flex-1 w-full overflow-y-auto">
-      <div className="flex flex-col px-8 pt-6 pb-28 gap-4 min-h-full">
+    <div className="flex-1 min-h-0 w-full overflow-y-auto">
+      <div className="flex flex-col px-8 pt-6 pb-40 gap-4 min-h-full">
         <div className="flex items-center gap-3">
           <LobsterLogo state={running ? 'loading' : error ? 'error' : 'idle'} size={48} />
           <div>
@@ -75,7 +75,7 @@ export default function ChannelSetupStep({
 
         <div className="flex justify-end mt-1">
           <Button variant="primary" size="lg" onClick={handleRun} disabled={running}>
-          {running ? t('setup.runningBtn') : error ? t('setup.retryBtn') : t('setup.startBtn')}
+            {running ? t('setup.runningBtn') : error ? t('setup.retryBtn') : t('setup.startBtn')}
           </Button>
         </div>
       </div>

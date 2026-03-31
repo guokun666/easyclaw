@@ -33,6 +33,11 @@ interface OnboardResult {
   botUsername?: string
 }
 
+export interface ProviderKeyValidationResult {
+  success: boolean
+  error?: string
+}
+
 const LOG_BATCH_INTERVAL_MS = 120
 const LOG_MAX_BATCH_LINES = 24
 const LOG_MAX_LINE_LENGTH = 600
@@ -469,6 +474,206 @@ const runChannelCommand = async (
   await runCmd(command, args, onLog)
 }
 
+const resolveProviderModelId = (modelId: string | undefined, fallback: string): string => {
+  if (!modelId) return fallback
+  const [, resolved] = modelId.split('/')
+  return resolved || modelId
+}
+
+const validateModelFamilyApiKey = async (
+  apiKey: string,
+  modelId?: string
+): Promise<{ ok: true } | { ok: false; kind: 'auth' | 'timeout' | 'network'; message: string }> => {
+  const payload = JSON.stringify({
+    model: resolveProviderModelId(modelId, 'claude-opus-4-6'),
+    max_tokens: 1,
+    messages: [{ role: 'user', content: 'ping' }]
+  })
+  try {
+    const response = await fetch('https://www.model-family.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01'
+      },
+      body: payload,
+      signal: AbortSignal.timeout(5000)
+    })
+
+    if (response.ok) {
+      return { ok: true }
+    }
+
+    const body = await response.text()
+    let message = `HTTP ${response.status}`
+    try {
+      const json = JSON.parse(body) as {
+        error?: { message?: string }
+      }
+      if (json.error?.message) message = json.error.message
+    } catch {
+      if (body.trim()) message = body.trim()
+    }
+
+    const kind =
+      response.status === 401 || /无效的令牌|invalid token/i.test(message) ? 'auth' : 'network'
+    return { ok: false, kind, message }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    const kind =
+      /aborted|timeout/i.test(message) || error instanceof DOMException ? 'timeout' : 'network'
+    return { ok: false, kind, message }
+  }
+}
+
+const validateOpenAIApiKey = async (
+  apiKey: string
+): Promise<{ ok: true } | { ok: false; kind: 'auth' | 'timeout' | 'network'; message: string }> => {
+  try {
+    const response = await fetch('https://api.openai.com/v1/models', {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${apiKey}`
+      },
+      signal: AbortSignal.timeout(5000)
+    })
+
+    if (response.ok) return { ok: true }
+
+    const body = await response.text()
+    let message = `HTTP ${response.status}`
+    try {
+      const json = JSON.parse(body) as {
+        error?: { message?: string }
+      }
+      if (json.error?.message) message = json.error.message
+    } catch {
+      if (body.trim()) message = body.trim()
+    }
+
+    const kind =
+      response.status === 401 || /invalid api key|incorrect api key|unauthorized/i.test(message)
+        ? 'auth'
+        : 'network'
+    return { ok: false, kind, message }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    const kind =
+      /aborted|timeout/i.test(message) || error instanceof DOMException ? 'timeout' : 'network'
+    return { ok: false, kind, message }
+  }
+}
+
+const validateAnthropicApiKey = async (
+  apiKey: string,
+  modelId?: string
+): Promise<{ ok: true } | { ok: false; kind: 'auth' | 'timeout' | 'network'; message: string }> => {
+  const payload = JSON.stringify({
+    model: resolveProviderModelId(modelId, 'claude-sonnet-4-6'),
+    max_tokens: 1,
+    messages: [{ role: 'user', content: 'ping' }]
+  })
+
+  try {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01'
+      },
+      body: payload,
+      signal: AbortSignal.timeout(5000)
+    })
+
+    if (response.ok) return { ok: true }
+
+    const body = await response.text()
+    let message = `HTTP ${response.status}`
+    try {
+      const json = JSON.parse(body) as {
+        error?: { message?: string }
+      }
+      if (json.error?.message) message = json.error.message
+    } catch {
+      if (body.trim()) message = body.trim()
+    }
+
+    const kind =
+      response.status === 401 || /invalid x-api-key|authentication/i.test(message)
+        ? 'auth'
+        : 'network'
+    return { ok: false, kind, message }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    const kind =
+      /aborted|timeout/i.test(message) || error instanceof DOMException ? 'timeout' : 'network'
+    return { ok: false, kind, message }
+  }
+}
+
+const validateProviderBeforeChannelSetup = async (
+  config: OnboardConfig,
+  onLog: (msg: string) => void,
+  onStatus?: (percent: number, stage: string, detail?: string) => void
+): Promise<void> => {
+  if (config.provider !== 'modelfamily' || config.authMethod === 'oauth' || !config.apiKey) return
+
+  onStatus?.(58, t('onboarder.status.validatingProvider'))
+  onLog(t('onboarder.providerValidating.modelfamily'))
+
+  const result = await validateModelFamilyApiKey(config.apiKey, config.modelId)
+  if (result.ok) {
+    onLog(t('onboarder.providerValidatePassed.modelfamily'))
+    return
+  }
+
+  if (result.kind === 'auth') {
+    throw new Error(t('onboarder.providerValidateFailed.modelfamily', { message: result.message }))
+  }
+
+  onLog(t('onboarder.providerValidateSkipped.modelfamily', { message: result.message }))
+}
+
+export const validateProviderApiKey = async (config: {
+  provider: OnboardConfig['provider']
+  apiKey?: string
+  authMethod?: 'api-key' | 'oauth'
+  modelId?: string
+}): Promise<ProviderKeyValidationResult> => {
+  if (config.authMethod === 'oauth' || config.provider === 'ollama') {
+    return { success: true }
+  }
+
+  if (!config.apiKey) {
+    return { success: false, error: t('config.keyValidationFailed') }
+  }
+
+  const result =
+    config.provider === 'modelfamily'
+      ? await validateModelFamilyApiKey(config.apiKey, config.modelId)
+      : config.provider === 'openai'
+        ? await validateOpenAIApiKey(config.apiKey)
+        : config.provider === 'anthropic'
+          ? await validateAnthropicApiKey(config.apiKey, config.modelId)
+          : { ok: true as const }
+
+  if (result.ok) return { success: true }
+
+  return {
+    success: false,
+    error:
+      config.provider === 'modelfamily'
+        ? t('onboarder.providerValidateFailed.modelfamily', { message: result.message })
+        : config.provider === 'openai'
+          ? t('onboarder.providerValidateFailed.openai', { message: result.message })
+          : config.provider === 'anthropic'
+            ? t('onboarder.providerValidateFailed.anthropic', { message: result.message })
+            : result.message
+  }
+}
+
 const runOneClickChannelSetup = async (
   _win: BrowserWindow,
   config: OnboardConfig,
@@ -510,7 +715,8 @@ const runOneClickChannelSetup = async (
       `test -f ${shellEscape(getConfigPath())}`,
       `${shellEscape(ocBin)} config set channels.feishu.streaming true`,
       `${shellEscape(ocBin)} gateway restart`,
-      `echo ${shellEscape(t('onboarder.feishuAuthPrompt'))}`
+      `echo ${shellEscape(t('onboarder.feishuAuthPrompt'))}`,
+      `echo ${shellEscape(t('onboarder.feishuChatAuthPrompt'))}`
     ]
     await runMacTerminalScript('EasyClaw 飞书渠道安装', commands, onLog, onStatus)
     onLog(t('onboarder.channelDone.feishu'))
@@ -536,8 +742,7 @@ const runOneClickChannelSetup = async (
   ])
   onLog(t('onboarder.gatewayRestarting'))
   await runChannelCommand(runCmd, onLog, ocBin, ['gateway', 'restart'])
-  onLog(t('onboarder.feishuAuthPrompt'))
-  await runChannelCommand(runCmd, onLog, ocBin, ['feishu', 'auth'])
+  onLog(t('onboarder.feishuChatAuthPrompt'))
   onLog(t('onboarder.channelDone.feishu'))
 }
 
@@ -852,6 +1057,8 @@ export const runOnboard = async (
   }
   status(55, t('onboarder.status.applyingConfig'))
   log(t('onboarder.basicDone'))
+
+  await validateProviderBeforeChannelSetup(config, log, status)
 
   // Apply IPv4 fix to plist (macOS only)
   if (isMac) {

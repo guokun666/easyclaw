@@ -69,8 +69,14 @@ export default function ConfigStep({
   const [error, setError] = useState<string | null>(null)
   const [oauthDone, setOauthDone] = useState(false)
   const [oauthLoading, setOauthLoading] = useState(false)
+  const [keyValidating, setKeyValidating] = useState(false)
+  const [validatedApiKey, setValidatedApiKey] = useState<string | null>(null)
   const isOAuth = authMethod === 'oauth'
   const isOllama = provider === 'ollama'
+  const needsPreValidation =
+    (provider === 'modelfamily' || provider === 'openai' || provider === 'anthropic') &&
+    !isOAuth &&
+    !isOllama
 
   const pattern = providerPatterns[provider]
   const label =
@@ -113,8 +119,35 @@ export default function ConfigStep({
     }
   }
 
-  const handleNext = (): void => {
+  const handleNext = async (): Promise<void> => {
     setError(null)
+
+    if (needsPreValidation && apiKeyValid && validatedApiKey !== apiKey) {
+      setKeyValidating(true)
+      try {
+        const result = await window.electronAPI.config.validateApiKey({
+          provider,
+          apiKey,
+          authMethod: authMethod ?? 'api-key',
+          modelId
+        })
+
+        if (!result.success) {
+          setValidatedApiKey(null)
+          setError(result.error ?? t('config.keyValidationFailed'))
+          return
+        }
+
+        setValidatedApiKey(apiKey)
+      } catch (err) {
+        setValidatedApiKey(null)
+        setError(err instanceof Error ? err.message : t('common:error.unknown'))
+        return
+      } finally {
+        setKeyValidating(false)
+      }
+    }
+
     onNext({
       provider,
       ...(isOAuth || isOllama ? {} : { apiKey }),
@@ -212,13 +245,19 @@ export default function ConfigStep({
               type="password"
               placeholder={placeholder}
               value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
+              onChange={(e) => {
+                setApiKey(e.target.value)
+                setValidatedApiKey(null)
+              }}
               className={`w-full bg-bg-input rounded-xl px-4 py-2.5 text-sm font-mono outline-none border transition-all duration-200 placeholder:text-text-muted/30 ${
                 apiKey && !apiKeyValid
                   ? 'border-error/50 focus:border-error'
                   : 'border-glass-border focus:border-primary focus:shadow-[0_0_0_3px_var(--color-primary-glow)]'
               }`}
             />
+            {needsPreValidation && validatedApiKey === apiKey && apiKeyValid && (
+              <p className="text-success text-[11px] font-medium">{t('config.keyValidated')}</p>
+            )}
           </div>
         )}
 
@@ -342,8 +381,13 @@ export default function ConfigStep({
       </div>
 
       <div className="shrink-0 flex justify-end py-3">
-        <Button variant="primary" size="lg" onClick={handleNext} disabled={!canSave}>
-          {t('config.nextBtn')}
+        <Button
+          variant="primary"
+          size="lg"
+          onClick={() => void handleNext()}
+          disabled={!canSave || keyValidating}
+        >
+          {keyValidating ? t('config.keyValidating') : t('config.nextBtn')}
         </Button>
       </div>
     </div>
