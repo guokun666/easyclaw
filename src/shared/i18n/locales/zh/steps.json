@@ -216,6 +216,7 @@
     "runningDesc": "我们正在为你应用 OpenClaw 与消息渠道配置，请稍候。",
     "failedDesc": "执行过程中出现问题，你可以直接重试。",
     "doneDesc": "配置完成，正在进入下一步。",
+    "readyDesc": "页面已经稳定切换完成，现在改为手动开始执行。",
     "pausedDesc": "这一页暂时只验证页面跳转，先不触发真实配置执行。",
     "summaryTitle": "当前执行内容",
     "summaryChannel": {
@@ -225,9 +226,13 @@
     },
     "externalTitle": "外部终端执行",
     "externalDesc": "我们会自动打开系统 Terminal 并在里面执行扫码与授权。这个页面只负责等待结果，避免最后一步再次白屏。",
+    "manualTitle": "手动触发执行",
+    "manualBody": "现在不会在进入页面时自动执行。请点击下方按钮手动开始，这样可以继续验证是不是“自动执行时机”导致了之前的白屏。",
     "pausedTitle": "已暂停真实执行",
     "pausedBody": "当前不会调用 openclaw、npx 或外部 Terminal。先确认点击“下一步”后页面能稳定跳转到这里，再继续恢复执行逻辑。",
     "continueBtn": "继续进入完成页",
+    "progressTitle": "当前进度",
+    "startBtn": "开始执行配置",
     "runningBtn": "执行中...",
     "retryBtn": "重新执行",
     "errorOccurred": "执行过程中发生错误"

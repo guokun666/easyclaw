@@ -528,6 +528,50 @@ const wslKillOpenclaw = (): Promise<void> =>
     child.on('error', () => resolve())
   })
 
+const listMacProcesses = (): Promise<Array<{ pid: number; command: string }>> =>
+  new Promise((resolve) => {
+    const child = spawn('ps', ['-axo', 'pid=,command='])
+    let output = ''
+
+    child.stdout.on('data', (chunk: Buffer) => {
+      output += chunk.toString('utf-8')
+    })
+    child.on('close', () => {
+      const processes = output
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .map((line) => {
+          const match = line.match(/^(\d+)\s+(.+)$/)
+          if (!match) return null
+          return { pid: Number(match[1]), command: match[2] }
+        })
+        .filter((value): value is { pid: number; command: string } => value !== null)
+
+      resolve(processes)
+    })
+    child.on('error', () => resolve([]))
+  })
+
+const killMacOpenClawProcesses = async (): Promise<void> => {
+  const currentPid = process.pid
+  const candidates = await listMacProcesses()
+  const targetPids = candidates
+    .filter(({ pid, command }) => {
+      if (!Number.isFinite(pid) || pid <= 0 || pid === currentPid) return false
+      return /(^|[ /])openclaw(?:-gateway)?([ ]|$)/.test(command)
+    })
+    .map(({ pid }) => pid)
+
+  for (const pid of targetPids) {
+    await new Promise<void>((resolve) => {
+      const child = spawn('kill', ['-9', String(pid)])
+      child.on('close', () => resolve())
+      child.on('error', () => resolve())
+    })
+  }
+}
+
 export const runOnboard = async (
   win: BrowserWindow,
   config: OnboardConfig
@@ -599,11 +643,7 @@ export const runOnboard = async (
         /* ignore */
       }
     }
-    await new Promise<void>((resolve) => {
-      const child = spawn('pkill', ['-9', '-f', 'openclaw'])
-      child.on('close', () => resolve())
-      child.on('error', () => resolve())
-    })
+    await killMacOpenClawProcesses()
     const macOcDir = join(homedir(), '.openclaw')
     const configFile = join(macOcDir, 'openclaw.json')
     if (existsSync(configFile))
@@ -694,9 +734,7 @@ export const runOnboard = async (
       child.on('error', () => resolve())
     })
     await new Promise<void>((resolve) => {
-      const child = spawn('pkill', ['-9', '-f', 'openclaw-gateway'])
-      child.on('close', () => resolve())
-      child.on('error', () => resolve())
+      killMacOpenClawProcesses().finally(resolve)
     })
     await new Promise((resolve) => setTimeout(resolve, 5000))
   }
@@ -943,11 +981,7 @@ export const switchProvider = async (
   if (isWindows) {
     await wslKillOpenclaw().catch(() => {})
   } else {
-    await new Promise<void>((resolve) => {
-      const child = spawn('pkill', ['-9', '-f', 'openclaw'])
-      child.on('close', () => resolve())
-      child.on('error', () => resolve())
-    })
+    await killMacOpenClawProcesses()
   }
   await new Promise((resolve) => setTimeout(resolve, 3000))
 
@@ -1047,9 +1081,7 @@ export const switchProvider = async (
       child.on('error', () => resolve())
     })
     await new Promise<void>((resolve) => {
-      const child = spawn('pkill', ['-9', '-f', 'openclaw-gateway'])
-      child.on('close', () => resolve())
-      child.on('error', () => resolve())
+      killMacOpenClawProcesses().finally(resolve)
     })
     await new Promise((resolve) => setTimeout(resolve, 3000))
   }
