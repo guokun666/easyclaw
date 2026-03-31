@@ -312,32 +312,6 @@ export default function DoneStep({
         </div>
       )}
 
-      {/* ─── Star + KakaoTalk chat banner ─── */}
-      <div className="w-full max-w-md grid grid-cols-2 gap-2">
-        <button
-          onClick={() =>
-            window.open('https://github.com/model-family/openclaw-installer', '_blank')
-          }
-          className="flex items-center gap-2.5 px-4 py-2.5 rounded-xl cursor-pointer bg-white/5 border border-glass-border hover:border-primary/40 hover:bg-white/8 transition-all duration-200"
-        >
-          <span className="text-lg">⭐</span>
-          <div className="flex-1 text-left">
-            <span className="text-sm font-bold">Star on GitHub</span>
-            <p className="text-[11px] text-text-muted/70">{t('done.starDesc')}</p>
-          </div>
-        </button>
-        <button
-          onClick={() => window.open('https://open.kakao.com/o/gbBkPehi', '_blank')}
-          className="flex items-center gap-2.5 px-4 py-2.5 rounded-xl cursor-pointer bg-white/5 border border-glass-border hover:border-primary/40 hover:bg-white/8 transition-all duration-200"
-        >
-          <span className="text-lg">💬</span>
-          <div className="flex-1 text-left">
-            <span className="text-sm font-bold">{t('done.kakaoChat')}</span>
-            <p className="text-[11px] text-text-muted/70">{t('done.kakaoChatDesc')}</p>
-          </div>
-        </button>
-      </div>
-
       {/* ─── Action grid (3 columns) ─── */}
       <div className="w-full max-w-md grid grid-cols-3 gap-2">
         <button
