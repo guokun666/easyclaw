@@ -37,6 +37,16 @@ function createWindow(): void {
     if (!startHidden) mainWindow?.show()
   })
 
+  mainWindow.webContents.on('render-process-gone', (_event, details) => {
+    console.error('render-process-gone', details)
+  })
+  mainWindow.webContents.on('unresponsive', () => {
+    console.error('renderer-unresponsive')
+  })
+  mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription) => {
+    console.error('did-fail-load', { errorCode, errorDescription })
+  })
+
   // Close window → stay in tray (not a real quit)
   mainWindow.on('close', (e) => {
     if (!isQuitting) {
@@ -63,7 +73,12 @@ function createWindow(): void {
   }
 
   if (process.env['ELECTRON_RENDERER_URL']) {
-    mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
+    const rendererUrl = process.env['ELECTRON_RENDERER_URL']
+    const debugParams = new URLSearchParams()
+    if (process.env.EASYCLAW_DEBUG_MINIMAL === '1') debugParams.set('debugMinimal', '1')
+    if (process.env.EASYCLAW_DEBUG_MODE) debugParams.set('debugMode', process.env.EASYCLAW_DEBUG_MODE)
+    const finalUrl = debugParams.size > 0 ? `${rendererUrl}?${debugParams.toString()}` : rendererUrl
+    mainWindow.loadURL(finalUrl)
   } else {
     mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
   }

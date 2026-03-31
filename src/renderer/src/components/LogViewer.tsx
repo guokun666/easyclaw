@@ -8,13 +8,16 @@ const EXPANDED_HEIGHT = 'h-72'
 export default function LogViewer({ lines }: { lines: string[] }): React.JSX.Element {
   const { t } = useTranslation('management')
   const bottomRef = useRef<HTMLDivElement>(null)
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
   const copyTimerRef = useRef<number | null>(null)
   const [expanded, setExpanded] = useState(false)
   const [copied, setCopied] = useState(false)
   const displayLines = lines.length > MAX_LINES ? lines.slice(-MAX_LINES) : lines
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+    const container = scrollContainerRef.current
+    if (!container) return
+    container.scrollTop = container.scrollHeight
   }, [displayLines.length])
 
   useEffect(() => {
@@ -85,6 +88,7 @@ export default function LogViewer({ lines }: { lines: string[] }): React.JSX.Ele
       </div>
 
       <div
+        ref={scrollContainerRef}
         className={`p-3 overflow-auto font-mono text-[11px] leading-5 text-text-muted whitespace-pre ${expanded ? EXPANDED_HEIGHT : COLLAPSED_HEIGHT}`}
       >
         {displayLines.length === 0 && (

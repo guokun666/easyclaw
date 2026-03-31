@@ -10,7 +10,8 @@ import InstallStep from './steps/InstallStep'
 import ApiKeyGuideStep from './steps/ApiKeyGuideStep'
 import type { Provider } from './constants/providers'
 import TelegramGuideStep from './steps/TelegramGuideStep'
-import ConfigStep from './steps/ConfigStep'
+import ConfigStep, { type SetupPayload } from './steps/ConfigStep'
+import ChannelSetupStep from './steps/ChannelSetupStep'
 import DoneStep from './steps/DoneStep'
 import TroubleshootStep from './steps/TroubleshootStep'
 import type { ChannelType } from './steps/TelegramGuideStep'
@@ -28,37 +29,7 @@ interface InstallNeeds {
   needOpenclaw: boolean
 }
 
-const BUBBLES = Array.from({ length: 8 }, (_, i) => ({
-  id: i,
-  size: 6 + Math.random() * 18,
-  left: Math.random() * 100,
-  delay: Math.random() * 10,
-  duration: 14 + Math.random() * 12
-}))
-
-const Bubbles = (): React.JSX.Element => {
-  const bubbles = BUBBLES
-
-  return (
-    <>
-      {bubbles.map((b) => (
-        <div
-          key={b.id}
-          className="bubble"
-          style={{
-            width: b.size,
-            height: b.size,
-            left: `${b.left}%`,
-            animationDelay: `${b.delay}s`,
-            animationDuration: `${b.duration}s`
-          }}
-        />
-      ))}
-    </>
-  )
-}
-
-function App(): React.JSX.Element {
+function App({ debugMode }: { debugMode?: string }): React.JSX.Element {
   const { t } = useTranslation('common')
   const { currentStep, next, prev, canGoBack, goTo } = useWizard()
   const [installNeeds, setInstallNeeds] = useState<InstallNeeds>({
@@ -70,12 +41,19 @@ function App(): React.JSX.Element {
   const [authMethod, setAuthMethod] = useState<'api-key' | 'oauth'>('api-key')
   const [channelType, setChannelType] = useState<ChannelType>('feishu')
   const [botUsername, setBotUsername] = useState<string | undefined>()
+  const [setupPayload, setSetupPayload] = useState<SetupPayload | null>(null)
   const [isWindows, setIsWindows] = useState(false)
   const [wslState, setWslState] = useState<WslState>('ready')
   const [version, setVersion] = useState('')
+  const isDebugWelcomeOnly = debugMode === 'welcome-only'
+  const isDebugNoEffects = debugMode === 'no-effects'
+  const isDebugNoBanner = debugMode === 'no-banner'
+  const isDebugBareShell = debugMode === 'bare-shell'
 
   // Load version + OS check + reboot restoration on app start
   useEffect(() => {
+    if (isDebugNoEffects || isDebugWelcomeOnly || isDebugBareShell) return
+
     window.electronAPI.version().then(setVersion)
 
     // Run loadState() after env.check() completes (prevent race condition)
@@ -89,7 +67,7 @@ function App(): React.JSX.Element {
         goTo(state.step as 'wslSetup' | 'envCheck')
       }
     })
-  }, [goTo])
+  }, [goTo, isDebugBareShell, isDebugNoEffects, isDebugWelcomeOnly])
 
   const handleEnvCheckDone = (env: {
     os: string
@@ -127,11 +105,26 @@ function App(): React.JSX.Element {
     [goTo]
   )
 
+  if (isDebugBareShell) {
+    return <div className="h-screen bg-bg" />
+  }
+
+  if (isDebugWelcomeOnly) {
+    return (
+      <>
+        <div className="aurora-bg" />
+        <div className="flex flex-col h-full relative z-10">
+          <div className="flex-1 flex flex-col min-h-0 pb-10 step-enter">
+            <WelcomeStep onNext={() => undefined} />
+          </div>
+        </div>
+      </>
+    )
+  }
+
   return (
     <>
       <div className="aurora-bg" />
-      <div className="grain-overlay" />
-      <Bubbles />
 
       <div className="flex flex-col h-full relative z-10">
         {currentStep !== 'welcome' && currentStep !== 'troubleshoot' && (
@@ -177,8 +170,14 @@ function App(): React.JSX.Element {
               authMethod={authMethod}
               modelId={modelId}
               channelType={channelType}
-              onDone={handleDone}
+              onNext={(payload) => {
+                setSetupPayload(payload)
+                goTo('setup')
+              }}
             />
+          )}
+          {currentStep === 'setup' && setupPayload && (
+            <ChannelSetupStep payload={setupPayload} onDone={handleDone} />
           )}
           {currentStep === 'done' && (
             <DoneStep
@@ -212,7 +211,7 @@ function App(): React.JSX.Element {
           )}
         </div>
 
-        <UpdateBanner />
+        {!isDebugNoBanner && <UpdateBanner />}
 
         {canGoBack && currentStep !== 'troubleshoot' && (
           <button

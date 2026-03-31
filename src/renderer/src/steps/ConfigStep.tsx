@@ -2,8 +2,6 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import LobsterLogo from '../components/LobsterLogo'
 import Button from '../components/Button'
-import LogViewer from '../components/LogViewer'
-import { useInstallLogs } from '../hooks/useIpc'
 import type { Provider } from '../constants/providers'
 import type { ChannelType } from './TelegramGuideStep'
 
@@ -34,12 +32,24 @@ const FEISHU_APP_ID_PATTERN = /^cli_[A-Za-z0-9]+$/
 const GENERIC_APP_SECRET_PATTERN = /^.{8,}$/
 type ChannelSetupMode = 'one-click' | 'manual'
 
+export interface SetupPayload {
+  provider: Provider
+  apiKey?: string
+  authMethod?: 'api-key' | 'oauth'
+  channelType?: 'feishu' | 'wechat' | 'telegram'
+  channelSetupMode?: 'one-click' | 'manual'
+  telegramBotToken?: string
+  feishuAppId?: string
+  feishuAppSecret?: string
+  modelId?: string
+}
+
 interface Props {
   provider: Provider
   authMethod?: 'api-key' | 'oauth'
   modelId?: string
   channelType: ChannelType
-  onDone: (botUsername?: string) => void
+  onNext: (payload: SetupPayload) => void
 }
 
 export default function ConfigStep({
@@ -47,7 +57,7 @@ export default function ConfigStep({
   authMethod,
   modelId,
   channelType,
-  onDone
+  onNext
 }: Props): React.JSX.Element {
   const { t } = useTranslation(['steps', 'common'])
   const { t: tp } = useTranslation('providers')
@@ -56,11 +66,9 @@ export default function ConfigStep({
   const [feishuSetupMode, setFeishuSetupMode] = useState<ChannelSetupMode>('one-click')
   const [feishuAppId, setFeishuAppId] = useState('')
   const [feishuAppSecret, setFeishuAppSecret] = useState('')
-  const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [oauthDone, setOauthDone] = useState(false)
   const [oauthLoading, setOauthLoading] = useState(false)
-  const { logs, clearLogs } = useInstallLogs()
   const isOAuth = authMethod === 'oauth'
   const isOllama = provider === 'ollama'
 
@@ -79,10 +87,10 @@ export default function ConfigStep({
         ? feishuSetupMode === 'one-click' || (feishuAppIdValid && feishuAppSecretValid)
         : true
   const canSave = isOAuth
-    ? oauthDone && channelValid && !saving
+    ? oauthDone && channelValid
     : isOllama
-      ? channelValid && !saving
-      : apiKeyValid && channelValid && !saving
+      ? channelValid
+      : apiKeyValid && channelValid
 
   const handleOAuthLogin = async (): Promise<void> => {
     setOauthLoading(true)
@@ -105,49 +113,38 @@ export default function ConfigStep({
     }
   }
 
-  const handleSave = async (): Promise<void> => {
-    setSaving(true)
+  const handleNext = (): void => {
     setError(null)
-    clearLogs()
-    try {
-      const result = await window.electronAPI.onboard.run({
-        provider,
-        ...(isOAuth || isOllama ? {} : { apiKey }),
-        authMethod: authMethod ?? 'api-key',
-        channelType,
-        channelSetupMode:
-          channelType === 'feishu'
-            ? feishuSetupMode
-            : channelType === 'wechat'
-              ? 'one-click'
-              : 'manual',
-        telegramBotToken: telegramBotToken || undefined,
-        feishuAppId: feishuAppId || undefined,
-        feishuAppSecret: feishuAppSecret || undefined,
-        modelId
-      })
-      if (result.success) {
-        onDone(result.botUsername)
-      } else {
-        setError(result.error ?? t('config.errorOccurred'))
-      }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : t('common:error.unknown'))
-    } finally {
-      setSaving(false)
-    }
+    onNext({
+      provider,
+      ...(isOAuth || isOllama ? {} : { apiKey }),
+      authMethod: authMethod ?? 'api-key',
+      channelType,
+      channelSetupMode:
+        channelType === 'feishu'
+          ? feishuSetupMode
+          : channelType === 'wechat'
+            ? 'one-click'
+            : 'manual',
+      telegramBotToken: telegramBotToken || undefined,
+      feishuAppId: feishuAppId || undefined,
+      feishuAppSecret: feishuAppSecret || undefined,
+      modelId
+    })
   }
 
   return (
     <div className="flex-1 flex flex-col min-h-0 px-8 pt-6">
       <div className="flex-1 overflow-y-auto pb-2 space-y-4">
         <div className="flex items-center gap-3">
-          <LobsterLogo state={saving ? 'loading' : 'idle'} size={48} />
+          <LobsterLogo state={oauthLoading ? 'loading' : 'idle'} size={48} />
           <div>
             <h2 className="text-lg font-extrabold">{t('config.title')}</h2>
             <p className="text-text-muted text-xs">{t('config.desc')}</p>
           </div>
         </div>
+
+        {error && <p className="text-error text-xs font-medium">{error}</p>}
 
         {isOllama ? (
           <div className="space-y-1.5">
@@ -342,19 +339,11 @@ export default function ConfigStep({
           )}
         </div>
 
-        {logs.length > 0 && <LogViewer lines={logs} />}
-        {error && <p className="text-error text-xs font-medium">{error}</p>}
       </div>
 
       <div className="shrink-0 flex justify-end py-3">
-        <Button
-          variant="primary"
-          size="lg"
-          onClick={handleSave}
-          disabled={!canSave}
-          loading={saving}
-        >
-          {saving ? t('config.savingBtn') : t('config.saveBtn')}
+        <Button variant="primary" size="lg" onClick={handleNext} disabled={!canSave}>
+          {t('config.nextBtn')}
         </Button>
       </div>
     </div>

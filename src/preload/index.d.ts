@@ -43,6 +43,10 @@ interface ElectronAPI {
     onProgress: (cb: (msg: string) => void) => () => void
     onError: (cb: (msg: string) => void) => () => void
   }
+  terminal: {
+    onOutput: (cb: (chunk: string) => void) => () => void
+    onExit: (cb: (result: { success: boolean; code: number | null }) => void) => () => void
+  }
   onboard: {
     run: (config: {
       provider:

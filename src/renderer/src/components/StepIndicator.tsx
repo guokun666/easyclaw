@@ -7,6 +7,7 @@ const defaultSteps = [
   'apiKeyGuide',
   'telegramGuide',
   'config',
+  'setup',
   'done'
 ]
 
@@ -18,6 +19,7 @@ const windowsSteps = [
   'apiKeyGuide',
   'telegramGuide',
   'config',
+  'setup',
   'done'
 ]
 

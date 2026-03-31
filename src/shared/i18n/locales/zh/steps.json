@@ -1,7 +1,7 @@
 {
   "indicator": {
-    "default": ["开始", "环境", "安装", "API密钥", "渠道", "配置", "完成"],
-    "windows": ["开始", "环境", "WSL", "安装", "API密钥", "渠道", "配置", "完成"]
+    "default": ["开始", "环境", "安装", "API密钥", "渠道", "配置", "执行", "完成"],
+    "windows": ["开始", "环境", "WSL", "安装", "API密钥", "渠道", "配置", "执行", "完成"]
   },
   "welcome": {
     "title": "专属 AI 智能体，一键搞定",
@@ -202,6 +202,7 @@
     "wechatOneClickTitle": "微信一键安装",
     "wechatOneClickDesc": "会直接执行 npx 安装命令，并实时显示二维码或交互提示。微信当前不提供手动填写模式。",
     "errorOccurred": "配置过程中发生错误",
+    "nextBtn": "下一步",
     "savingBtn": "保存中...",
     "saveBtn": "保存配置",
     "oauthLogin": "使用 OpenAI 登录",
@@ -209,6 +210,23 @@
     "oauthSuccess": "登录成功",
     "oauthError": "登录失败，请重试。",
     "oauthCancelled": "登录已取消。"
+  },
+  "setup": {
+    "title": "正在执行配置",
+    "runningDesc": "我们正在为你应用 OpenClaw 与消息渠道配置，请稍候。",
+    "failedDesc": "执行过程中出现问题，你可以直接重试。",
+    "doneDesc": "配置完成，正在进入下一步。",
+    "summaryTitle": "当前执行内容",
+    "summaryChannel": {
+      "feishu": "飞书渠道配置会在外部 Terminal 中完成，应用内只保留状态与结果展示。",
+      "wechat": "微信渠道配置会在外部 Terminal 中完成，应用内只保留状态与结果展示。",
+      "telegram": "Telegram 渠道配置会写入 Bot Token，并完成 OpenClaw 基础配置。"
+    },
+    "externalTitle": "外部终端执行",
+    "externalDesc": "我们会自动打开系统 Terminal 并在里面执行扫码与授权。这个页面只负责等待结果，避免最后一步再次白屏。",
+    "runningBtn": "执行中...",
+    "retryBtn": "重新执行",
+    "errorOccurred": "执行过程中发生错误"
   },
   "troubleshoot": {
     "title": "问题排查",

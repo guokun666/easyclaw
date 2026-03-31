@@ -53,6 +53,19 @@ const electronAPI = {
       return () => ipcRenderer.removeListener('install:error', handler)
     }
   },
+  terminal: {
+    onOutput: (cb: (chunk: string) => void): (() => void) => {
+      const handler = (_: unknown, chunk: string): void => cb(chunk)
+      ipcRenderer.on('terminal:output', handler)
+      return () => ipcRenderer.removeListener('terminal:output', handler)
+    },
+    onExit: (cb: (result: { success: boolean; code: number | null }) => void): (() => void) => {
+      const handler = (_: unknown, result: { success: boolean; code: number | null }): void =>
+        cb(result)
+      ipcRenderer.on('terminal:exit', handler)
+      return () => ipcRenderer.removeListener('terminal:exit', handler)
+    }
+  },
   onboard: {
     run: (config: {
       provider:

@@ -1,7 +1,7 @@
 import { spawn } from 'child_process'
 import { StringDecoder } from 'string_decoder'
-import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from 'fs'
-import { platform, homedir } from 'os'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, unlinkSync } from 'fs'
+import { platform, homedir, tmpdir } from 'os'
 import { join } from 'path'
 import https from 'https'
 import { BrowserWindow } from 'electron'
@@ -31,6 +31,88 @@ interface OnboardConfig {
 
 interface OnboardResult {
   botUsername?: string
+}
+
+const LOG_BATCH_INTERVAL_MS = 120
+const LOG_MAX_BATCH_LINES = 24
+const LOG_MAX_LINE_LENGTH = 600
+const createInstallProgressEmitter = (
+  win: BrowserWindow
+): {
+  log: (msg: string) => void
+  dispose: () => void
+} => {
+  let disposed = false
+  let timer: NodeJS.Timeout | null = null
+  let queue: string[] = []
+
+  const sanitizeLine = (msg: string): string => {
+    const singleLine = msg.replace(/\r/g, '').replace(/\u0000/g, '')
+    return singleLine.length > LOG_MAX_LINE_LENGTH
+      ? `${singleLine.slice(0, LOG_MAX_LINE_LENGTH)} ...[truncated]`
+      : singleLine
+  }
+
+  const flush = (): void => {
+    if (disposed || queue.length === 0) {
+      timer = null
+      return
+    }
+
+    const batch = queue.slice(0, LOG_MAX_BATCH_LINES)
+    queue = queue.slice(LOG_MAX_BATCH_LINES)
+
+    try {
+      if (win.isDestroyed() || win.webContents.isDestroyed()) {
+        disposed = true
+        queue = []
+        timer = null
+        return
+      }
+      win.webContents.send('install:progress', batch.join('\n'))
+    } catch {
+      disposed = true
+      queue = []
+      timer = null
+      return
+    }
+
+    if (queue.length > 0) {
+      timer = setTimeout(flush, LOG_BATCH_INTERVAL_MS)
+    } else {
+      timer = null
+    }
+  }
+
+  const schedule = (): void => {
+    if (disposed || timer) return
+    timer = setTimeout(flush, LOG_BATCH_INTERVAL_MS)
+  }
+
+  return {
+    log: (msg: string): void => {
+      if (disposed) return
+
+      const lines = msg.split('\n').map(sanitizeLine)
+      queue.push(...lines)
+
+      if (queue.length > 200) {
+        const dropped = queue.length - 200
+        queue = [`...[omitted ${dropped} log lines]`, ...queue.slice(-199)]
+      }
+
+      schedule()
+    },
+    dispose: (): void => {
+      if (timer) {
+        clearTimeout(timer)
+        timer = null
+      }
+      flush()
+      disposed = true
+      queue = []
+    }
+  }
 }
 
 const getChannelPatch = (
@@ -267,6 +349,87 @@ const ensureCommandAvailable = async (commandName: 'npm' | 'npx'): Promise<void>
   }
 }
 
+const shellEscape = (value: string): string => `'${value.replace(/'/g, `'\\''`)}'`
+
+const waitForStatusFile = async (statusPath: string, timeoutMs = 30 * 60 * 1000): Promise<number> => {
+  const startedAt = Date.now()
+
+  while (Date.now() - startedAt < timeoutMs) {
+    if (existsSync(statusPath)) {
+      const raw = readFileSync(statusPath, 'utf-8').trim()
+      const code = Number(raw)
+      return Number.isFinite(code) ? code : 1
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1000))
+  }
+
+  throw new Error('Timed out waiting for interactive terminal command to finish')
+}
+
+const runMacTerminalScript = async (
+  title: string,
+  commands: string[],
+  onLog: (msg: string) => void
+): Promise<void> => {
+  const tempDir = mkdtempSync(join(tmpdir(), 'easyclaw-terminal-'))
+  const scriptPath = join(tempDir, 'run.sh')
+  const statusPath = join(tempDir, 'status.txt')
+  const env = getManagedNpmEnv(getPathEnv())
+
+  const exportLines = Object.entries({
+    PATH: env.PATH ?? '',
+    npm_config_prefix: env.npm_config_prefix ?? '',
+    npm_config_cache: env.npm_config_cache ?? ''
+  })
+    .filter(([, value]) => value)
+    .map(([key, value]) => `export ${key}=${shellEscape(value)}`)
+
+  const script = [
+    '#!/bin/bash',
+    'set -u',
+    ...exportLines,
+    'clear',
+    `echo ${shellEscape(title)}`,
+    'echo',
+    'STATUS=0',
+    '(',
+    ...commands,
+    ') || STATUS=$?',
+    `printf '%s' \"$STATUS\" > ${shellEscape(statusPath)}`,
+    'echo',
+    'if [ \"$STATUS\" -eq 0 ]; then',
+    "  echo '命令执行完成，可以返回安装器。'",
+    'else',
+    "  echo \"命令执行失败，退出码: $STATUS\"",
+    'fi'
+  ].join('\n')
+
+  writeFileSync(scriptPath, `${script}\n`, { mode: 0o755 })
+
+  const scriptArg = scriptPath.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn('osascript', [
+      '-e',
+      'tell application "Terminal" to activate',
+      '-e',
+      `tell application "Terminal" to do script "bash \\\"${scriptArg}\\\""`
+    ])
+    child.on('close', (code) => {
+      if (code === 0) resolve()
+      else reject(new Error(`osascript failed with exit code ${code}`))
+    })
+    child.on('error', reject)
+  })
+
+  onLog(t('onboarder.externalTerminalOpened'))
+  const exitCode = await waitForStatusFile(statusPath)
+  rmSync(tempDir, { recursive: true, force: true })
+
+  if (exitCode !== 0) {
+    throw new Error(`Interactive terminal command failed with exit code ${exitCode}`)
+  }
+}
+
 const runChannelCommand = async (
   runCmd: (cmd: string, args: string[], onLog: (msg: string) => void) => Promise<void>,
   onLog: (msg: string) => void,
@@ -277,6 +440,7 @@ const runChannelCommand = async (
 }
 
 const runOneClickChannelSetup = async (
+  _win: BrowserWindow,
   config: OnboardConfig,
   runCmd: (cmd: string, args: string[], onLog: (msg: string) => void) => Promise<void>,
   onLog: (msg: string) => void,
@@ -286,6 +450,14 @@ const runOneClickChannelSetup = async (
     await ensureCommandAvailable('npm')
     await ensureCommandAvailable('npx')
     onLog(t('onboarder.channelOneClick.wechat'))
+    if (platform() === 'darwin') {
+      const commands = [
+        `${shellEscape(resolvePreferredBin('npx'))} -y @tencent-weixin/openclaw-weixin-cli@latest install`
+      ]
+      await runMacTerminalScript('EasyClaw 微信渠道安装', commands, onLog)
+      onLog(t('onboarder.channelDone.wechat'))
+      return
+    }
     await runChannelCommand(
       runCmd,
       onLog,
@@ -301,6 +473,19 @@ const runOneClickChannelSetup = async (
   await ensureCommandAvailable('npm')
   await ensureCommandAvailable('npx')
   onLog(t('onboarder.channelOneClick.feishu'))
+  if (platform() === 'darwin') {
+    const commands = [
+      `${shellEscape(resolvePreferredBin('npx'))} -y @larksuite/openclaw-lark-tools install`,
+      `test -f ${shellEscape(getConfigPath())}`,
+      `${shellEscape(ocBin)} config set channels.feishu.streaming true`,
+      `${shellEscape(ocBin)} gateway restart`,
+      `echo ${shellEscape(t('onboarder.feishuAuthPrompt'))}`,
+      `${shellEscape(ocBin)} feishu auth`
+    ]
+    await runMacTerminalScript('EasyClaw 飞书渠道安装', commands, onLog)
+    onLog(t('onboarder.channelDone.feishu'))
+    return
+  }
   await runChannelCommand(
     runCmd,
     onLog,
@@ -347,17 +532,17 @@ export const runOnboard = async (
   win: BrowserWindow,
   config: OnboardConfig
 ): Promise<OnboardResult> => {
-  const log = (msg: string): void => {
-    win.webContents.send('install:progress', msg)
-  }
+  const progress = createInstallProgressEmitter(win)
+  const log = progress.log
 
-  log(t('onboarder.starting'))
+  try {
+    log(t('onboarder.starting'))
 
-  const isWindows = platform() === 'win32'
-  const isMac = platform() === 'darwin'
-  const ocBin = isWindows ? 'openclaw' : resolvePreferredBin('openclaw')
-  const fixPath = join(homedir(), '.openclaw', 'ipv4-fix.js')
-  const runCmd = createRunCmd()
+    const isWindows = platform() === 'win32'
+    const isMac = platform() === 'darwin'
+    const ocBin = isWindows ? 'openclaw' : resolvePreferredBin('openclaw')
+    const fixPath = join(homedir(), '.openclaw', 'ipv4-fix.js')
+    const runCmd = createRunCmd()
 
   // Prevent Telegram API ETIMEDOUT on environments without IPv6 (Node.js 22 autoSelectFamily)
   if (isMac) {
@@ -640,7 +825,7 @@ export const runOnboard = async (
     }
   }
 
-  await runOneClickChannelSetup(config, runCmd, log, ocBin)
+  await runOneClickChannelSetup(win, config, runCmd, log, ocBin)
 
   if (config.channelType === 'telegram' && config.telegramBotToken) {
     botUsername = await fetchBotUsername(config.telegramBotToken)
@@ -666,7 +851,10 @@ export const runOnboard = async (
     }
   }
 
-  return { botUsername }
+    return { botUsername }
+  } finally {
+    progress.dispose()
+  }
 }
 
 // ─── Provider switch ───
@@ -711,16 +899,16 @@ export const switchProvider = async (
     modelId?: string
   }
 ): Promise<void> => {
-  const log = (msg: string): void => {
-    win.webContents.send('install:progress', msg)
-  }
+  const progress = createInstallProgressEmitter(win)
+  const log = progress.log
 
-  const isWindows = platform() === 'win32'
-  const isMac = platform() === 'darwin'
-  const ocBin = isWindows ? 'openclaw' : resolvePreferredBin('openclaw')
-  const runCmd = createRunCmd()
+  try {
+    const isWindows = platform() === 'win32'
+    const isMac = platform() === 'darwin'
+    const ocBin = isWindows ? 'openclaw' : resolvePreferredBin('openclaw')
+    const runCmd = createRunCmd()
 
-  log(t('onboarder.switchStarting'))
+    log(t('onboarder.switchStarting'))
 
   // 1. Preserve existing channel config
   let savedChannels: Record<string, unknown> | null = null
@@ -963,5 +1151,8 @@ export const switchProvider = async (
     }
   }
 
-  log(t('onboarder.switchDone'))
+    log(t('onboarder.switchDone'))
+  } finally {
+    progress.dispose()
+  }
 }

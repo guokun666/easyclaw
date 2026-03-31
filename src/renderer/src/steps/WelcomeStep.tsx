@@ -8,7 +8,7 @@ export default function WelcomeStep({ onNext }: { onNext: () => void }): React.J
   return (
     <div className="flex-1 flex flex-col items-center justify-center px-10 gap-7">
       <div className="relative">
-        <div className="absolute inset-0 bg-primary/10 rounded-full blur-3xl scale-150" />
+        <div className="absolute inset-0 bg-primary/12 rounded-full scale-125" />
         <LobsterLogo state="idle" size={150} />
       </div>
 
