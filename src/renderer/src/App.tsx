@@ -131,68 +131,70 @@ function App({ debugMode }: { debugMode?: string }): React.JSX.Element {
           <StepIndicator currentStep={currentStep} isWindows={isWindows} />
         )}
 
-        <div className="flex-1 flex flex-col min-h-0 pb-10 step-enter" key={currentStep}>
-          {currentStep === 'welcome' && <WelcomeStep onNext={next} />}
-          {currentStep === 'envCheck' && (
-            <EnvCheckStep onNext={() => goTo('apiKeyGuide')} onNeedInstall={handleEnvCheckDone} />
-          )}
-          {currentStep === 'wslSetup' && (
-            <WslSetupStep wslState={wslState} onReady={handleWslReady} />
-          )}
-          {currentStep === 'install' && (
-            <InstallStep needs={installNeeds} onDone={() => goTo('apiKeyGuide')} />
-          )}
-          {currentStep === 'apiKeyGuide' && (
-            <ApiKeyGuideStep
-              provider={provider}
-              onSelectProvider={(p) => {
-                setProvider(p)
-                setModelId(undefined)
-                setAuthMethod('api-key')
-              }}
-              authMethod={authMethod}
-              onSelectAuthMethod={setAuthMethod}
-              modelId={modelId}
-              onSelectModel={setModelId}
-              onNext={next}
-            />
-          )}
-          {currentStep === 'telegramGuide' && (
-            <TelegramGuideStep
-              channelType={channelType}
-              onSelectChannel={setChannelType}
-              onNext={next}
-            />
-          )}
-          {currentStep === 'config' && (
-            <ConfigStep
-              provider={provider}
-              authMethod={authMethod}
-              modelId={modelId}
-              channelType={channelType}
-              onNext={(payload) => {
-                setSetupPayload(payload)
-                goTo('setup')
-              }}
-            />
-          )}
-          {currentStep === 'setup' && setupPayload && (
-            <ChannelSetupStep payload={setupPayload} onDone={handleDone} />
-          )}
-          {currentStep === 'done' && (
-            <DoneStep
-              botUsername={botUsername}
-              channelType={channelType}
-              onTroubleshoot={() => goTo('troubleshoot')}
-              onUninstallDone={() => {
-                window.electronAPI.wizard.clearState()
-                goTo('welcome')
-              }}
-            />
-          )}
-          {currentStep === 'troubleshoot' && (
-            <TroubleshootStep isWindows={isWindows} onBack={prev} />
-          )}
+        <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
+          <div className="flex flex-col min-h-full pb-10 step-enter" key={currentStep}>
+            {currentStep === 'welcome' && <WelcomeStep onNext={next} />}
+            {currentStep === 'envCheck' && (
+              <EnvCheckStep onNext={() => goTo('apiKeyGuide')} onNeedInstall={handleEnvCheckDone} />
+            )}
+            {currentStep === 'wslSetup' && (
+              <WslSetupStep wslState={wslState} onReady={handleWslReady} />
+            )}
+            {currentStep === 'install' && (
+              <InstallStep needs={installNeeds} onDone={() => goTo('apiKeyGuide')} />
+            )}
+            {currentStep === 'apiKeyGuide' && (
+              <ApiKeyGuideStep
+                provider={provider}
+                onSelectProvider={(p) => {
+                  setProvider(p)
+                  setModelId(undefined)
+                  setAuthMethod('api-key')
+                }}
+                authMethod={authMethod}
+                onSelectAuthMethod={setAuthMethod}
+                modelId={modelId}
+                onSelectModel={setModelId}
+                onNext={next}
+              />
+            )}
+            {currentStep === 'telegramGuide' && (
+              <TelegramGuideStep
+                channelType={channelType}
+                onSelectChannel={setChannelType}
+                onNext={next}
+              />
+            )}
+            {currentStep === 'config' && (
+              <ConfigStep
+                provider={provider}
+                authMethod={authMethod}
+                modelId={modelId}
+                channelType={channelType}
+                onNext={(payload) => {
+                  setSetupPayload(payload)
+                  goTo('setup')
+                }}
+              />
+            )}
+            {currentStep === 'setup' && setupPayload && (
+              <ChannelSetupStep payload={setupPayload} onDone={handleDone} />
+            )}
+            {currentStep === 'done' && (
+              <DoneStep
+                botUsername={botUsername}
+                channelType={channelType}
+                onTroubleshoot={() => goTo('troubleshoot')}
+                onUninstallDone={() => {
+                  window.electronAPI.wizard.clearState()
+                  goTo('welcome')
+                }}
+              />
+            )}
+            {currentStep === 'troubleshoot' && (
+              <TroubleshootStep isWindows={isWindows} onBack={prev} />
+            )}
+          </div>
         </div>
 
         <div className="absolute bottom-3 right-4 flex items-center gap-2">

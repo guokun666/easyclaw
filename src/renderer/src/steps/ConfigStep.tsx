@@ -67,6 +67,7 @@ export default function ConfigStep({
   const [feishuAppId, setFeishuAppId] = useState('')
   const [feishuAppSecret, setFeishuAppSecret] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
   const [oauthDone, setOauthDone] = useState(false)
   const [oauthLoading, setOauthLoading] = useState(false)
   const [keyValidating, setKeyValidating] = useState(false)
@@ -101,6 +102,7 @@ export default function ConfigStep({
   const handleOAuthLogin = async (): Promise<void> => {
     setOauthLoading(true)
     setError(null)
+    setNotice(null)
     try {
       const result = await window.electronAPI.oauth.loginCodex()
       if (result.success) {
@@ -121,6 +123,7 @@ export default function ConfigStep({
 
   const handleNext = async (): Promise<void> => {
     setError(null)
+    setNotice(null)
 
     if (needsPreValidation && apiKeyValid && validatedApiKey !== apiKey) {
       setKeyValidating(true)
@@ -139,6 +142,9 @@ export default function ConfigStep({
         }
 
         setValidatedApiKey(apiKey)
+        if (result.warning) {
+          setNotice(result.warning)
+        }
       } catch (err) {
         setValidatedApiKey(null)
         setError(err instanceof Error ? err.message : t('common:error.unknown'))
@@ -178,6 +184,7 @@ export default function ConfigStep({
         </div>
 
         {error && <p className="text-error text-xs font-medium">{error}</p>}
+        {notice && <p className="text-warning text-xs font-medium">{notice}</p>}
 
         {isOllama ? (
           <div className="space-y-1.5">
@@ -248,6 +255,7 @@ export default function ConfigStep({
               onChange={(e) => {
                 setApiKey(e.target.value)
                 setValidatedApiKey(null)
+                setNotice(null)
               }}
               className={`w-full bg-bg-input rounded-xl px-4 py-2.5 text-sm font-mono outline-none border transition-all duration-200 placeholder:text-text-muted/30 ${
                 apiKey && !apiKeyValid

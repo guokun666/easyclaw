@@ -195,7 +195,8 @@ export default function DoneStep({
   }, [])
 
   return (
-    <div className="flex-1 flex flex-col items-center justify-center px-10 gap-3 overflow-hidden">
+    <div className="w-full px-10 pt-8 pb-28">
+      <div className="flex flex-col items-center justify-center gap-3 min-h-full">
       {/* Logo + status */}
       <div className="flex items-center gap-4">
         <div className="relative">
@@ -464,23 +465,24 @@ export default function DoneStep({
         />
       )}
 
-      {/* ─── Provider switch modal ─── */}
-      {showProviderModal && (
-        <ProviderSwitchModal
-          currentProvider={currentProvider}
-          currentModel={currentModel || undefined}
-          onClose={() => setShowProviderModal(false)}
-          onSuccess={() => {
-            loadCurrentConfig()
-            // Gateway restart is handled by IPC handler (config:switch-provider)
-            setStatus('starting')
-            setTimeout(async () => {
-              const s = await window.electronAPI.gateway.status()
-              setStatus(s === 'running' ? 'running' : 'stopped')
-            }, 3000)
-          }}
-        />
-      )}
+        {/* ─── Provider switch modal ─── */}
+        {showProviderModal && (
+          <ProviderSwitchModal
+            currentProvider={currentProvider}
+            currentModel={currentModel || undefined}
+            onClose={() => setShowProviderModal(false)}
+            onSuccess={() => {
+              loadCurrentConfig()
+              // Gateway restart is handled by IPC handler (config:switch-provider)
+              setStatus('starting')
+              setTimeout(async () => {
+                const s = await window.electronAPI.gateway.status()
+                setStatus(s === 'running' ? 'running' : 'stopped')
+              }, 3000)
+            }}
+          />
+        )}
+      </div>
     </div>
   )
 }

@@ -131,7 +131,7 @@ interface ElectronAPI {
       apiKey?: string
       authMethod?: 'api-key' | 'oauth'
       modelId?: string
-    }) => Promise<{ success: boolean; error?: string }>
+    }) => Promise<{ success: boolean; error?: string; warning?: string }>
     switchProvider: (config: {
       provider:
         | 'modelfamily'

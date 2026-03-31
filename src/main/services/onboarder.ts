@@ -36,7 +36,10 @@ interface OnboardResult {
 export interface ProviderKeyValidationResult {
   success: boolean
   error?: string
+  warning?: string
 }
+
+const PROVIDER_KEY_VALIDATION_TIMEOUT_MS = 15000
 
 const LOG_BATCH_INTERVAL_MS = 120
 const LOG_MAX_BATCH_LINES = 24
@@ -498,7 +501,7 @@ const validateModelFamilyApiKey = async (
         'anthropic-version': '2023-06-01'
       },
       body: payload,
-      signal: AbortSignal.timeout(5000)
+      signal: AbortSignal.timeout(PROVIDER_KEY_VALIDATION_TIMEOUT_MS)
     })
 
     if (response.ok) {
@@ -536,7 +539,7 @@ const validateOpenAIApiKey = async (
       headers: {
         Authorization: `Bearer ${apiKey}`
       },
-      signal: AbortSignal.timeout(5000)
+      signal: AbortSignal.timeout(PROVIDER_KEY_VALIDATION_TIMEOUT_MS)
     })
 
     if (response.ok) return { ok: true }
@@ -584,7 +587,7 @@ const validateAnthropicApiKey = async (
         'anthropic-version': '2023-06-01'
       },
       body: payload,
-      signal: AbortSignal.timeout(5000)
+      signal: AbortSignal.timeout(PROVIDER_KEY_VALIDATION_TIMEOUT_MS)
     })
 
     if (response.ok) return { ok: true }
@@ -660,6 +663,20 @@ export const validateProviderApiKey = async (config: {
           : { ok: true as const }
 
   if (result.ok) return { success: true }
+
+  if (result.kind === 'timeout' || result.kind === 'network') {
+    return {
+      success: true,
+      warning:
+        config.provider === 'modelfamily'
+          ? t('onboarder.providerValidateSkipped.modelfamily', { message: result.message })
+          : config.provider === 'openai'
+            ? t('onboarder.providerValidateSkipped.openai', { message: result.message })
+            : config.provider === 'anthropic'
+              ? t('onboarder.providerValidateSkipped.anthropic', { message: result.message })
+              : result.message
+    }
+  }
 
   return {
     success: false,

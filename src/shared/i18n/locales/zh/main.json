@@ -76,7 +76,9 @@
       "modelfamily": "Model Family API Key 校验通过。"
     },
     "providerValidateSkipped": {
-      "modelfamily": "Model Family API Key 校验未完成，已跳过阻塞校验：{{message}}"
+      "modelfamily": "Model Family API Key 校验超时或网络较慢，已允许继续：{{message}}",
+      "openai": "OpenAI API Key 校验超时或网络较慢，已允许继续：{{message}}",
+      "anthropic": "Anthropic API Key 校验超时或网络较慢，已允许继续：{{message}}"
     },
     "providerValidateFailed": {
       "modelfamily": "Model Family API Key 校验失败：{{message}}",

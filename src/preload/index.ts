@@ -191,7 +191,7 @@ const electronAPI = {
       apiKey?: string
       authMethod?: 'api-key' | 'oauth'
       modelId?: string
-    }): Promise<{ success: boolean; error?: string }> =>
+    }): Promise<{ success: boolean; error?: string; warning?: string }> =>
       ipcRenderer.invoke('config:validate-api-key', config),
     switchProvider: (config: {
       provider:
