@@ -411,12 +411,13 @@ const runMacTerminalScript = async (
   const tempDir = mkdtempSync(join(tmpdir(), 'easyclaw-terminal-'))
   const scriptPath = join(tempDir, 'run.sh')
   const statusPath = join(tempDir, 'status.txt')
-  const env = getManagedNpmEnv(getPathEnv())
+  const env = getPathEnv()
+  const scriptEnv: NodeJS.ProcessEnv = { ...env }
+  delete scriptEnv.npm_config_prefix
+  delete scriptEnv.npm_config_cache
 
   const exportLines = Object.entries({
-    PATH: env.PATH ?? '',
-    npm_config_prefix: env.npm_config_prefix ?? '',
-    npm_config_cache: env.npm_config_cache ?? ''
+    PATH: env.PATH ?? ''
   })
     .filter(([, value]) => value)
     .map(([key, value]) => `export ${key}=${shellEscape(value)}`)
@@ -425,6 +426,8 @@ const runMacTerminalScript = async (
     '#!/bin/bash',
     'set -u',
     ...exportLines,
+    'unset npm_config_prefix',
+    'unset npm_config_cache',
     'clear',
     `echo ${shellEscape(title)}`,
     'echo',
@@ -450,7 +453,7 @@ const runMacTerminalScript = async (
       'tell application "Terminal" to activate',
       '-e',
       `tell application "Terminal" to do script "bash \\\"${scriptArg}\\\""`
-    ])
+    ], { env: scriptEnv })
     child.on('close', (code) => {
       if (code === 0) resolve()
       else reject(new Error(`osascript failed with exit code ${code}`))
