@@ -52,8 +52,8 @@ EasyClaw 是一个基于 Electron 的桌面安装器，用来把 [OpenClaw](http
 
 | 平台    | 文件                  | 下载链接                                                                                  |
 | ------- | --------------------- | ----------------------------------------------------------------------------------------- |
-| macOS   | `easy-claw.dmg`       | [下载](https://github.com/ybgwon96/easyclaw/releases/latest/download/easy-claw.dmg)       |
-| Windows | `easy-claw-setup.exe` | [下载](https://github.com/ybgwon96/easyclaw/releases/latest/download/easy-claw-setup.exe) |
+| macOS   | `familyClaw.dmg`       | [下载](https://github.com/ybgwon96/easyclaw/releases/latest/download/familyClaw.dmg)       |
+| Windows | `familyClaw-setup.exe` | [下载](https://github.com/ybgwon96/easyclaw/releases/latest/download/familyClaw-setup.exe) |
 
 也可以直接访问 [easyclaw.kr](https://easyclaw.kr)，站点会根据系统自动给出对应下载入口。
 

@@ -1,5 +1,5 @@
-appId: com.modelfamily.openclaw.installer
-productName: OpenClaw Installer
+appId: com.modelfamily.familyclaw
+productName: familyClaw
 directories:
   buildResources: build
 files:
@@ -13,7 +13,7 @@ asarUnpack:
   - resources/**
 win:
   icon: build/icon.ico
-  executableName: OpenClawInstaller
+  executableName: familyClaw
   forceCodeSigning: false
   requestedExecutionLevel: asInvoker
   target:
@@ -21,7 +21,7 @@ win:
       arch:
         - x64
 nsis:
-  artifactName: ${name}-setup.${ext}
+  artifactName: familyClaw-setup.${ext}
   shortcutName: ${productName}
   uninstallDisplayName: ${productName}
   createDesktopShortcut: always
@@ -40,7 +40,7 @@ mac:
       arch:
         - universal
 dmg:
-  artifactName: ${name}.${ext}
+  artifactName: familyClaw.${ext}
   title: ${productName}
   background: build/background.png
   iconSize: 80

@@ -79,13 +79,13 @@ function buildCurrentPlatform() {
 
   if (process.platform === 'darwin') {
     run('npx', ['electron-builder', '--mac', '--publish', 'never'])
-    console.log('\n已完成 macOS 打包，产物位于 dist/easy-claw.dmg')
+    console.log('\n已完成 macOS 打包，产物位于 dist/familyClaw.dmg')
     return
   }
 
   if (process.platform === 'win32') {
     run('npx', ['electron-builder', '--win', '--publish', 'never'])
-    console.log('\n已完成 Windows 打包，产物位于 dist/easy-claw-setup.exe')
+    console.log('\n已完成 Windows 打包，产物位于 dist/familyClaw-setup.exe')
     return
   }
 

@@ -44,7 +44,7 @@
     "wslInstalling": "正在安装 WSL...",
     "wslInstall": "安装 WSL",
     "rebootRequired": "需要重启",
-    "rebootDesc": "要完成 WSL 安装，需要重启计算机。重启后请重新运行 OpenClaw Installer。",
+    "rebootDesc": "要完成 WSL 安装，需要重启计算机。重启后请重新运行 familyClaw。",
     "rebootNow": "立即重启",
     "ubuntuInstallDesc": "安装 Ubuntu 发行版。",
     "ubuntuInstalling": "正在安装 Ubuntu...",

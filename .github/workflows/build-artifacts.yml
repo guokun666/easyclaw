@@ -27,8 +27,8 @@ jobs:
       - name: Upload macOS artifact
         uses: actions/upload-artifact@v4
         with:
-          name: easyclaw-macos
-          path: dist/easy-claw.dmg
+          name: familyclaw-macos
+          path: dist/familyClaw.dmg
           if-no-files-found: error
 
   build-win:
@@ -45,6 +45,6 @@ jobs:
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
         with:
-          name: easyclaw-windows
-          path: dist/easy-claw-setup.exe
+          name: familyclaw-windows
+          path: dist/familyClaw-setup.exe
           if-no-files-found: error

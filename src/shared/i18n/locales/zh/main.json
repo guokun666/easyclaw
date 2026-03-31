@@ -97,7 +97,7 @@
     "switchDone": "提供商切换完成！"
   },
   "tray": {
-    "open": "打开 OpenClaw Installer",
+    "open": "打开 familyClaw",
     "gwRunning": "Gateway 运行中",
     "gwStopped": "Gateway 已停止",
     "gwStart": "启动 Gateway",
@@ -105,8 +105,8 @@
     "quit": "退出",
     "notifyRunning": "Gateway 正在运行",
     "notifyStopped": "Gateway 已停止",
-    "tooltipRunning": "OpenClaw Installer - Gateway 运行中",
-    "tooltipStopped": "OpenClaw Installer - Gateway 已停止"
+    "tooltipRunning": "familyClaw - Gateway 运行中",
+    "tooltipStopped": "familyClaw - Gateway 已停止"
   },
   "gateway": {
     "processExit": "[gateway] 进程退出（code: {{code}}）",

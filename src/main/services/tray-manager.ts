@@ -110,7 +110,7 @@ export const createTray = (trayDeps: TrayDeps): void => {
   deps = trayDeps
   const icon = createTrayIcon()
   tray = new Tray(icon)
-  tray.setToolTip('OpenClaw Installer')
+  tray.setToolTip('familyClaw')
   updateMenu('stopped')
 
   if (process.platform === 'darwin') {

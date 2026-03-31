@@ -96,7 +96,7 @@ app.on('before-quit', () => {
 app.whenReady().then(async () => {
   applySavedInstallSourceSettings()
   await initI18nMain()
-  electronApp.setAppUserModelId('com.modelfamily.openclaw.installer')
+  electronApp.setAppUserModelId('com.modelfamily.familyclaw')
 
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
