@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import Button from '../components/Button'
+import InstallProgressCard from '../components/InstallProgressCard'
 import LogViewer from '../components/LogViewer'
 import LobsterLogo from '../components/LobsterLogo'
 import { useInstallLogs } from '../hooks/useIpc'
@@ -41,8 +42,8 @@ export default function ChannelSetupStep({
   }
 
   return (
-    <div className="flex-1 flex flex-col min-h-0 px-8 pt-6">
-      <div className="flex-1 overflow-y-auto pb-2 space-y-4">
+    <div className="flex-1 w-full overflow-y-auto">
+      <div className="flex flex-col px-8 pt-6 pb-28 gap-4 min-h-full">
         <div className="flex items-center gap-3">
           <LobsterLogo state={running ? 'loading' : error ? 'error' : 'idle'} size={48} />
           <div>
@@ -65,24 +66,18 @@ export default function ChannelSetupStep({
           <p className="text-xs text-text-muted leading-relaxed">{t('setup.manualBody')}</p>
         </div>
 
-        {status && (
-          <div className="glass-card px-4 py-3 space-y-1">
-            <div className="text-sm font-bold">{t('setup.progressTitle')}</div>
-            <p className="text-xs text-text-muted leading-relaxed">
-              {status.stage}
-              {status.detail ? ` · ${status.detail}` : ''}
-            </p>
-          </div>
+        {status && <InstallProgressCard status={status} />}
+
+        {logs.length > 0 && (
+          <LogViewer lines={logs} defaultExpanded expandedHeightClass="h-[26rem]" />
         )}
-
-        {logs.length > 0 && <LogViewer lines={logs} />}
         {error && <p className="text-error text-xs font-medium">{error}</p>}
-      </div>
 
-      <div className="shrink-0 flex justify-end py-3">
-        <Button variant="primary" size="lg" onClick={handleRun} disabled={running}>
+        <div className="flex justify-end mt-1">
+          <Button variant="primary" size="lg" onClick={handleRun} disabled={running}>
           {running ? t('setup.runningBtn') : error ? t('setup.retryBtn') : t('setup.startBtn')}
-        </Button>
+          </Button>
+        </div>
       </div>
     </div>
   )

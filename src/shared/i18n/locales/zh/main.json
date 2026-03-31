@@ -26,6 +26,19 @@
   },
   "onboarder": {
     "starting": "开始 OpenClaw 初始配置...",
+    "status": {
+      "preparing": "准备执行配置",
+      "initializing": "初始化 OpenClaw",
+      "stoppingOldGateway": "停止旧 Gateway",
+      "applyingConfig": "写入基础配置",
+      "configuringChannel": "写入渠道配置",
+      "launchingFeishu": "启动飞书一键安装",
+      "launchingWechat": "启动微信一键安装",
+      "waitingExternal": "等待外部终端完成授权",
+      "checkingTelegram": "检查 Telegram 状态",
+      "finishing": "收尾并启动 Gateway",
+      "completed": "配置完成"
+    },
     "configCreatedSkipGw": "配置文件创建完成（跳过 gateway 验证）",
     "basicDone": "基本配置完成！",
     "channelAdding": {

@@ -40,6 +40,7 @@ const createInstallProgressEmitter = (
   win: BrowserWindow
 ): {
   log: (msg: string) => void
+  status: (percent: number, stage: string, detail?: string) => void
   dispose: () => void
 } => {
   let disposed = false
@@ -102,6 +103,33 @@ const createInstallProgressEmitter = (
       }
 
       schedule()
+    },
+    status: (percent: number, stage: string, detail?: string): void => {
+      if (disposed) return
+
+      try {
+        if (win.isDestroyed() || win.webContents.isDestroyed()) {
+          disposed = true
+          queue = []
+          if (timer) {
+            clearTimeout(timer)
+            timer = null
+          }
+          return
+        }
+        win.webContents.send('install:status', {
+          percent: Math.max(0, Math.min(100, Math.round(percent))),
+          stage,
+          detail
+        })
+      } catch {
+        disposed = true
+        queue = []
+        if (timer) {
+          clearTimeout(timer)
+          timer = null
+        }
+      }
     },
     dispose: (): void => {
       if (timer) {
@@ -369,7 +397,8 @@ const waitForStatusFile = async (statusPath: string, timeoutMs = 30 * 60 * 1000)
 const runMacTerminalScript = async (
   title: string,
   commands: string[],
-  onLog: (msg: string) => void
+  onLog: (msg: string) => void,
+  onStatus?: (percent: number, stage: string, detail?: string) => void
 ): Promise<void> => {
   const tempDir = mkdtempSync(join(tmpdir(), 'easyclaw-terminal-'))
   const scriptPath = join(tempDir, 'run.sh')
@@ -422,6 +451,7 @@ const runMacTerminalScript = async (
   })
 
   onLog(t('onboarder.externalTerminalOpened'))
+  onStatus?.(72, t('onboarder.status.waitingExternal'), title)
   const exitCode = await waitForStatusFile(statusPath)
   rmSync(tempDir, { recursive: true, force: true })
 
@@ -444,7 +474,8 @@ const runOneClickChannelSetup = async (
   config: OnboardConfig,
   runCmd: (cmd: string, args: string[], onLog: (msg: string) => void) => Promise<void>,
   onLog: (msg: string) => void,
-  ocBin: string
+  ocBin: string,
+  onStatus?: (percent: number, stage: string, detail?: string) => void
 ): Promise<void> => {
   if (config.channelType === 'wechat') {
     await ensureCommandAvailable('npm')
@@ -454,7 +485,7 @@ const runOneClickChannelSetup = async (
       const commands = [
         `${shellEscape(resolvePreferredBin('npx'))} -y @tencent-weixin/openclaw-weixin-cli@latest install`
       ]
-      await runMacTerminalScript('EasyClaw 微信渠道安装', commands, onLog)
+      await runMacTerminalScript('EasyClaw 微信渠道安装', commands, onLog, onStatus)
       onLog(t('onboarder.channelDone.wechat'))
       return
     }
@@ -479,10 +510,9 @@ const runOneClickChannelSetup = async (
       `test -f ${shellEscape(getConfigPath())}`,
       `${shellEscape(ocBin)} config set channels.feishu.streaming true`,
       `${shellEscape(ocBin)} gateway restart`,
-      `echo ${shellEscape(t('onboarder.feishuAuthPrompt'))}`,
-      `${shellEscape(ocBin)} feishu auth`
+      `echo ${shellEscape(t('onboarder.feishuAuthPrompt'))}`
     ]
-    await runMacTerminalScript('EasyClaw 飞书渠道安装', commands, onLog)
+    await runMacTerminalScript('EasyClaw 飞书渠道安装', commands, onLog, onStatus)
     onLog(t('onboarder.channelDone.feishu'))
     return
   }
@@ -578,8 +608,10 @@ export const runOnboard = async (
 ): Promise<OnboardResult> => {
   const progress = createInstallProgressEmitter(win)
   const log = progress.log
+  const status = progress.status
 
   try {
+    status(5, t('onboarder.status.preparing'))
     log(t('onboarder.starting'))
 
     const isWindows = platform() === 'win32'
@@ -702,6 +734,7 @@ export const runOnboard = async (
     '--skip-skills'
   ]
 
+  status(18, t('onboarder.status.initializing'))
   try {
     await runCmd(
       isWindows ? 'npm' : ocBin,
@@ -727,6 +760,7 @@ export const runOnboard = async (
 
   // Stop immediately since onboard --install-daemon starts the daemon
   if (isMac) {
+    status(42, t('onboarder.status.stoppingOldGateway'))
     const uid = process.getuid?.() ?? ''
     await new Promise<void>((resolve) => {
       const child = spawn('launchctl', ['bootout', `gui/${uid}/ai.openclaw.gateway`])
@@ -816,6 +850,7 @@ export const runOnboard = async (
     patchConfig(baseConfig)
     await writeOpenClawConfig(baseConfig)
   }
+  status(55, t('onboarder.status.applyingConfig'))
   log(t('onboarder.basicDone'))
 
   // Apply IPv4 fix to plist (macOS only)
@@ -847,6 +882,7 @@ export const runOnboard = async (
       : getChannelPatch(config)
 
   if (channelPatch) {
+    status(62, t('onboarder.status.configuringChannel'))
     log(t(`onboarder.channelAdding.${channelPatch.key}`))
 
     const channelConfig = await readOpenClawConfig()
@@ -863,9 +899,15 @@ export const runOnboard = async (
     }
   }
 
-  await runOneClickChannelSetup(win, config, runCmd, log, ocBin)
+  if (config.channelType === 'feishu' && config.channelSetupMode === 'one-click') {
+    status(68, t('onboarder.status.launchingFeishu'))
+  } else if (config.channelType === 'wechat') {
+    status(68, t('onboarder.status.launchingWechat'))
+  }
+  await runOneClickChannelSetup(win, config, runCmd, log, ocBin, status)
 
   if (config.channelType === 'telegram' && config.telegramBotToken) {
+    status(78, t('onboarder.status.checkingTelegram'))
     botUsername = await fetchBotUsername(config.telegramBotToken)
     log(t('onboarder.channelChecking.telegram'))
     await waitTelegramClear(config.telegramBotToken)
@@ -873,10 +915,12 @@ export const runOnboard = async (
 
   // Restart daemon after all patches are complete
   if (isWindows) {
+    status(88, t('onboarder.status.finishing'))
     log(t('onboarder.cleaningGateway'))
     await wslKillOpenclaw().catch(() => {})
     await new Promise((resolve) => setTimeout(resolve, 2000))
   } else if (isMac) {
+    status(88, t('onboarder.status.finishing'))
     log(t('onboarder.startingGateway'))
     const plistPath = join(homedir(), 'Library', 'LaunchAgents', 'ai.openclaw.gateway.plist')
     const uid = process.getuid?.() ?? ''
@@ -888,6 +932,8 @@ export const runOnboard = async (
       })
     }
   }
+
+    status(100, t('onboarder.status.completed'))
 
     return { botUsername }
   } finally {

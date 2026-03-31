@@ -5,14 +5,23 @@ const MAX_LINES = 500
 const COLLAPSED_HEIGHT = 'h-32'
 const EXPANDED_HEIGHT = 'h-72'
 
-export default function LogViewer({ lines }: { lines: string[] }): React.JSX.Element {
+export default function LogViewer({
+  lines,
+  defaultExpanded = false,
+  expandedHeightClass
+}: {
+  lines: string[]
+  defaultExpanded?: boolean
+  expandedHeightClass?: string
+}): React.JSX.Element {
   const { t } = useTranslation('management')
   const bottomRef = useRef<HTMLDivElement>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const copyTimerRef = useRef<number | null>(null)
-  const [expanded, setExpanded] = useState(false)
+  const [expanded, setExpanded] = useState(defaultExpanded)
   const [copied, setCopied] = useState(false)
   const displayLines = lines.length > MAX_LINES ? lines.slice(-MAX_LINES) : lines
+  const expandedHeight = expandedHeightClass ?? EXPANDED_HEIGHT
 
   useEffect(() => {
     const container = scrollContainerRef.current
@@ -89,7 +98,7 @@ export default function LogViewer({ lines }: { lines: string[] }): React.JSX.Ele
 
       <div
         ref={scrollContainerRef}
-        className={`p-3 overflow-auto font-mono text-[11px] leading-5 text-text-muted whitespace-pre ${expanded ? EXPANDED_HEIGHT : COLLAPSED_HEIGHT}`}
+        className={`p-3 overflow-auto font-mono text-[11px] leading-5 text-text-muted whitespace-pre ${expanded ? expandedHeight : COLLAPSED_HEIGHT}`}
       >
         {displayLines.length === 0 && (
           <span className="opacity-40 italic">{t('logViewer.waiting')}</span>
