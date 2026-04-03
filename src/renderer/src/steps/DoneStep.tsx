@@ -43,6 +43,7 @@ export default function DoneStep({
   const [updating, setUpdating] = useState(false)
   const [updateLogs, setUpdateLogs] = useState<string[]>([])
   const updateCheckedRef = useRef(false)
+  const shouldRenderLogs = status === 'starting' || logs.length > 0 || hasError
 
   const tRef = useRef<TFunction>(t)
   tRef.current = t
@@ -145,6 +146,12 @@ export default function DoneStep({
     })
     return unsub
   }, [])
+
+  useEffect(() => {
+    if (status === 'starting' || hasError) {
+      setShowLogs(true)
+    }
+  }, [hasError, status])
 
   // Subscribe to Gateway status changes from tray
   useEffect(() => {
@@ -330,7 +337,7 @@ export default function DoneStep({
       </div>
 
       {/* Gateway logs */}
-      {logs.length > 0 && (
+      {shouldRenderLogs && (
         <div className="w-full max-w-2xl">
           <button
             onClick={() => setShowLogs((v) => !v)}

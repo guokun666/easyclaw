@@ -73,9 +73,9 @@ export default function ChannelSetupStep({
   }
 
   return (
-    <div className="flex-1 flex flex-col min-h-0 px-8 pt-6">
-      <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col min-h-0">
-        <div className="flex-1 overflow-y-auto pb-3">
+    <div className="flex-1 flex min-h-0 flex-col overflow-hidden px-8 pt-6">
+      <div className="mx-auto relative flex h-full w-full max-w-4xl flex-1 flex-col min-h-0">
+        <div className="min-h-0 flex-1 overflow-y-auto pb-28 pr-1">
           <div className="space-y-4">
             <div className="flex items-center gap-3">
               <LobsterLogo state={running ? 'loading' : error ? 'error' : 'idle'} size={48} />
@@ -153,7 +153,9 @@ export default function ChannelSetupStep({
           </div>
         </div>
 
-        <div className="shrink-0 flex justify-end py-4">
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-bg via-bg/95 to-transparent" />
+
+        <div className="absolute bottom-0 right-0 z-10 flex justify-end py-4">
           {running ? (
             <div className="inline-flex items-center justify-center rounded-2xl bg-gradient-to-r from-primary to-primary-hover px-8 py-3 text-base font-bold tracking-wide text-white shadow-lg shadow-primary-glow opacity-80">
               {t('setup.runningBtn')}
