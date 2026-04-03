@@ -213,7 +213,12 @@ const electronAPI = {
     checkUpdate: (): Promise<{ currentVersion: string | null; latestVersion: string | null }> =>
       ipcRenderer.invoke('openclaw:check-update'),
     dashboard: (): Promise<{ success: boolean; error?: string }> =>
-      ipcRenderer.invoke('openclaw:dashboard')
+      ipcRenderer.invoke('openclaw:dashboard'),
+    updateChannel: (
+      channelType: 'telegram',
+      channelConfig: { botToken: string }
+    ): Promise<{ success: boolean; error?: string; botUsername?: string }> =>
+      ipcRenderer.invoke('openclaw:update-channel', channelType, channelConfig)
   },
   autoLaunch: {
     get: (): Promise<{ enabled: boolean }> => ipcRenderer.invoke('autolaunch:get'),

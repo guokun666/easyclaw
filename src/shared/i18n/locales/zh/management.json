@@ -81,6 +81,14 @@
     "ready": "更新准备就绪",
     "restartNow": "立即重启"
   },
+  "channelConfig": {
+    "title": "配置渠道",
+    "botToken": "Telegram Bot Token",
+    "hint": "从 @BotFather 获取 Bot Token",
+    "save": "保存",
+    "saving": "正在验证并保存...",
+    "success": "渠道配置成功！Gateway 正在重启。"
+  },
   "logViewer": {
     "waiting": "等待中...",
     "expand": "展开",

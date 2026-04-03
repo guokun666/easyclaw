@@ -151,6 +151,10 @@ interface ElectronAPI {
   openclaw: {
     checkUpdate: () => Promise<{ currentVersion: string | null; latestVersion: string | null }>
     dashboard: () => Promise<{ success: boolean; error?: string }>
+    updateChannel: (
+      channelType: 'telegram',
+      channelConfig: { botToken: string }
+    ) => Promise<{ success: boolean; error?: string; botUsername?: string }>
   }
   autoLaunch: {
     get: () => Promise<{ enabled: boolean }>

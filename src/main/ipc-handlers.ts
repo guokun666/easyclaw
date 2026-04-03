@@ -17,7 +17,8 @@ import {
   runOnboard,
   readCurrentConfig,
   switchProvider,
-  validateProviderApiKey
+  validateProviderApiKey,
+  updateChannel
 } from './services/onboarder'
 import {
   startGateway,
@@ -116,6 +117,26 @@ export const registerIpcHandlers = (getWin: () => BrowserWindow | null): void =>
     applyInstallSourceSettings()
     return checkOpenclawUpdate()
   })
+
+  ipcMain.handle(
+    'openclaw:update-channel',
+    async (
+      _e,
+      channelType: 'telegram',
+      channelConfig: { botToken: string }
+    ) => {
+      try {
+        const result = await updateChannel(channelType, channelConfig)
+        if (result.success) {
+          // Restart gateway to pick up new channel config
+          await restartGateway()
+        }
+        return result
+      } catch (e) {
+        return { success: false, error: e instanceof Error ? e.message : String(e) }
+      }
+    }
+  )
 
   ipcMain.handle('openclaw:dashboard', () => {
     const openclaw = resolvePreferredBin('openclaw')

@@ -192,7 +192,6 @@ function App({ debugMode }: { debugMode?: string }): React.JSX.Element {
                   window.electronAPI.wizard.clearState()
                   goTo('welcome')
                 }}
-                onReconfigure={(step) => goTo(step)}
               />
             )}
             {currentStep === 'troubleshoot' && (

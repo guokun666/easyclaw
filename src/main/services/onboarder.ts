@@ -1494,3 +1494,48 @@ export const switchProvider = async (
     progress.dispose()
   }
 }
+
+// ─── Channel-only update (non-destructive) ───
+
+export const updateChannel = async (
+  channelType: 'telegram',
+  channelConfig: { botToken: string }
+): Promise<{ success: boolean; error?: string; botUsername?: string }> => {
+  try {
+    // Validate token first
+    const botUsername = await fetchBotUsername(channelConfig.botToken)
+    if (!botUsername) {
+      return { success: false, error: 'Invalid Telegram Bot Token' }
+    }
+
+    // Read existing config
+    const cfg = (await readOpenClawConfig()) as Record<string, unknown> | null
+    if (!cfg) {
+      return { success: false, error: 'OpenClaw config not found' }
+    }
+
+    // Merge channel config without touching other settings
+    const channels = (cfg.channels ?? {}) as Record<string, unknown>
+    channels[channelType] = {
+      enabled: true,
+      botToken: channelConfig.botToken,
+      dmPolicy: 'open',
+      allowFrom: ['*'],
+      groups: { '*': { requireMention: true } }
+    }
+    cfg.channels = channels
+
+    // Write back
+    await writeOpenClawConfig(cfg)
+
+    // Clear pending Telegram updates
+    await waitTelegramClear(channelConfig.botToken)
+
+    return { success: true, botUsername }
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error)
+    }
+  }
+}
