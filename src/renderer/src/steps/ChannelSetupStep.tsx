@@ -75,7 +75,7 @@ export default function ChannelSetupStep({
   return (
     <div className="flex-1 flex flex-col min-h-0 px-8 pt-6">
       <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col min-h-0">
-        <div className="flex-1 overflow-y-auto pb-2">
+        <div className="flex-1 overflow-y-auto pb-3">
           <div className="space-y-4">
             <div className="flex items-center gap-3">
               <LobsterLogo state={running ? 'loading' : error ? 'error' : 'idle'} size={48} />
@@ -143,9 +143,7 @@ export default function ChannelSetupStep({
 
             {status && <InstallProgressCard status={status} />}
 
-            {logs.length > 0 && (
-              <LogViewer lines={logs} defaultExpanded expandedHeightClass="h-[26rem]" />
-            )}
+            {logs.length > 0 && <LogViewer lines={logs} defaultExpanded expandedHeightClass="h-[18rem]" />}
 
             {error && (
               <div className="rounded-2xl border border-error/30 bg-error/10 px-4 py-3">
@@ -155,10 +153,16 @@ export default function ChannelSetupStep({
           </div>
         </div>
 
-        <div className="shrink-0 flex justify-end py-3">
-          <Button variant="primary" size="lg" onClick={handleRun} disabled={running}>
-            {running ? t('setup.runningBtn') : error ? t('setup.retryBtn') : t('setup.startBtn')}
-          </Button>
+        <div className="shrink-0 flex justify-end py-4">
+          {running ? (
+            <div className="inline-flex items-center justify-center rounded-2xl bg-gradient-to-r from-primary to-primary-hover px-8 py-3 text-base font-bold tracking-wide text-white shadow-lg shadow-primary-glow opacity-80">
+              {t('setup.runningBtn')}
+            </div>
+          ) : (
+            <Button variant="primary" size="lg" onClick={handleRun}>
+              {error ? t('setup.retryBtn') : t('setup.startBtn')}
+            </Button>
+          )}
         </div>
       </div>
     </div>

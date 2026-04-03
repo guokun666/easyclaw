@@ -1,5 +1,4 @@
 import { spawn } from 'child_process'
-import { StringDecoder } from 'string_decoder'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, unlinkSync } from 'fs'
 import { platform, homedir, tmpdir } from 'os'
 import { join } from 'path'
@@ -7,6 +6,7 @@ import https from 'https'
 import { BrowserWindow } from 'electron'
 import { runInWsl, readWslFile, writeWslFile } from './wsl-utils'
 import { getManagedNpmEnv } from './npm-paths'
+import { createTerminalLineEmitter } from './terminal-output'
 import { t } from '../../shared/i18n/main'
 
 interface OnboardConfig {
@@ -257,34 +257,11 @@ const createRunCmd = (): ((
   onLog: (msg: string) => void
 ) => Promise<void>) => {
   const isWindows = platform() === 'win32'
-  const stripAnsi = (value: string): string =>
-    value.replace(/\u001B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g, '')
+  return async (cmd, args, onLog) => {
+    const stdoutEmitter = await createTerminalLineEmitter(onLog)
+    const stderrEmitter = await createTerminalLineEmitter(onLog)
 
-  const emitChunk = (
-    decoder: StringDecoder,
-    chunk: Buffer,
-    buffer: { current: string },
-    onLog: (msg: string) => void
-  ): void => {
-    const text = buffer.current + stripAnsi(decoder.write(chunk))
-    const parts = text.split(/\r\n|\n|\r/)
-    buffer.current = parts.pop() ?? ''
-    for (const part of parts) onLog(part)
-  }
-
-  const flushChunk = (
-    decoder: StringDecoder,
-    buffer: { current: string },
-    onLog: (msg: string) => void
-  ): void => {
-    const rest = stripAnsi(decoder.end())
-    const finalText = buffer.current + rest
-    if (finalText) onLog(finalText)
-    buffer.current = ''
-  }
-
-  return (cmd, args, onLog) =>
-    new Promise((resolve, reject) => {
+    return new Promise((resolve, reject) => {
       let fullCmd: string
       let fullArgs: string[]
 
@@ -302,20 +279,21 @@ const createRunCmd = (): ((
         env: isWindows ? process.env : getManagedNpmEnv(getPathEnv())
       })
 
-      const outDecoder = new StringDecoder('utf8')
-      const errDecoder = new StringDecoder('utf8')
-      const stdoutBuffer = { current: '' }
-      const stderrBuffer = { current: '' }
-      child.stdout.on('data', (d: Buffer) => emitChunk(outDecoder, d, stdoutBuffer, onLog))
-      child.stderr.on('data', (d: Buffer) => emitChunk(errDecoder, d, stderrBuffer, onLog))
+      child.stdout.on('data', (d: Buffer) => stdoutEmitter.push(d))
+      child.stderr.on('data', (d: Buffer) => stderrEmitter.push(d))
       child.on('close', (code) => {
-        flushChunk(outDecoder, stdoutBuffer, onLog)
-        flushChunk(errDecoder, stderrBuffer, onLog)
+        stdoutEmitter.flush()
+        stderrEmitter.flush()
         if (code === 0) resolve()
         else reject(new Error(`Command failed with exit code ${code}`))
       })
-      child.on('error', reject)
+      child.on('error', (error) => {
+        stdoutEmitter.flush()
+        stderrEmitter.flush()
+        reject(error)
+      })
     })
+  }
 }
 
 const getConfigPath = (): string => join(homedir(), '.openclaw', 'openclaw.json')

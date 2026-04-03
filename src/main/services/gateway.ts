@@ -2,6 +2,7 @@ import { spawn, ChildProcess } from 'child_process'
 import { platform } from 'os'
 import { getPathEnv, resolvePreferredBin } from './path-utils'
 import { checkPort } from './troubleshooter'
+import { createTerminalLineEmitter } from './terminal-output'
 import { t } from '../../shared/i18n/main'
 
 export interface GatewayResult {
@@ -68,6 +69,17 @@ const startGatewayWsl = async (): Promise<GatewayResult> => {
   await killWslGateway()
   await new Promise((r) => setTimeout(r, 1000))
 
+  let stderrBuffer = ''
+  const stdoutLines: string[] = []
+  const stdoutEmitter = await createTerminalLineEmitter((msg) => {
+    emitLog(msg)
+    stdoutLines.push(msg)
+  })
+  const stderrEmitter = await createTerminalLineEmitter((msg) => {
+    emitLog(msg)
+    stderrBuffer += msg + '\n'
+  })
+
   return new Promise((resolve) => {
     const child = spawn(
       'wsl',
@@ -87,23 +99,16 @@ const startGatewayWsl = async (): Promise<GatewayResult> => {
     wslGatewayProcess = child
 
     let resolved = false
-    let stderrBuffer = ''
-    const stdoutLines: string[] = []
 
-    child.stdout.on('data', (d) => {
-      const msg = d.toString().trim()
-      if (msg) {
-        emitLog(msg)
-        stdoutLines.push(msg)
-      }
+    child.stdout.on('data', (d: Buffer) => stdoutEmitter.push(d))
+    child.stderr.on('data', (d: Buffer) => stderrEmitter.push(d))
+    child.on('close', () => {
+      stdoutEmitter.flush()
+      stderrEmitter.flush()
     })
-
-    child.stderr.on('data', (d) => {
-      const msg = d.toString().trim()
-      if (msg) {
-        emitLog(msg)
-        stderrBuffer += msg + '\n'
-      }
+    child.on('error', () => {
+      stdoutEmitter.flush()
+      stderrEmitter.flush()
     })
 
     child.on('close', (code) => {
@@ -183,8 +188,11 @@ const stopGatewayWsl = async (): Promise<string> => {
   return 'stopped'
 }
 
-const runDoctorFix = (): Promise<void> =>
-  new Promise((resolve) => {
+const runDoctorFix = async (): Promise<void> => {
+  const stdoutEmitter = await createTerminalLineEmitter((msg) => emitLog(msg))
+  const stderrEmitter = await createTerminalLineEmitter((msg) => emitLog(msg))
+
+  return new Promise((resolve) => {
     const isWin = platform() === 'win32'
     let cmd: string
     let args: string[]
@@ -200,17 +208,21 @@ const runDoctorFix = (): Promise<void> =>
     const child = spawn(cmd, args, {
       env: isWin ? process.env : getPathEnv()
     })
-    child.stdout.on('data', (d) => {
-      const msg = d.toString().trim()
-      if (msg) emitLog(msg)
+
+    child.stdout.on('data', (d: Buffer) => stdoutEmitter.push(d))
+    child.stderr.on('data', (d: Buffer) => stderrEmitter.push(d))
+    child.on('close', () => {
+      stdoutEmitter.flush()
+      stderrEmitter.flush()
+      resolve()
     })
-    child.stderr.on('data', (d) => {
-      const msg = d.toString().trim()
-      if (msg) emitLog(msg)
+    child.on('error', () => {
+      stdoutEmitter.flush()
+      stderrEmitter.flush()
+      resolve()
     })
-    child.on('close', () => resolve())
-    child.on('error', () => resolve())
   })
+}
 
 const forceKillGateway = (): Promise<void> =>
   new Promise((resolve) => {

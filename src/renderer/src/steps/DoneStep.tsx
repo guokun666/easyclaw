@@ -220,9 +220,9 @@ export default function DoneStep({
 
   return (
     <div className="w-full px-10 pt-8 pb-28">
-      <div className="flex flex-col items-center justify-center gap-3 min-h-full">
+      <div className="mx-auto flex max-w-4xl flex-col items-center justify-center gap-5 min-h-full">
       {/* Logo + status */}
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-5">
         <div className="relative">
           <div
             className={`absolute inset-0 rounded-full blur-2xl scale-125 transition-colors duration-700 ${
@@ -231,13 +231,13 @@ export default function DoneStep({
           />
           <LobsterLogo
             state={status === 'running' ? 'success' : status === 'starting' ? 'loading' : 'idle'}
-            size={44}
+            size={54}
           />
         </div>
         <div className="flex flex-col gap-1">
           <div className="flex items-center gap-2">
             <div
-              className={`w-2 h-2 rounded-full transition-colors duration-500 ${
+              className={`w-2.5 h-2.5 rounded-full transition-colors duration-500 ${
                 status === 'running'
                   ? 'bg-success'
                   : status === 'starting'
@@ -253,7 +253,7 @@ export default function DoneStep({
                   : {}
               }
             />
-            <span className="text-sm font-bold tracking-wide">
+            <span className="text-xl font-bold tracking-wide">
               {status === 'running'
                 ? t('done.gatewayRunning')
                 : status === 'starting'
@@ -266,9 +266,9 @@ export default function DoneStep({
               onClick={() => setShowProviderModal(true)}
               className="flex items-center gap-1.5 cursor-pointer hover:opacity-80 transition-opacity"
             >
-              <span className="text-[11px] text-text-muted">{t('done.aiModel')}</span>
-              <span className="text-[11px] font-bold text-primary">{currentModel}</span>
-              <span className="text-[10px] text-text-muted/60">{t('done.changeModel')}</span>
+              <span className="text-sm text-text-muted">{t('done.aiModel')}</span>
+              <span className="text-sm font-bold text-primary">{currentModel}</span>
+              <span className="text-xs text-text-muted/60">{t('done.changeModel')}</span>
             </button>
           )}
         </div>
@@ -276,20 +276,20 @@ export default function DoneStep({
 
       {/* OpenClaw update banner */}
       {(openclawUpdate || updating) && (
-        <div className="w-full max-w-md flex items-center gap-3 px-4 py-2 rounded-xl bg-gradient-to-r from-blue-500/15 via-blue-500/10 to-blue-500/15 border border-blue-500/30">
-          <span className="text-base">{updating ? '⏳' : '🔄'}</span>
+        <div className="w-full max-w-2xl flex items-center gap-4 px-5 py-3 rounded-2xl bg-gradient-to-r from-blue-500/15 via-blue-500/10 to-blue-500/15 border border-blue-500/30">
+          <span className="text-lg">{updating ? '⏳' : '🔄'}</span>
           <div className="flex-1 min-w-0">
             {updating ? (
               <div>
-                <span className="text-[12px] font-bold">{t('common:status.updating')}</span>
+                <span className="text-sm font-bold">{t('common:status.updating')}</span>
                 {updateLogs.length > 0 && (
-                  <p className="text-[11px] text-text-muted/70 truncate">
+                  <p className="text-sm text-text-muted/70 truncate">
                     {updateLogs[updateLogs.length - 1]}
                   </p>
                 )}
               </div>
             ) : (
-              <span className="text-[12px] font-bold">
+              <span className="text-sm font-bold">
                 {t('done.ocUpdateAvailable', { latest: openclawUpdate!.latest })}
                 <span className="text-text-muted/50 font-normal ml-1">
                   ({t('done.ocCurrentVersion', { current: openclawUpdate!.current })})
@@ -300,7 +300,7 @@ export default function DoneStep({
           {!updating && (
             <button
               onClick={handleOpenclawUpdate}
-              className="px-3 py-1 text-[11px] font-bold rounded-lg bg-blue-500/20 text-blue-400 border border-blue-500/30 hover:bg-blue-500/30 transition-all duration-200 cursor-pointer whitespace-nowrap"
+              className="px-4 py-2 text-sm font-bold rounded-xl bg-blue-500/20 text-blue-400 border border-blue-500/30 hover:bg-blue-500/30 transition-all duration-200 cursor-pointer whitespace-nowrap"
             >
               {t('common:button.update')}
             </button>
@@ -314,15 +314,15 @@ export default function DoneStep({
           <>
             <Button
               variant="primary"
-              size="sm"
+              size="lg"
               onClick={() => window.electronAPI.openclaw.dashboard()}
             >
               {t('done.openDashboard')}
             </Button>
-            <Button variant="secondary" size="sm" onClick={handleRestart}>
+            <Button variant="secondary" size="lg" onClick={handleRestart}>
               {t('done.restartBtn')}
             </Button>
-            <Button variant="secondary" size="sm" onClick={handleStop}>
+            <Button variant="secondary" size="lg" onClick={handleStop}>
               {t('done.stopBtn')}
             </Button>
           </>
@@ -331,34 +331,34 @@ export default function DoneStep({
 
       {/* Gateway logs */}
       {logs.length > 0 && (
-        <div className="w-full max-w-sm">
+        <div className="w-full max-w-2xl">
           <button
             onClick={() => setShowLogs((v) => !v)}
-            className="text-[11px] text-text-muted/60 hover:text-text-muted transition-colors mb-1"
+            className="text-sm text-text-muted/60 hover:text-text-muted transition-colors mb-2"
           >
             {showLogs ? t('done.hideLog') : t('done.showLog')}
-            {hasError && <span className="ml-1.5 text-error">{t('done.errorDetected')}</span>}
+            {hasError && <span className="ml-1.5 text-sm text-error">{t('done.errorDetected')}</span>}
           </button>
           {showLogs && <LogViewer lines={logs} />}
         </div>
       )}
 
       {/* ─── Action grid (3 columns) ─── */}
-      <div className="w-full max-w-md grid grid-cols-3 gap-2">
+      <div className="w-full max-w-2xl grid grid-cols-3 gap-3">
         <button
           onClick={toggleAutoLaunch}
-          className="glass-card flex items-center gap-2 px-3 py-2 cursor-pointer hover:border-primary/40 transition-all duration-200"
+          className="glass-card flex items-center gap-3 px-4 py-3.5 cursor-pointer hover:border-primary/40 transition-all duration-200"
         >
-          <span className="text-sm">⚙️</span>
-          <span className="text-[11px] font-bold flex-1 text-left">{t('done.autoLaunch')}</span>
+          <span className="text-base">⚙️</span>
+          <span className="text-sm font-bold flex-1 text-left">{t('done.autoLaunch')}</span>
           <div
-            className={`w-8 h-4.5 rounded-full p-0.5 transition-colors duration-200 ${
+            className={`w-10 h-5.5 rounded-full p-0.5 transition-colors duration-200 ${
               autoLaunch ? 'bg-primary' : 'bg-white/15'
             }`}
           >
             <div
-              className={`w-3.5 h-3.5 rounded-full bg-white shadow-sm transition-transform duration-200 ${
-                autoLaunch ? 'translate-x-3.5' : 'translate-x-0'
+              className={`w-4.5 h-4.5 rounded-full bg-white shadow-sm transition-transform duration-200 ${
+                autoLaunch ? 'translate-x-4' : 'translate-x-0'
               }`}
             />
           </div>
@@ -366,48 +366,48 @@ export default function DoneStep({
         {onTroubleshoot && (
           <button
             onClick={onTroubleshoot}
-            className="glass-card flex items-center gap-2 px-3 py-2 cursor-pointer hover:border-primary/40 transition-all duration-200"
+            className="glass-card flex items-center gap-3 px-4 py-3.5 cursor-pointer hover:border-primary/40 transition-all duration-200"
           >
-            <span className="text-sm">🔧</span>
-            <span className="text-[11px] font-bold flex-1 text-left">{t('done.troubleshoot')}</span>
+            <span className="text-base">🔧</span>
+            <span className="text-sm font-bold flex-1 text-left">{t('done.troubleshoot')}</span>
           </button>
         )}
         <button
           onClick={() => setShowProviderModal(true)}
-          className="glass-card flex items-center gap-2 px-3 py-2 cursor-pointer hover:border-primary/40 transition-all duration-200"
+          className="glass-card flex items-center gap-3 px-4 py-3.5 cursor-pointer hover:border-primary/40 transition-all duration-200"
         >
-          <span className="text-sm">🔑</span>
-          <span className="text-[11px] font-bold flex-1 text-left">{t('done.configKey')}</span>
+          <span className="text-base">🔑</span>
+          <span className="text-sm font-bold flex-1 text-left">{t('done.configKey')}</span>
         </button>
         {onConfigureChannel && (
           <button
             onClick={onConfigureChannel}
-            className="glass-card flex items-center gap-2 px-3 py-2 cursor-pointer hover:border-primary/40 transition-all duration-200"
+            className="glass-card flex items-center gap-3 px-4 py-3.5 cursor-pointer hover:border-primary/40 transition-all duration-200"
           >
-            <span className="text-sm">📱</span>
-            <span className="text-[11px] font-bold flex-1 text-left">{t('done.configChannel')}</span>
+            <span className="text-base">📱</span>
+            <span className="text-sm font-bold flex-1 text-left">{t('done.configChannel')}</span>
           </button>
         )}
         <button
           onClick={backup.execute}
-          className="glass-card flex items-center gap-2 px-3 py-2 cursor-pointer hover:border-primary/40 transition-all duration-200"
+          className="glass-card flex items-center gap-3 px-4 py-3.5 cursor-pointer hover:border-primary/40 transition-all duration-200"
         >
-          <span className="text-sm">📦</span>
-          <span className="text-[11px] font-bold flex-1 text-left">{t('done.backup')}</span>
+          <span className="text-base">📦</span>
+          <span className="text-sm font-bold flex-1 text-left">{t('done.backup')}</span>
         </button>
         <button
           onClick={backup.openRestore}
-          className="glass-card flex items-center gap-2 px-3 py-2 cursor-pointer hover:border-primary/40 transition-all duration-200"
+          className="glass-card flex items-center gap-3 px-4 py-3.5 cursor-pointer hover:border-primary/40 transition-all duration-200"
         >
-          <span className="text-sm">📥</span>
-          <span className="text-[11px] font-bold flex-1 text-left">{t('done.restore')}</span>
+          <span className="text-base">📥</span>
+          <span className="text-sm font-bold flex-1 text-left">{t('done.restore')}</span>
         </button>
         <button
           onClick={uninstall.open}
-          className="glass-card flex items-center gap-2 px-3 py-2 cursor-pointer hover:border-error/40 transition-all duration-200"
+          className="glass-card flex items-center gap-3 px-4 py-3.5 cursor-pointer hover:border-error/40 transition-all duration-200"
         >
-          <span className="text-sm">🗑️</span>
-          <span className="text-[11px] font-bold flex-1 text-left text-error/80">
+          <span className="text-base">🗑️</span>
+          <span className="text-sm font-bold flex-1 text-left text-error/80">
             {t('done.delete')}
           </span>
         </button>

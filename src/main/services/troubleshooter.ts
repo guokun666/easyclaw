@@ -2,6 +2,7 @@ import { spawn } from 'child_process'
 import { platform } from 'os'
 import { BrowserWindow } from 'electron'
 import { getPathEnv, resolvePreferredBin } from './path-utils'
+import { createTerminalLineEmitter } from './terminal-output'
 
 const exec = (
   cmd: string,
@@ -49,33 +50,38 @@ export const runDoctorFix = async (win: BrowserWindow): Promise<{ success: boole
     args = ['doctor', '--fix']
   }
 
+  const stdoutEmitter = await createTerminalLineEmitter((msg) => {
+    try {
+      win.webContents.send('install:progress', msg)
+    } catch {
+      /* window destroyed */
+    }
+  })
+  const stderrEmitter = await createTerminalLineEmitter((msg) => {
+    try {
+      win.webContents.send('install:progress', msg)
+    } catch {
+      /* window destroyed */
+    }
+  })
+
   return new Promise((resolve) => {
     const child = spawn(cmd, args, {
       env: isWin ? process.env : getPathEnv(),
       shell: isWin
     })
 
-    child.stdout.on('data', (d) => {
-      const msg = d.toString().trim()
-      if (msg) {
-        try {
-          win.webContents.send('install:progress', msg)
-        } catch {
-          /* window destroyed */
-        }
-      }
+    child.stdout.on('data', (d: Buffer) => stdoutEmitter.push(d))
+    child.stderr.on('data', (d: Buffer) => stderrEmitter.push(d))
+    child.on('close', (code) => {
+      stdoutEmitter.flush()
+      stderrEmitter.flush()
+      resolve({ success: code === 0 })
     })
-    child.stderr.on('data', (d) => {
-      const msg = d.toString().trim()
-      if (msg) {
-        try {
-          win.webContents.send('install:progress', msg)
-        } catch {
-          /* window destroyed */
-        }
-      }
+    child.on('error', () => {
+      stdoutEmitter.flush()
+      stderrEmitter.flush()
+      resolve({ success: false })
     })
-    child.on('close', (code) => resolve({ success: code === 0 }))
-    child.on('error', () => resolve({ success: false }))
   })
 }

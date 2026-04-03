@@ -41,7 +41,7 @@ export default function StepIndicator({
   const current = Math.max(0, steps.indexOf(currentStep))
 
   return (
-    <div className="px-8 pt-12 pb-3">
+    <div className="px-8 pt-12 pb-4">
       {/* Dot indicators with connecting line */}
       <div className="relative flex justify-between items-center">
         {/* Background line */}
@@ -59,7 +59,7 @@ export default function StepIndicator({
           return (
             <div key={i} className="relative flex flex-col items-center z-10">
               <div
-                className={`w-3 h-3 rounded-full transition-all duration-500 ${
+                className={`h-3.5 w-3.5 rounded-full transition-all duration-500 ${
                   isCurrent
                     ? 'bg-primary scale-125 shadow-[0_0_10px_var(--color-primary-glow)]'
                     : isActive
@@ -76,7 +76,7 @@ export default function StepIndicator({
                 }
               />
               <span
-                className={`mt-2 text-[10px] font-semibold tracking-wide transition-all duration-500 ${
+                className={`mt-2.5 text-xs font-semibold tracking-wide transition-all duration-500 ${
                   isCurrent ? 'text-primary' : isActive ? 'text-text/70' : 'text-text-muted/50'
                 }`}
               >

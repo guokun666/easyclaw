@@ -18,6 +18,8 @@ const MIN_WINDOW_WIDTH = 1040
 const MIN_WINDOW_HEIGHT = 680
 const MAX_WINDOW_WIDTH = 1480
 const MAX_WINDOW_HEIGHT = 960
+const BASELINE_WORKAREA_WIDTH = 1440
+const BASELINE_WORKAREA_HEIGHT = 900
 
 const clamp = (value: number, min: number, max: number): number => {
   return Math.min(Math.max(value, min), max)
@@ -28,6 +30,7 @@ const getInitialWindowBounds = (): {
   height: number
   minWidth: number
   minHeight: number
+  zoomFactor: number
 } => {
   const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint())
   const { width: workAreaWidth, height: workAreaHeight } = display.workAreaSize
@@ -45,14 +48,20 @@ const getInitialWindowBounds = (): {
     minHeight,
     Math.min(MAX_WINDOW_HEIGHT, maxAllowedHeight)
   )
+  const viewportScale = Math.min(
+    workAreaWidth / BASELINE_WORKAREA_WIDTH,
+    workAreaHeight / BASELINE_WORKAREA_HEIGHT
+  )
+  const zoomFactor =
+    viewportScale >= 1.6 ? 1.18 : viewportScale >= 1.3 ? 1.12 : viewportScale >= 1.15 ? 1.08 : 1
 
-  return { width, height, minWidth, minHeight }
+  return { width, height, minWidth, minHeight, zoomFactor }
 }
 
 function createWindow(): void {
   const startHidden =
     app.getLoginItemSettings().wasOpenedAsHidden || process.argv.includes('--hidden')
-  const { width, height, minWidth, minHeight } = getInitialWindowBounds()
+  const { width, height, minWidth, minHeight, zoomFactor } = getInitialWindowBounds()
 
   mainWindow = new BrowserWindow({
     width,
@@ -71,6 +80,7 @@ function createWindow(): void {
       sandbox: false
     }
   })
+  mainWindow.webContents.setZoomFactor(zoomFactor)
 
   mainWindow.on('ready-to-show', () => {
     if (!startHidden) mainWindow?.show()

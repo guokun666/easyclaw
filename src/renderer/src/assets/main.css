@@ -19,6 +19,10 @@
   --color-accent-mint: #6ee7b7;
 }
 
+html {
+  font-size: clamp(16px, calc(12px + 0.55vw), 20px);
+}
+
 body {
   margin: 0;
   background: var(--color-bg);
