@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type Dispatch, type SetStateAction } from 'react'
 import { useTranslation } from 'react-i18next'
 import LobsterLogo from '../components/LobsterLogo'
 import Button from '../components/Button'
@@ -30,7 +30,31 @@ const providerPlaceholders: Record<Provider, string> = {
 const TELEGRAM_BOT_TOKEN_PATTERN = /^\d+:[A-Za-z0-9_-]+$/
 const FEISHU_APP_ID_PATTERN = /^cli_[A-Za-z0-9]+$/
 const GENERIC_APP_SECRET_PATTERN = /^.{8,}$/
-type ChannelSetupMode = 'one-click' | 'manual'
+export type ChannelSetupMode = 'one-click' | 'manual'
+
+export interface ConfigDraft {
+  apiKey: string
+  telegramBotToken: string
+  feishuSetupMode: ChannelSetupMode
+  feishuAppId: string
+  feishuAppSecret: string
+  oauthDone: boolean
+  validatedApiKey: string | null
+  apiKeyTestState: 'idle' | 'success' | 'warning' | 'error'
+  apiKeyTestMessage: string | null
+}
+
+export const EMPTY_CONFIG_DRAFT: ConfigDraft = {
+  apiKey: '',
+  telegramBotToken: '',
+  feishuSetupMode: 'one-click',
+  feishuAppId: '',
+  feishuAppSecret: '',
+  oauthDone: false,
+  validatedApiKey: null,
+  apiKeyTestState: 'idle',
+  apiKeyTestMessage: null
+}
 
 export interface SetupPayload {
   provider: Provider
@@ -49,6 +73,8 @@ interface Props {
   authMethod?: 'api-key' | 'oauth'
   modelId?: string
   channelType: ChannelType
+  draft: ConfigDraft
+  onDraftChange: Dispatch<SetStateAction<ConfigDraft>>
   onNext: (payload: SetupPayload) => void
 }
 
@@ -57,27 +83,33 @@ export default function ConfigStep({
   authMethod,
   modelId,
   channelType,
+  draft,
+  onDraftChange,
   onNext
 }: Props): React.JSX.Element {
   const { t } = useTranslation(['steps', 'common'])
   const { t: tp } = useTranslation('providers')
-  const [apiKey, setApiKey] = useState('')
-  const [telegramBotToken, setTelegramBotToken] = useState('')
-  const [feishuSetupMode, setFeishuSetupMode] = useState<ChannelSetupMode>('one-click')
-  const [feishuAppId, setFeishuAppId] = useState('')
-  const [feishuAppSecret, setFeishuAppSecret] = useState('')
   const [error, setError] = useState<string | null>(null)
-  const [notice, setNotice] = useState<string | null>(null)
-  const [oauthDone, setOauthDone] = useState(false)
   const [oauthLoading, setOauthLoading] = useState(false)
   const [keyValidating, setKeyValidating] = useState(false)
-  const [validatedApiKey, setValidatedApiKey] = useState<string | null>(null)
+  const {
+    apiKey,
+    telegramBotToken,
+    feishuSetupMode,
+    feishuAppId,
+    feishuAppSecret,
+    oauthDone,
+    validatedApiKey,
+    apiKeyTestState,
+    apiKeyTestMessage
+  } = draft
   const isOAuth = authMethod === 'oauth'
   const isOllama = provider === 'ollama'
   const needsPreValidation =
     (provider === 'modelfamily' || provider === 'openai' || provider === 'anthropic') &&
     !isOAuth &&
     !isOllama
+  const showConnectionTest = !isOAuth && !isOllama && needsPreValidation
 
   const pattern = providerPatterns[provider]
   const label =
@@ -87,6 +119,9 @@ export default function ConfigStep({
   const telegramBotTokenValid = TELEGRAM_BOT_TOKEN_PATTERN.test(telegramBotToken)
   const feishuAppIdValid = FEISHU_APP_ID_PATTERN.test(feishuAppId)
   const feishuAppSecretValid = GENERIC_APP_SECRET_PATTERN.test(feishuAppSecret)
+  const selectedChannelTitle = t(`channelGuide.channels.${channelType}.title`)
+  const selectedSetupModeTitle =
+    channelType === 'feishu' ? t(`config.channelSetupMode.${feishuSetupMode}.title`) : null
   const channelValid =
     channelType === 'telegram'
       ? telegramBotTokenValid
@@ -99,14 +134,76 @@ export default function ConfigStep({
       ? channelValid
       : apiKeyValid && channelValid
 
+  const updateDraft = (patch: Partial<ConfigDraft>): void => {
+    onDraftChange((current) => ({
+      ...current,
+      ...patch
+    }))
+  }
+
+  const clearApiKeyTestState = (): void => {
+    updateDraft({
+      validatedApiKey: null,
+      apiKeyTestState: 'idle',
+      apiKeyTestMessage: null
+    })
+  }
+
+  const runApiKeyValidation = async (): Promise<boolean> => {
+    if (!apiKeyValid) {
+      updateDraft({
+        validatedApiKey: null,
+        apiKeyTestState: 'error',
+        apiKeyTestMessage: t('config.apiKeyTestInvalidFormat')
+      })
+      return false
+    }
+
+    setKeyValidating(true)
+    setError(null)
+
+    try {
+      const result = await window.electronAPI.config.validateApiKey({
+        provider,
+        apiKey,
+        authMethod: authMethod ?? 'api-key',
+        modelId
+      })
+
+      if (!result.success) {
+        updateDraft({
+          validatedApiKey: null,
+          apiKeyTestState: 'error',
+          apiKeyTestMessage: result.error ?? t('config.keyValidationFailed')
+        })
+        return false
+      }
+
+      updateDraft({
+        validatedApiKey: apiKey,
+        apiKeyTestState: result.warning ? 'warning' : 'success',
+        apiKeyTestMessage: result.warning ?? t('config.apiKeyTestSuccess')
+      })
+      return true
+    } catch (err) {
+      updateDraft({
+        validatedApiKey: null,
+        apiKeyTestState: 'error',
+        apiKeyTestMessage: err instanceof Error ? err.message : t('common:error.unknown')
+      })
+      return false
+    } finally {
+      setKeyValidating(false)
+    }
+  }
+
   const handleOAuthLogin = async (): Promise<void> => {
     setOauthLoading(true)
     setError(null)
-    setNotice(null)
     try {
       const result = await window.electronAPI.oauth.loginCodex()
       if (result.success) {
-        setOauthDone(true)
+        updateDraft({ oauthDone: true })
       } else {
         setError(
           result.error === 'cancelled'
@@ -123,34 +220,11 @@ export default function ConfigStep({
 
   const handleNext = async (): Promise<void> => {
     setError(null)
-    setNotice(null)
 
     if (needsPreValidation && apiKeyValid && validatedApiKey !== apiKey) {
-      setKeyValidating(true)
-      try {
-        const result = await window.electronAPI.config.validateApiKey({
-          provider,
-          apiKey,
-          authMethod: authMethod ?? 'api-key',
-          modelId
-        })
-
-        if (!result.success) {
-          setValidatedApiKey(null)
-          setError(result.error ?? t('config.keyValidationFailed'))
-          return
-        }
-
-        setValidatedApiKey(apiKey)
-        if (result.warning) {
-          setNotice(result.warning)
-        }
-      } catch (err) {
-        setValidatedApiKey(null)
-        setError(err instanceof Error ? err.message : t('common:error.unknown'))
+      const validated = await runApiKeyValidation()
+      if (!validated) {
         return
-      } finally {
-        setKeyValidating(false)
       }
     }
 
@@ -184,7 +258,6 @@ export default function ConfigStep({
         </div>
 
         {error && <p className="text-error text-xs font-medium">{error}</p>}
-        {notice && <p className="text-warning text-xs font-medium">{notice}</p>}
 
         {isOllama ? (
           <div className="space-y-1.5">
@@ -245,27 +318,73 @@ export default function ConfigStep({
           </div>
         ) : (
           <div className="space-y-1.5">
-            <label className="text-sm font-bold">
-              {label} <span className="text-error text-xs">{t('config.required')}</span>
-            </label>
-            <input
-              type="password"
-              placeholder={placeholder}
-              value={apiKey}
-              onChange={(e) => {
-                setApiKey(e.target.value)
-                setValidatedApiKey(null)
-                setNotice(null)
-              }}
-              className={`w-full bg-bg-input rounded-xl px-4 py-2.5 text-sm font-mono outline-none border transition-all duration-200 placeholder:text-text-muted/30 ${
-                apiKey && !apiKeyValid
-                  ? 'border-error/50 focus:border-error'
-                  : 'border-glass-border focus:border-primary focus:shadow-[0_0_0_3px_var(--color-primary-glow)]'
-              }`}
-            />
-            {needsPreValidation && validatedApiKey === apiKey && apiKeyValid && (
-              <p className="text-success text-[11px] font-medium">{t('config.keyValidated')}</p>
-            )}
+            <div className="flex items-center justify-between gap-3">
+              <label className="text-sm font-bold">
+                {label} <span className="text-error text-xs">{t('config.required')}</span>
+              </label>
+              {showConnectionTest && (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => void runApiKeyValidation()}
+                  disabled={!apiKey || keyValidating}
+                >
+                  {keyValidating ? t('config.testingBtn') : t('config.testBtn')}
+                </Button>
+              )}
+            </div>
+            <div className="space-y-2">
+              <input
+                type="password"
+                placeholder={placeholder}
+                value={apiKey}
+                onChange={(e) => {
+                  updateDraft({
+                    apiKey: e.target.value
+                  })
+                  clearApiKeyTestState()
+                }}
+                className={`w-full bg-bg-input rounded-xl px-4 py-2.5 text-sm font-mono outline-none border transition-all duration-200 placeholder:text-text-muted/30 ${
+                  apiKey && !apiKeyValid
+                    ? 'border-error/50 focus:border-error'
+                    : 'border-glass-border focus:border-primary focus:shadow-[0_0_0_3px_var(--color-primary-glow)]'
+                }`}
+              />
+
+              {showConnectionTest && apiKeyTestState !== 'idle' && (
+                <div
+                  className={`rounded-2xl border px-4 py-3 text-xs ${
+                    apiKeyTestState === 'success'
+                      ? 'border-success/35 bg-success/10 text-success'
+                      : apiKeyTestState === 'warning'
+                        ? 'border-warning/35 bg-warning/10 text-warning'
+                        : 'border-error/35 bg-error/10 text-error'
+                  }`}
+                >
+                  <div className="flex items-start gap-2">
+                    <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-current/30 text-[10px] font-bold">
+                      {apiKeyTestState === 'success'
+                        ? 'OK'
+                        : apiKeyTestState === 'warning'
+                          ? '!'
+                          : 'X'}
+                    </span>
+                    <div className="min-w-0 space-y-1">
+                      <p className="font-semibold">
+                        {apiKeyTestState === 'success'
+                          ? t('config.testResult.successTitle')
+                          : apiKeyTestState === 'warning'
+                            ? t('config.testResult.warningTitle')
+                            : t('config.testResult.errorTitle')}
+                      </p>
+                      <p className="leading-relaxed text-current/85">{apiKeyTestMessage}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+            </div>
           </div>
         )}
 
@@ -280,6 +399,17 @@ export default function ConfigStep({
             </p>
           </div>
 
+          <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-primary/20 bg-primary/8 px-4 py-2 text-xs">
+            <span className="inline-flex h-2 w-2 rounded-full bg-primary shadow-[0_0_14px_rgba(255,122,26,0.9)]" />
+            <span className="font-semibold text-text-muted">{t('channelGuide.currentSelection')}</span>
+            <span className="font-bold text-primary">{selectedChannelTitle}</span>
+            {selectedSetupModeTitle && (
+              <span className="rounded-full border border-primary/35 bg-primary/14 px-2 py-0.5 text-[10px] font-bold text-primary">
+                {selectedSetupModeTitle}
+              </span>
+            )}
+          </div>
+
           {channelType === 'telegram' && (
             <div className="space-y-1.5">
               <label className="text-sm font-bold">
@@ -290,7 +420,7 @@ export default function ConfigStep({
                 type="text"
                 placeholder="123456:ABCDEF..."
                 value={telegramBotToken}
-                onChange={(e) => setTelegramBotToken(e.target.value)}
+                onChange={(e) => updateDraft({ telegramBotToken: e.target.value })}
                 className={`w-full bg-bg-input rounded-xl px-4 py-2.5 text-sm font-mono outline-none border transition-all duration-200 placeholder:text-text-muted/30 ${
                   telegramBotToken && !telegramBotTokenValid
                     ? 'border-error/50 focus:border-error'
@@ -306,19 +436,34 @@ export default function ConfigStep({
           {channelType === 'feishu' && (
             <div className="space-y-3">
               <div className="space-y-1.5">
-                <label className="text-sm font-bold">{t('config.channelSetupModeLabel')}</label>
+                <div className="flex items-center justify-between gap-3">
+                  <label className="text-sm font-bold">{t('config.channelSetupModeLabel')}</label>
+                  <span className="rounded-full border border-primary/35 bg-primary/14 px-2 py-0.5 text-[10px] font-bold text-primary">
+                    {selectedSetupModeTitle}
+                  </span>
+                </div>
                 <div className="grid grid-cols-2 gap-2">
                   {(['one-click', 'manual'] as ChannelSetupMode[]).map((mode) => (
                     <button
                       key={mode}
                       type="button"
-                      onClick={() => setFeishuSetupMode(mode)}
-                      className={`glass-card px-3 py-2 text-left transition-all ${
-                        feishuSetupMode === mode ? 'border-primary/50 bg-primary/10' : ''
+                      onClick={() => updateDraft({ feishuSetupMode: mode })}
+                      aria-pressed={feishuSetupMode === mode}
+                      className={`glass-card group relative cursor-pointer px-3 py-2 text-left transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/35 hover:bg-white/6 ${
+                        feishuSetupMode === mode
+                          ? 'border-primary/60 bg-primary/12 shadow-[0_10px_30px_rgba(255,122,26,0.14)]'
+                          : ''
                       }`}
                     >
-                      <div className="text-sm font-bold">
-                        {t(`config.channelSetupMode.${mode}.title`)}
+                      <div className="mb-1 flex items-center justify-between gap-2">
+                        <div className="text-sm font-bold">
+                          {t(`config.channelSetupMode.${mode}.title`)}
+                        </div>
+                        {feishuSetupMode === mode && (
+                          <span className="rounded-full border border-primary/35 bg-primary/14 px-2 py-0.5 text-[10px] font-bold text-primary">
+                            {t('channelGuide.selectedBadge')}
+                          </span>
+                        )}
                       </div>
                       <div className="text-[11px] text-text-muted leading-snug mt-1">
                         {t(`config.channelSetupMode.${mode}.desc`)}
@@ -346,7 +491,7 @@ export default function ConfigStep({
                       type="text"
                       placeholder="cli_xxxxxxxxxxxxx"
                       value={feishuAppId}
-                      onChange={(e) => setFeishuAppId(e.target.value)}
+                      onChange={(e) => updateDraft({ feishuAppId: e.target.value })}
                       className={`w-full bg-bg-input rounded-xl px-4 py-2.5 text-sm font-mono outline-none border transition-all duration-200 placeholder:text-text-muted/30 ${
                         feishuAppId && !feishuAppIdValid
                           ? 'border-error/50 focus:border-error'
@@ -363,7 +508,7 @@ export default function ConfigStep({
                       type="password"
                       placeholder={t('config.feishuSecretHint')}
                       value={feishuAppSecret}
-                      onChange={(e) => setFeishuAppSecret(e.target.value)}
+                      onChange={(e) => updateDraft({ feishuAppSecret: e.target.value })}
                       className={`w-full bg-bg-input rounded-xl px-4 py-2.5 text-sm font-mono outline-none border transition-all duration-200 placeholder:text-text-muted/30 ${
                         feishuAppSecret && !feishuAppSecretValid
                           ? 'border-error/50 focus:border-error'

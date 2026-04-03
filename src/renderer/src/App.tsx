@@ -10,7 +10,11 @@ import InstallStep from './steps/InstallStep'
 import ApiKeyGuideStep from './steps/ApiKeyGuideStep'
 import type { Provider } from './constants/providers'
 import TelegramGuideStep from './steps/TelegramGuideStep'
-import ConfigStep, { type SetupPayload } from './steps/ConfigStep'
+import ConfigStep, {
+  EMPTY_CONFIG_DRAFT,
+  type ConfigDraft,
+  type SetupPayload
+} from './steps/ConfigStep'
 import ChannelSetupStep from './steps/ChannelSetupStep'
 import DoneStep from './steps/DoneStep'
 import TroubleshootStep from './steps/TroubleshootStep'
@@ -61,6 +65,7 @@ function App({ debugMode }: { debugMode?: string }): React.JSX.Element {
   const [channelType, setChannelType] = useState<ChannelType>('feishu')
   const [botUsername, setBotUsername] = useState<string | undefined>()
   const [setupPayload, setSetupPayload] = useState<SetupPayload | null>(null)
+  const [configDraft, setConfigDraft] = useState<ConfigDraft>(EMPTY_CONFIG_DRAFT)
   const [isWindows, setIsWindows] = useState(false)
   const [wslState, setWslState] = useState<WslState>('ready')
   const [version, setVersion] = useState('')
@@ -189,11 +194,35 @@ function App({ debugMode }: { debugMode?: string }): React.JSX.Element {
                   setProvider(p)
                   setModelId(undefined)
                   setAuthMethod('api-key')
+                  setConfigDraft((current) => ({
+                    ...current,
+                    validatedApiKey: null,
+                    apiKeyTestState: 'idle',
+                    apiKeyTestMessage: null,
+                    oauthDone: false
+                  }))
                 }}
                 authMethod={authMethod}
-                onSelectAuthMethod={setAuthMethod}
+                onSelectAuthMethod={(method) => {
+                  setAuthMethod(method)
+                  setConfigDraft((current) => ({
+                    ...current,
+                    validatedApiKey: null,
+                    apiKeyTestState: 'idle',
+                    apiKeyTestMessage: null,
+                    oauthDone: method === 'oauth' ? current.oauthDone : false
+                  }))
+                }}
                 modelId={modelId}
-                onSelectModel={setModelId}
+                onSelectModel={(model) => {
+                  setModelId(model)
+                  setConfigDraft((current) => ({
+                    ...current,
+                    validatedApiKey: null,
+                    apiKeyTestState: 'idle',
+                    apiKeyTestMessage: null
+                  }))
+                }}
                 onNext={next}
               />
             )}
@@ -210,6 +239,8 @@ function App({ debugMode }: { debugMode?: string }): React.JSX.Element {
                 authMethod={authMethod}
                 modelId={modelId}
                 channelType={channelType}
+                draft={configDraft}
+                onDraftChange={setConfigDraft}
                 onNext={(payload) => {
                   setSetupPayload(payload)
                   goTo('setup')

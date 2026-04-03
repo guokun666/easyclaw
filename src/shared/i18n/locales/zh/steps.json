@@ -207,6 +207,15 @@
     "feishuSecretHint": "请输入飞书应用密钥",
     "wechatOneClickTitle": "微信一键安装",
     "wechatOneClickDesc": "会直接执行 npx 安装命令，并实时显示二维码或交互提示。微信当前不提供手动填写模式。",
+    "testBtn": "测试连接",
+    "testingBtn": "测试中...",
+    "apiKeyTestSuccess": "小龙虾已经可以通过这个 API Key 访问提供商。",
+    "apiKeyTestInvalidFormat": "API Key 格式不正确，先检查输入后再测试。",
+    "testResult": {
+      "successTitle": "连接测试通过",
+      "warningTitle": "连接测试未完成",
+      "errorTitle": "连接测试失败"
+    },
     "keyValidating": "校验密钥中...",
     "keyValidated": "API Key 已校验通过",
     "keyValidationFailed": "API Key 校验失败",
