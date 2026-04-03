@@ -1497,6 +1497,86 @@ export const switchProvider = async (
 
 // ─── Channel-only update (non-destructive) ───
 
+export const setupChannelOnly = async (
+  win: BrowserWindow,
+  config: OnboardConfig
+): Promise<{ success: boolean; error?: string; botUsername?: string }> => {
+  const log = (msg: string): void => {
+    try {
+      win.webContents.send('install:progress', msg)
+    } catch { /* window destroyed */ }
+  }
+  const status = (percent: number, stage: string, detail?: string): void => {
+    try {
+      win.webContents.send('install:status', { percent: Math.round(percent), stage, detail })
+    } catch { /* window destroyed */ }
+  }
+
+  const isWin = platform() === 'win32'
+  const ocBin = isWin ? 'openclaw' : resolvePreferredBin('openclaw')
+  const runCmd = isWin
+    ? async (cmd: string, args: string[], onLog: (m: string) => void): Promise<void> => {
+        await runInWsl(`${cmd} ${args.join(' ')}`, 120000)
+        onLog(`${cmd} ${args.join(' ')} done`)
+      }
+    : async (cmd: string, args: string[], onLog: (m: string) => void): Promise<void> => {
+        await new Promise<void>((resolve, reject) => {
+          const child = spawn(cmd, args, { env: getPathEnv() })
+          child.stdout.on('data', (d) => onLog(d.toString().trim()))
+          child.stderr.on('data', (d) => onLog(d.toString().trim()))
+          child.on('close', (code) => (code === 0 ? resolve() : reject(new Error(`exit ${code}`))))
+          child.on('error', reject)
+        })
+      }
+
+  try {
+    // For feishu/wechat one-click, run the external CLI tool
+    if (
+      (config.channelType === 'wechat') ||
+      (config.channelType === 'feishu' && config.channelSetupMode === 'one-click')
+    ) {
+      status(20, t('onboarder.status.configuringChannel'))
+      await runOneClickChannelSetup(win, config, runCmd, log, ocBin, status)
+      status(100, t('onboarder.channelDone.' + config.channelType))
+      return { success: true }
+    }
+
+    // For feishu manual or telegram, patch config directly
+    const channelPatch = getChannelPatch(config)
+    if (channelPatch) {
+      status(30, t('onboarder.status.configuringChannel'))
+      const cfg = await readOpenClawConfig()
+      if (!cfg) {
+        return { success: false, error: 'OpenClaw config not found' }
+      }
+      const channels = (cfg.channels ?? {}) as Record<string, unknown>
+      channels[channelPatch.key] = channelPatch.value
+      cfg.channels = channels
+      await writeOpenClawConfig(cfg)
+      log(`Channel ${channelPatch.key} config updated`)
+    }
+
+    // For feishu manual, also enable streaming
+    if (config.channelType === 'feishu') {
+      status(60, t('onboarder.feishuStreaming'))
+      await ensureFeishuStreamingEnabled(config, runCmd, log, ocBin)
+    }
+
+    // For telegram, validate and clear queue
+    let botUsername: string | undefined
+    if (config.channelType === 'telegram' && config.telegramBotToken) {
+      status(70, t('onboarder.status.checkingTelegram'))
+      botUsername = await fetchBotUsername(config.telegramBotToken)
+      await waitTelegramClear(config.telegramBotToken)
+    }
+
+    status(100, t('onboarder.status.completed'))
+    return { success: true, botUsername }
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : String(error) }
+  }
+}
+
 export const updateChannel = async (
   channelType: 'telegram',
   channelConfig: { botToken: string }

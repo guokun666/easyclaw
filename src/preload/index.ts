@@ -67,6 +67,14 @@ const electronAPI = {
     }
   },
   onboard: {
+    channelOnly: (config: {
+      channelType?: 'feishu' | 'wechat' | 'telegram'
+      channelSetupMode?: 'one-click' | 'manual'
+      telegramBotToken?: string
+      feishuAppId?: string
+      feishuAppSecret?: string
+    }): Promise<{ success: boolean; error?: string; botUsername?: string }> =>
+      ipcRenderer.invoke('onboard:channel-only', config),
     run: (config: {
       provider:
         | 'modelfamily'

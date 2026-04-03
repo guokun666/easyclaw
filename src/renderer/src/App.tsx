@@ -45,6 +45,7 @@ function App({ debugMode }: { debugMode?: string }): React.JSX.Element {
   const [isWindows, setIsWindows] = useState(false)
   const [wslState, setWslState] = useState<WslState>('ready')
   const [version, setVersion] = useState('')
+  const [channelOnly, setChannelOnly] = useState(false)
   const isDebugWelcomeOnly = debugMode === 'welcome-only'
   const isDebugNoEffects = debugMode === 'no-effects'
   const isDebugNoBanner = debugMode === 'no-banner'
@@ -181,7 +182,14 @@ function App({ debugMode }: { debugMode?: string }): React.JSX.Element {
               />
             )}
             {currentStep === 'setup' && setupPayload && (
-              <ChannelSetupStep payload={setupPayload} onDone={handleDone} />
+              <ChannelSetupStep
+                payload={setupPayload}
+                channelOnly={channelOnly}
+                onDone={(username) => {
+                  setChannelOnly(false)
+                  handleDone(username)
+                }}
+              />
             )}
             {currentStep === 'done' && (
               <DoneStep
@@ -191,6 +199,10 @@ function App({ debugMode }: { debugMode?: string }): React.JSX.Element {
                 onUninstallDone={() => {
                   window.electronAPI.wizard.clearState()
                   goTo('welcome')
+                }}
+                onConfigureChannel={() => {
+                  setChannelOnly(true)
+                  goTo('telegramGuide')
                 }}
               />
             )}

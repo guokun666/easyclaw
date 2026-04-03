@@ -48,6 +48,13 @@ interface ElectronAPI {
     onExit: (cb: (result: { success: boolean; code: number | null }) => void) => () => void
   }
   onboard: {
+    channelOnly: (config: {
+      channelType?: 'feishu' | 'wechat' | 'telegram'
+      channelSetupMode?: 'one-click' | 'manual'
+      telegramBotToken?: string
+      feishuAppId?: string
+      feishuAppSecret?: string
+    }) => Promise<{ success: boolean; error?: string; botUsername?: string }>
     run: (config: {
       provider:
         | 'modelfamily'

@@ -6,7 +6,6 @@ import Button from '../components/Button'
 import LogViewer from '../components/LogViewer'
 import ManagementModal from '../components/ManagementModal'
 import ProviderSwitchModal from '../components/ProviderSwitchModal'
-import ChannelConfigModal from '../components/ChannelConfigModal'
 import { useManagement } from '../hooks/useManagement'
 import type { ChannelType } from './TelegramGuideStep'
 
@@ -16,12 +15,14 @@ export default function DoneStep({
   botUsername: _botUsername,
   channelType: _channelType,
   onTroubleshoot,
-  onUninstallDone
+  onUninstallDone,
+  onConfigureChannel
 }: {
   botUsername?: string
   channelType: ChannelType
   onTroubleshoot?: () => void
   onUninstallDone?: () => void
+  onConfigureChannel?: () => void
 }): React.JSX.Element {
   const { t } = useTranslation('management')
   const [status, setStatus] = useState<'starting' | 'running' | 'stopped'>('starting')
@@ -32,7 +33,6 @@ export default function DoneStep({
   const [currentModel, setCurrentModel] = useState<string | null>(null)
   const [currentProvider, setCurrentProvider] = useState<string | undefined>()
   const [showProviderModal, setShowProviderModal] = useState(false)
-  const [showChannelModal, setShowChannelModal] = useState(false)
 
   // OpenClaw update state
   const [openclawUpdate, setOpenclawUpdate] = useState<{
@@ -357,13 +357,15 @@ export default function DoneStep({
           <span className="text-sm">🔑</span>
           <span className="text-[11px] font-bold flex-1 text-left">{t('done.configKey')}</span>
         </button>
-        <button
-          onClick={() => setShowChannelModal(true)}
-          className="glass-card flex items-center gap-2 px-3 py-2 cursor-pointer hover:border-primary/40 transition-all duration-200"
-        >
-          <span className="text-sm">📱</span>
-          <span className="text-[11px] font-bold flex-1 text-left">{t('done.configChannel')}</span>
-        </button>
+        {onConfigureChannel && (
+          <button
+            onClick={onConfigureChannel}
+            className="glass-card flex items-center gap-2 px-3 py-2 cursor-pointer hover:border-primary/40 transition-all duration-200"
+          >
+            <span className="text-sm">📱</span>
+            <span className="text-[11px] font-bold flex-1 text-left">{t('done.configChannel')}</span>
+          </button>
+        )}
         <button
           onClick={backup.execute}
           className="glass-card flex items-center gap-2 px-3 py-2 cursor-pointer hover:border-primary/40 transition-all duration-200"
@@ -480,20 +482,6 @@ export default function DoneStep({
           />
         )}
 
-        {/* ─── Channel config modal ─── */}
-        {showChannelModal && (
-          <ChannelConfigModal
-            onClose={() => setShowChannelModal(false)}
-            onSuccess={() => {
-              // Gateway restart is handled by IPC handler (openclaw:update-channel)
-              setStatus('starting')
-              setTimeout(async () => {
-                const s = await window.electronAPI.gateway.status()
-                setStatus(s === 'running' ? 'running' : 'stopped')
-              }, 3000)
-            }}
-          />
-        )}
       </div>
     </div>
   )

@@ -9,9 +9,11 @@ import type { SetupPayload } from './ConfigStep'
 
 export default function ChannelSetupStep({
   payload,
+  channelOnly = false,
   onDone
 }: {
   payload: SetupPayload
+  channelOnly?: boolean
   onDone: (botUsername?: string) => void
 }): React.JSX.Element {
   const { t } = useTranslation(['steps', 'common'])
@@ -24,8 +26,17 @@ export default function ChannelSetupStep({
     setError(null)
     setRunning(true)
 
-    void window.electronAPI.onboard
-      .run(payload)
+    const apiCall = channelOnly
+      ? window.electronAPI.onboard.channelOnly({
+          channelType: payload.channelType,
+          channelSetupMode: payload.channelSetupMode,
+          telegramBotToken: payload.telegramBotToken,
+          feishuAppId: payload.feishuAppId,
+          feishuAppSecret: payload.feishuAppSecret
+        })
+      : window.electronAPI.onboard.run(payload)
+
+    void apiCall
       .then((result) => {
         if (result.success) {
           onDone(result.botUsername)

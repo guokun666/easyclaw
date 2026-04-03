@@ -18,7 +18,8 @@ import {
   readCurrentConfig,
   switchProvider,
   validateProviderApiKey,
-  updateChannel
+  updateChannel,
+  setupChannelOnly
 } from './services/onboarder'
 import {
   startGateway,
@@ -137,6 +138,19 @@ export const registerIpcHandlers = (getWin: () => BrowserWindow | null): void =>
       }
     }
   )
+
+  ipcMain.handle('onboard:channel-only', async (_e, config) => {
+    try {
+      const result = await setupChannelOnly(win(), config)
+      return result
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      try {
+        win().webContents.send('install:error', msg)
+      } catch { /* window destroyed */ }
+      return { success: false, error: msg }
+    }
+  })
 
   ipcMain.handle('openclaw:clean-uninstall', async () => {
     try {
