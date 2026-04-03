@@ -327,14 +327,13 @@ export default function ConfigStep({
         {error && <p className="text-error text-xs font-medium">{error}</p>}
 
         <div className="space-y-2">
-          <div className="grid items-start gap-4 xl:grid-cols-[260px_minmax(0,1fr)]">
+          <div className="grid items-start gap-4 xl:grid-cols-[220px_minmax(0,1fr)]">
             <ModelCombobox
               label={t('config.modelLabel')}
               required
               value={modelInputValue}
               options={activeModels}
               placeholder={t('config.modelPlaceholder')}
-              hint={t('config.modelHint')}
               onChange={(rawValue) =>
                 onModelChange(normalizeModelInput(provider, rawValue, authMethod ?? 'api-key'))
               }

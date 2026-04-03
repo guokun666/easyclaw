@@ -192,7 +192,6 @@ export default function ProviderSwitchModal({
               value={modelInputValue}
               options={activeModels}
               placeholder={t('providerSwitch.modelPlaceholder')}
-              hint={t('providerSwitch.modelHint')}
               onChange={(rawValue) => setModelId(normalizeModelInput(provider, rawValue, authMethod))}
               onSelect={setModelId}
             />
