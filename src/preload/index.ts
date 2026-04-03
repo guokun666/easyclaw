@@ -218,7 +218,9 @@ const electronAPI = {
       channelType: 'telegram',
       channelConfig: { botToken: string }
     ): Promise<{ success: boolean; error?: string; botUsername?: string }> =>
-      ipcRenderer.invoke('openclaw:update-channel', channelType, channelConfig)
+      ipcRenderer.invoke('openclaw:update-channel', channelType, channelConfig),
+    cleanUninstall: (): Promise<{ success: boolean; error?: string }> =>
+      ipcRenderer.invoke('openclaw:clean-uninstall')
   },
   autoLaunch: {
     get: (): Promise<{ enabled: boolean }> => ipcRenderer.invoke('autolaunch:get'),

@@ -69,6 +69,8 @@
     "desc": "将安装以下组件",
     "nodejs": "Node.js 22 LTS",
     "openclaw": "OpenClaw",
+    "cleanInstallLabel": "清除旧版本后安装",
+    "cleanInstallDesc": "删除本机上已安装的 OpenClaw 旧包，避免残留文件导致安装失败",
     "advancedTitle": "高级安装源",
     "advancedDesc": "可选：切换官方源或公共镜像源，auto 会自动选择可用方案",
     "sourceModeLabel": "下载/更新策略",

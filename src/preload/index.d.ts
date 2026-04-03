@@ -155,6 +155,7 @@ interface ElectronAPI {
       channelType: 'telegram',
       channelConfig: { botToken: string }
     ) => Promise<{ success: boolean; error?: string; botUsername?: string }>
+    cleanUninstall: () => Promise<{ success: boolean; error?: string }>
   }
   autoLaunch: {
     get: () => Promise<{ enabled: boolean }>

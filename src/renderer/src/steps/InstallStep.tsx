@@ -30,6 +30,7 @@ export default function InstallStep({
   const [savingSources, setSavingSources] = useState(false)
   const [sourcesMessage, setSourcesMessage] = useState<string | null>(null)
   const [sourcesError, setSourcesError] = useState<string | null>(null)
+  const [cleanInstall, setCleanInstall] = useState(false)
 
   useEffect(() => {
     window.electronAPI.settings.getInstallSources().then((settings) => {
@@ -42,6 +43,11 @@ export default function InstallStep({
     setFailed(false)
     clearLogs()
     try {
+      // Clean uninstall old OpenClaw if checked
+      if (cleanInstall) {
+        await window.electronAPI.openclaw.cleanUninstall()
+        // Ignore errors — old package may not exist
+      }
       if (needs.needNode) {
         const r = await window.electronAPI.install.node()
         if (!r.success) throw new Error(r.error)
@@ -56,7 +62,7 @@ export default function InstallStep({
     } finally {
       setInstalling(false)
     }
-  }, [needs, clearLogs])
+  }, [needs, clearLogs, cleanInstall])
 
   const saveInstallSources = useCallback(async () => {
     setSavingSources(true)
@@ -136,6 +142,19 @@ export default function InstallStep({
 
           {showAdvanced && (
             <div className="space-y-3">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={cleanInstall}
+                  onChange={(e) => setCleanInstall(e.target.checked)}
+                  disabled={installing}
+                  className="w-4 h-4 rounded border-glass-border accent-primary"
+                />
+                <div>
+                  <span className="text-xs font-semibold">{t('install.cleanInstallLabel')}</span>
+                  <p className="text-[11px] text-text-muted/60">{t('install.cleanInstallDesc')}</p>
+                </div>
+              </label>
               <div className="space-y-1">
                 <label className="text-xs font-semibold">{t('install.sourceModeLabel')}</label>
                 <select

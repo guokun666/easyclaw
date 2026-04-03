@@ -138,6 +138,29 @@ export const registerIpcHandlers = (getWin: () => BrowserWindow | null): void =>
     }
   )
 
+  ipcMain.handle('openclaw:clean-uninstall', async () => {
+    try {
+      await stopGateway().catch(() => {})
+      const openclaw = resolvePreferredBin('openclaw')
+      return new Promise<{ success: boolean; error?: string }>((resolve) => {
+        const child = spawn(openclaw, ['uninstall', '--all', '--yes', '--non-interactive'], {
+          env: getPathEnv(),
+          stdio: ['ignore', 'pipe', 'pipe']
+        })
+        const chunks: string[] = []
+        child.stdout.on('data', (d) => chunks.push(d.toString()))
+        child.stderr.on('data', (d) => chunks.push(d.toString()))
+        child.on('close', (code) => {
+          if (code === 0) resolve({ success: true })
+          else resolve({ success: false, error: chunks.join('') || `exit ${code}` })
+        })
+        child.on('error', (err) => resolve({ success: false, error: err.message }))
+      })
+    } catch (e) {
+      return { success: false, error: e instanceof Error ? e.message : String(e) }
+    }
+  })
+
   ipcMain.handle('openclaw:dashboard', () => {
     const openclaw = resolvePreferredBin('openclaw')
     return new Promise<{ success: boolean; error?: string }>((resolve) => {
