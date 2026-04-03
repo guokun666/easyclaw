@@ -7,7 +7,7 @@ import https from 'https'
 import { BrowserWindow } from 'electron'
 import { checkWslState, runInWsl, WSL_STATE_ORDER, type WslState } from './wsl-utils'
 import { getPathEnv } from './path-utils'
-import { getManagedNpmEnv } from './npm-paths'
+import { getManagedNpmEnv, getManagedBinPath, hasManagedBin } from './npm-paths'
 import { t } from '../../shared/i18n/main'
 import {
   getNodeMacDownloadCandidates,
@@ -417,6 +417,25 @@ export const installOpenClaw = async (win: BrowserWindow): Promise<void> => {
     })),
     log
   )
+
+  // Symlink openclaw to /usr/local/bin so it's available globally in terminal
+  if (process.platform === 'darwin' && hasManagedBin('openclaw')) {
+    try {
+      const src = getManagedBinPath('openclaw')
+      const dest = '/usr/local/bin/openclaw'
+      await runWithLog(
+        'osascript',
+        [
+          '-e',
+          `do shell script "mkdir -p /usr/local/bin && ln -sf '${src.replace(/'/g, "'\\''")}' '${dest}'" with administrator privileges`
+        ],
+        log
+      )
+      log('Symlinked openclaw to /usr/local/bin')
+    } catch (linkErr) {
+      log(`Symlink to /usr/local/bin skipped (${linkErr instanceof Error ? linkErr.message : linkErr})`)
+    }
+  }
 
   sendStatus(win, 100, t('installer.ocDone'))
   log(t('installer.ocDone'))
