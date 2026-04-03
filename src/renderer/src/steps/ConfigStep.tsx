@@ -2,6 +2,7 @@ import { useState, type Dispatch, type SetStateAction } from 'react'
 import { useTranslation } from 'react-i18next'
 import LobsterLogo from '../components/LobsterLogo'
 import Button from '../components/Button'
+import ModelCombobox from '../components/ModelCombobox'
 import {
   getActiveModels,
   normalizeModelInput,
@@ -153,7 +154,6 @@ export default function ConfigStep({
     authMethod ?? 'api-key'
   )
   const modelInputValue = stripModelNamespace(resolvedModelId)
-  const modelSuggestionsId = `config-model-options-${provider}-${authMethod ?? 'api-key'}`
   const apiKeyValid = pattern.test(apiKey)
   const telegramBotTokenValid = TELEGRAM_BOT_TOKEN_PATTERN.test(telegramBotToken)
   const feishuAppIdValid = FEISHU_APP_ID_PATTERN.test(feishuAppId)
@@ -169,11 +169,11 @@ export default function ConfigStep({
       : channelType === 'feishu'
         ? feishuSetupMode === 'one-click' || (feishuAppIdValid && feishuAppSecretValid)
         : true
-  const canSave = isOAuth
+  const canSave = !!resolvedModelId && (isOAuth
     ? oauthDone && channelValid
     : isOllama
       ? channelValid
-      : apiKeyValid && channelValid
+      : apiKeyValid && channelValid)
 
   const updateDraft = (patch: Partial<ConfigDraft>): void => {
     onDraftChange((current) => ({
@@ -327,31 +327,19 @@ export default function ConfigStep({
         {error && <p className="text-error text-xs font-medium">{error}</p>}
 
         <div className="space-y-2">
-          <div className="grid gap-3 md:grid-cols-[minmax(0,0.95fr)_minmax(0,1.25fr)]">
-            <div className="space-y-1.5">
-              <label className="text-sm font-bold">
-                {t('config.modelLabel')} <span className="text-error text-xs">{t('config.required')}</span>
-              </label>
-              <input
-                list={modelSuggestionsId}
-                value={modelInputValue}
-                onChange={(e) =>
-                  onModelChange(
-                    normalizeModelInput(provider, e.target.value, authMethod ?? 'api-key')
-                  )
-                }
-                placeholder={t('config.modelPlaceholder')}
-                className="w-full bg-bg-input rounded-xl px-4 py-2.5 text-sm font-mono outline-none border border-glass-border transition-all duration-200 placeholder:text-text-muted/30 focus:border-primary focus:shadow-[0_0_0_3px_var(--color-primary-glow)]"
-              />
-              <datalist id={modelSuggestionsId}>
-                {activeModels.map((model) => (
-                  <option key={model.id} value={stripModelNamespace(model.id)}>
-                    {model.name}
-                  </option>
-                ))}
-              </datalist>
-              <p className="text-[11px] leading-5 text-text-muted">{t('config.modelHint')}</p>
-            </div>
+          <div className="grid items-start gap-4 xl:grid-cols-[260px_minmax(0,1fr)]">
+            <ModelCombobox
+              label={t('config.modelLabel')}
+              required
+              value={modelInputValue}
+              options={activeModels}
+              placeholder={t('config.modelPlaceholder')}
+              hint={t('config.modelHint')}
+              onChange={(rawValue) =>
+                onModelChange(normalizeModelInput(provider, rawValue, authMethod ?? 'api-key'))
+              }
+              onSelect={onModelChange}
+            />
 
             {isOllama ? (
               <div className="space-y-1.5">

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import Button from './Button'
 import LogViewer from './LogViewer'
+import ModelCombobox from './ModelCombobox'
 import { useInstallLogs } from '../hooks/useIpc'
 import {
   memorySearchProviderMap,
@@ -75,7 +76,6 @@ export default function ProviderSwitchModal({
   const memorySearchApiKeyValid = memorySearchOption.pattern.test(memorySearchApiKey)
   const activeModels = getActiveModels(provider, authMethod)
   const modelInputValue = stripModelNamespace(modelId)
-  const modelSuggestionsId = `provider-switch-models-${provider}-${authMethod}`
 
   const handleProviderChange = (id: Provider): void => {
     setProvider(id)
@@ -187,47 +187,15 @@ export default function ProviderSwitchModal({
               </div>
             )}
 
-            <div className="space-y-2">
-              <label className="text-xs font-bold text-text-muted">
-                {t('providerSwitch.modelSelect')}
-              </label>
-              <input
-                list={modelSuggestionsId}
-                value={modelInputValue}
-                onChange={(e) => setModelId(normalizeModelInput(provider, e.target.value, authMethod))}
-                placeholder={t('providerSwitch.modelPlaceholder')}
-                className="w-full bg-bg-input rounded-xl px-4 py-2 text-sm font-mono outline-none border border-glass-border transition-all duration-200 placeholder:text-text-muted/30 focus:border-primary focus:shadow-[0_0_0_3px_var(--color-primary-glow)]"
-              />
-              <datalist id={modelSuggestionsId}>
-                {activeModels.map((m) => (
-                  <option key={m.id} value={stripModelNamespace(m.id)}>
-                    {m.name}
-                  </option>
-                ))}
-              </datalist>
-              <div className="flex flex-wrap gap-2">
-                {activeModels.map((m) => {
-                  const isSelected = modelId === m.id
-                  return (
-                    <button
-                      key={m.id}
-                      type="button"
-                      onClick={() => setModelId(m.id)}
-                      className={`rounded-xl border px-3 py-1.5 text-xs font-bold transition-all duration-200 ${
-                        isSelected
-                          ? 'border-primary/45 bg-primary/12 text-primary'
-                          : 'border-white/8 bg-black/10 text-text-muted hover:border-primary/25 hover:bg-white/6 hover:text-text'
-                      }`}
-                    >
-                      {m.name}
-                    </button>
-                  )
-                })}
-              </div>
-              <p className="text-[11px] leading-5 text-text-muted">
-                {t('providerSwitch.modelHint')}
-              </p>
-            </div>
+            <ModelCombobox
+              label={t('providerSwitch.modelSelect')}
+              value={modelInputValue}
+              options={activeModels}
+              placeholder={t('providerSwitch.modelPlaceholder')}
+              hint={t('providerSwitch.modelHint')}
+              onChange={(rawValue) => setModelId(normalizeModelInput(provider, rawValue, authMethod))}
+              onSelect={setModelId}
+            />
 
             {isOllama ? (
               <div className="space-y-1.5">

@@ -295,7 +295,6 @@ export default function DoneStep({
     try {
       setLogs((prev) => [...prev, tRef.current('done.aiRepairStarted')])
       const result = await window.electronAPI.troubleshoot.aiRepair({ logs })
-      setLogs((prev) => [...prev, `[AI修复] ${result.summary}`])
       const nextStatus = await syncGatewayStatus()
       if (result.success && nextStatus === 'running') {
         setHasError(false)
