@@ -1,7 +1,7 @@
 import { spawn } from 'child_process'
 import { StringDecoder } from 'string_decoder'
-import { createWriteStream } from 'fs'
-import { tmpdir } from 'os'
+import { createWriteStream, readFileSync, appendFileSync, existsSync } from 'fs'
+import { tmpdir, homedir } from 'os'
 import { join } from 'path'
 import https from 'https'
 import { BrowserWindow } from 'electron'
@@ -366,8 +366,47 @@ export const installNodeMac = async (win: BrowserWindow): Promise<void> => {
     await runWithLog('open', ['-W', dest], log)
   }
 
+  // Ensure /usr/local/bin is in user's shell PATH so node/openclaw are globally accessible
+  ensureUsrLocalBinInPath(log)
+
   sendStatus(win, 100, t('installer.nodeDone'))
   log(t('installer.nodeDone'))
+}
+
+/** Append /usr/local/bin to the user's shell profile if not already present */
+const ensureUsrLocalBinInPath = (log: ProgressCallback): void => {
+  const home = homedir()
+  const profileCandidates = ['.zshrc', '.bash_profile', '.bashrc', '.profile']
+  const target = '/usr/local/bin'
+
+  for (const name of profileCandidates) {
+    const filePath = join(home, name)
+    if (!existsSync(filePath)) continue
+
+    try {
+      const content = readFileSync(filePath, 'utf-8')
+      // Check if /usr/local/bin is already referenced in PATH exports
+      if (content.includes(target)) {
+        log(`${name} already contains ${target}`)
+        return
+      }
+    } catch {
+      continue
+    }
+  }
+
+  // Append to .zshrc (default macOS shell) or .bash_profile
+  const shellProfile = join(home, existsSync(join(home, '.zshrc')) ? '.zshrc' : '.bash_profile')
+  try {
+    appendFileSync(
+      shellProfile,
+      `\n# Added by familyClaw installer\nexport PATH="/usr/local/bin:$PATH"\n`,
+      'utf-8'
+    )
+    log(`Added ${target} to ${shellProfile}`)
+  } catch (err) {
+    log(`Failed to update shell profile: ${err instanceof Error ? err.message : err}`)
+  }
 }
 
 // getPathEnv imported from path-utils.ts (includes NODE_OPTIONS removal)
