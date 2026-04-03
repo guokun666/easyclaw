@@ -26,7 +26,8 @@ import {
   stopGateway,
   restartGateway,
   getGatewayStatus,
-  setGatewayLogCallback
+  setGatewayLogCallback,
+  setGatewayStatusCallback
 } from './services/gateway'
 import { checkWslState } from './services/wsl-utils'
 import { checkForUpdates, downloadUpdate, installUpdate } from './services/updater'
@@ -306,6 +307,11 @@ export const registerIpcHandlers = (getWin: () => BrowserWindow | null): void =>
         feishuAppId?: string
         feishuAppSecret?: string
         modelId?: string
+        memorySearch?: {
+          enabled?: boolean
+          provider?: 'openai' | 'gemini'
+          apiKey?: string
+        }
       }
     ) => {
       try {
@@ -387,12 +393,17 @@ export const registerIpcHandlers = (getWin: () => BrowserWindow | null): void =>
         apiKey?: string
         authMethod?: 'api-key' | 'oauth'
         modelId?: string
+        memorySearch?: {
+          enabled?: boolean
+          provider?: 'openai' | 'gemini'
+          apiKey?: string
+        }
       }
     ) => {
       try {
-        await switchProvider(win(), config)
+        const result = await switchProvider(win(), config)
         await restartGateway()
-        return { success: true }
+        return { success: true, warning: result.warning }
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e)
         try {
@@ -409,6 +420,13 @@ export const registerIpcHandlers = (getWin: () => BrowserWindow | null): void =>
   setGatewayLogCallback((msg) => {
     try {
       win().webContents.send('gateway:log', msg)
+    } catch {
+      /* window destroyed */
+    }
+  })
+  setGatewayStatusCallback((status) => {
+    try {
+      win().webContents.send('gateway:status-changed', status)
     } catch {
       /* window destroyed */
     }

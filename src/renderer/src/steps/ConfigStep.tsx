@@ -3,7 +3,15 @@ import { useTranslation } from 'react-i18next'
 import LobsterLogo from '../components/LobsterLogo'
 import Button from '../components/Button'
 import type { Provider } from '../constants/providers'
+import {
+  memorySearchProviderMap,
+  memorySearchProviderOptions
+} from '../constants/memory-search'
 import type { ChannelType } from './TelegramGuideStep'
+import type {
+  MemorySearchConfigPayload,
+  MemorySearchProvider
+} from '../../../shared/types/memory-search'
 
 const providerPatterns: Record<Provider, RegExp> = {
   modelfamily: /^.{8,}$/,
@@ -38,6 +46,11 @@ export interface ConfigDraft {
   feishuSetupMode: ChannelSetupMode
   feishuAppId: string
   feishuAppSecret: string
+  memorySearchEnabled: boolean
+  memorySearchProvider: MemorySearchProvider
+  memorySearchApiKey: string
+  memorySearchNoticeTone: 'idle' | 'success' | 'warning'
+  memorySearchNotice: string | null
   oauthDone: boolean
   validatedApiKey: string | null
   apiKeyTestState: 'idle' | 'success' | 'warning' | 'error'
@@ -50,6 +63,11 @@ export const EMPTY_CONFIG_DRAFT: ConfigDraft = {
   feishuSetupMode: 'one-click',
   feishuAppId: '',
   feishuAppSecret: '',
+  memorySearchEnabled: false,
+  memorySearchProvider: 'openai',
+  memorySearchApiKey: '',
+  memorySearchNoticeTone: 'idle',
+  memorySearchNotice: null,
   oauthDone: false,
   validatedApiKey: null,
   apiKeyTestState: 'idle',
@@ -66,6 +84,7 @@ export interface SetupPayload {
   feishuAppId?: string
   feishuAppSecret?: string
   modelId?: string
+  memorySearch?: MemorySearchConfigPayload
 }
 
 interface Props {
@@ -98,6 +117,11 @@ export default function ConfigStep({
     feishuSetupMode,
     feishuAppId,
     feishuAppSecret,
+    memorySearchEnabled,
+    memorySearchProvider,
+    memorySearchApiKey,
+    memorySearchNoticeTone,
+    memorySearchNotice,
     oauthDone,
     validatedApiKey,
     apiKeyTestState,
@@ -122,6 +146,8 @@ export default function ConfigStep({
   const selectedChannelTitle = t(`channelGuide.channels.${channelType}.title`)
   const selectedSetupModeTitle =
     channelType === 'feishu' ? t(`config.channelSetupMode.${feishuSetupMode}.title`) : null
+  const memorySearchOption = memorySearchProviderMap[memorySearchProvider]
+  const memorySearchApiKeyValid = memorySearchOption.pattern.test(memorySearchApiKey)
   const channelValid =
     channelType === 'telegram'
       ? telegramBotTokenValid
@@ -146,6 +172,13 @@ export default function ConfigStep({
       validatedApiKey: null,
       apiKeyTestState: 'idle',
       apiKeyTestMessage: null
+    })
+  }
+
+  const clearMemorySearchNotice = (): void => {
+    updateDraft({
+      memorySearchNoticeTone: 'idle',
+      memorySearchNotice: null
     })
   }
 
@@ -228,6 +261,24 @@ export default function ConfigStep({
       }
     }
 
+    const normalizedMemorySearch: MemorySearchConfigPayload =
+      memorySearchEnabled && memorySearchApiKeyValid
+        ? {
+            enabled: true,
+            provider: memorySearchProvider,
+            apiKey: memorySearchApiKey
+          }
+        : { enabled: false }
+
+    if (memorySearchEnabled && !memorySearchApiKeyValid) {
+      updateDraft({
+        memorySearchEnabled: false,
+        memorySearchApiKey: '',
+        memorySearchNoticeTone: 'warning',
+        memorySearchNotice: t('config.memorySearch.autoDisabledInvalid')
+      })
+    }
+
     onNext({
       provider,
       ...(isOAuth || isOllama ? {} : { apiKey }),
@@ -242,7 +293,8 @@ export default function ConfigStep({
       telegramBotToken: telegramBotToken || undefined,
       feishuAppId: feishuAppId || undefined,
       feishuAppSecret: feishuAppSecret || undefined,
-      modelId
+      modelId,
+      memorySearch: normalizedMemorySearch
     })
   }
 
@@ -387,6 +439,145 @@ export default function ConfigStep({
             </div>
           </div>
         )}
+
+        <div className="glass-card space-y-4 px-4 py-4">
+          <div className="flex items-start justify-between gap-4">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <label className="text-sm font-bold">{t('config.memorySearch.title')}</label>
+                <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-bold text-text-muted">
+                  {t('config.memorySearch.optional')}
+                </span>
+              </div>
+              <p className="text-xs leading-relaxed text-text-muted">
+                {t('config.memorySearch.desc')}
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                const nextEnabled = !memorySearchEnabled
+                updateDraft({
+                  memorySearchEnabled: nextEnabled,
+                  memorySearchNoticeTone: 'idle',
+                  memorySearchNotice: null,
+                  ...(nextEnabled
+                    ? {}
+                    : {
+                        memorySearchApiKey: '',
+                      })
+                })
+              }}
+              className={`relative inline-flex h-7 w-13 shrink-0 rounded-full border px-1 transition-all duration-200 ${
+                memorySearchEnabled
+                  ? 'border-primary/50 bg-primary/20'
+                  : 'border-glass-border bg-white/8'
+              }`}
+              aria-pressed={memorySearchEnabled}
+            >
+              <span
+                className={`mt-[3px] inline-flex h-4.5 w-4.5 rounded-full bg-white shadow-sm transition-transform duration-200 ${
+                  memorySearchEnabled ? 'translate-x-5' : 'translate-x-0'
+                }`}
+              />
+            </button>
+          </div>
+
+          {memorySearchEnabled ? (
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between gap-3">
+                  <label className="text-sm font-bold">{t('config.memorySearch.provider')}</label>
+                  <span className="rounded-full border border-primary/35 bg-primary/14 px-2 py-0.5 text-[10px] font-bold text-primary">
+                    {memorySearchOption.label}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  {memorySearchProviderOptions.map((option) => (
+                    <button
+                      key={option.id}
+                      type="button"
+                      onClick={() => {
+                        updateDraft({
+                          memorySearchProvider: option.id,
+                          memorySearchApiKey: '',
+                          memorySearchNoticeTone: 'idle',
+                          memorySearchNotice: null
+                        })
+                      }}
+                      aria-pressed={memorySearchProvider === option.id}
+                      className={`glass-card group relative cursor-pointer px-3 py-2 text-left transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/35 hover:bg-white/6 ${
+                        memorySearchProvider === option.id
+                          ? 'border-primary/60 bg-primary/12 shadow-[0_10px_30px_rgba(255,122,26,0.14)]'
+                          : ''
+                      }`}
+                    >
+                      <div className="mb-1 flex items-center justify-between gap-2">
+                        <div className="text-sm font-bold">{option.label}</div>
+                        {memorySearchProvider === option.id && (
+                          <span className="rounded-full border border-primary/35 bg-primary/14 px-2 py-0.5 text-[10px] font-bold text-primary">
+                            {t('channelGuide.selectedBadge')}
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[11px] text-text-muted leading-snug">
+                        {t(`config.memorySearch.providers.${option.id}`)}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-sm font-bold">{t('config.memorySearch.apiKeyLabel')}</label>
+                <input
+                  type="password"
+                  placeholder={memorySearchOption.placeholder}
+                  value={memorySearchApiKey}
+                  onChange={(e) => {
+                    updateDraft({
+                      memorySearchApiKey: e.target.value
+                    })
+                    clearMemorySearchNotice()
+                  }}
+                  className={`w-full bg-bg-input rounded-xl px-4 py-2.5 text-sm font-mono outline-none border transition-all duration-200 placeholder:text-text-muted/30 ${
+                    memorySearchApiKey && !memorySearchApiKeyValid
+                      ? 'border-error/50 focus:border-error'
+                      : 'border-glass-border focus:border-primary focus:shadow-[0_0_0_3px_var(--color-primary-glow)]'
+                  }`}
+                />
+                <p className="text-[11px] leading-6 text-text-muted">
+                  {t('config.memorySearch.hint')}
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-white/8 bg-black/10 px-4 py-3">
+              <p className="text-xs leading-6 text-text-muted">
+                {t('config.memorySearch.disabledHint')}
+              </p>
+            </div>
+          )}
+
+          {memorySearchNoticeTone !== 'idle' && memorySearchNotice && (
+            <div
+              className={`rounded-2xl border px-4 py-3 text-xs ${
+                memorySearchNoticeTone === 'success'
+                  ? 'border-success/35 bg-success/10 text-success'
+                  : 'border-warning/35 bg-warning/10 text-warning'
+              }`}
+            >
+              <p className="font-semibold">
+                {memorySearchNoticeTone === 'success'
+                  ? t('config.memorySearch.noticeTitleSuccess')
+                  : t('config.memorySearch.noticeTitleWarning')}
+              </p>
+              <p className="mt-1 leading-relaxed text-current/85">{memorySearchNotice}</p>
+            </div>
+          )}
+        </div>
 
         <div className="space-y-3">
           <div>

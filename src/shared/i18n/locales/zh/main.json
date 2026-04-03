@@ -86,6 +86,12 @@
       "openai": "OpenAI API Key 校验失败：{{message}}",
       "anthropic": "Anthropic API Key 校验失败：{{message}}"
     },
+    "memorySearch": {
+      "enabled": "语义记忆已启用：{{provider}} / {{model}}",
+      "disabledMissing": "语义记忆未填写完整，已自动关闭。",
+      "disabledInvalid": "语义记忆校验失败，已自动关闭（{{provider}}）：{{message}}",
+      "migratedDisabled": "检测到旧配置未显式关闭语义记忆，已自动补齐为关闭状态。"
+    },
     "channelChecking": {
       "telegram": "正在检查 Telegram 连接状态..."
     },
@@ -113,6 +119,7 @@
     "processExit": "[gateway] 进程退出（code: {{code}}）",
     "errorDetail": "[gateway] 错误详情：",
     "error": "[gateway] 错误：{{message}}",
+    "proxyAutoBridge": "[proxy] 检测到 Windows 系统代理 {{proxy}}，正在自动适配到 WSL 宿主机地址",
     "notInstalledRetry": "[gateway] 检测到服务未安装，安装后重试"
   },
   "uninstaller": {

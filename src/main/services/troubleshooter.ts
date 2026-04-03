@@ -3,6 +3,7 @@ import { platform } from 'os'
 import { BrowserWindow } from 'electron'
 import { getPathEnv, resolvePreferredBin } from './path-utils'
 import { createTerminalLineEmitter } from './terminal-output'
+import { buildWslBashArgs } from './wsl-utils'
 
 const exec = (
   cmd: string,
@@ -39,16 +40,8 @@ export const checkPort = async (port = 18789): Promise<{ inUse: boolean; pid?: s
 
 export const runDoctorFix = async (win: BrowserWindow): Promise<{ success: boolean }> => {
   const isWin = platform() === 'win32'
-  let cmd: string
-  let args: string[]
-
-  if (isWin) {
-    cmd = 'wsl'
-    args = ['-d', 'Ubuntu', '-u', 'root', '--', 'bash', '-lc', 'openclaw doctor --fix']
-  } else {
-    cmd = resolvePreferredBin('openclaw')
-    args = ['doctor', '--fix']
-  }
+  const cmd = isWin ? 'wsl' : resolvePreferredBin('openclaw')
+  const args = isWin ? await buildWslBashArgs('openclaw doctor --fix') : ['doctor', '--fix']
 
   const stdoutEmitter = await createTerminalLineEmitter((msg) => {
     try {

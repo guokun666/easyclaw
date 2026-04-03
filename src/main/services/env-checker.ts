@@ -1,7 +1,7 @@
 import { spawn } from 'child_process'
 import { platform } from 'os'
 import https from 'https'
-import { checkWslState, runInWsl, type WslState } from './wsl-utils'
+import { checkWslState, runInWsl, getWslProxyRuntimeInfo, type WslState } from './wsl-utils'
 import { getOpenclawMetaCandidates } from './install-sources'
 import { getPathEnv, resolvePreferredBin } from './path-utils'
 import { getManagedNpmEnv } from './npm-paths'
@@ -15,6 +15,11 @@ export interface EnvCheckResult {
   openclawVersion: string | null
   openclawLatestVersion: string | null
   wslState?: WslState
+  wslProxyInfo?: {
+    enabled: boolean
+    displayValue?: string
+    needsAutoBridge: boolean
+  }
 }
 
 type CommandRunner = (cmd: string, args: string[], env?: NodeJS.ProcessEnv) => Promise<string>
@@ -228,10 +233,18 @@ export const checkEnvironment = async (): Promise<EnvCheckResult> => {
   let nodeVersionOk = false
   let openclawInstalled = false
   let openclawVersion: string | null = null
+  let wslProxyInfo:
+    | {
+        enabled: boolean
+        displayValue?: string
+        needsAutoBridge: boolean
+      }
+    | undefined
 
   if (os === 'windows') {
     // Windows: check WSL state, then check Node.js/OpenClaw inside WSL if ready
     wslState = await checkWslState()
+    wslProxyInfo = await getWslProxyRuntimeInfo()
 
     if (wslState === 'ready') {
       const shellEscape = (s: string): string => `'${s.replace(/'/g, "'\\''")}'`
@@ -274,6 +287,7 @@ export const checkEnvironment = async (): Promise<EnvCheckResult> => {
     openclawInstalled,
     openclawVersion,
     openclawLatestVersion,
-    wslState
+    wslState,
+    wslProxyInfo
   }
 }

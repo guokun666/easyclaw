@@ -32,6 +32,7 @@
     "restartingGw": "正在重启 Gateway...",
     "errorPrefix": "[错误] {{msg}}",
     "configRequiredLog": "[错误] 检测到 OpenClaw 尚未完成配置。请先点击“配置密钥”选择模型并填写密钥，完成后 Gateway 才会启动。",
+    "stoppedUnexpectedlyLog": "[错误] Gateway 进程已退出，请查看上方日志并重试。",
     "settingsBackup": "配置备份"
   },
   "uninstall": {
@@ -73,7 +74,21 @@
     "oauthLoggingIn": "登录中...",
     "oauthSuccess": "登录成功",
     "oauthApiKey": "API 密钥",
-    "ollamaInfo": "Ollama 必须已安装并正在运行"
+    "ollamaInfo": "Ollama 必须已安装并正在运行",
+    "memory": {
+      "title": "语义记忆",
+      "optional": "可选",
+      "desc": "为语义记忆单独配置 embeddings。未填写或校验失败时，会自动关闭，不影响模型切换。",
+      "selected": "已选",
+      "apiKey": "Embedding API Key",
+      "hint": "只在想启用语义记忆时填写。留空或无效时，这项功能会被自动关闭。",
+      "autoDisabled": "语义记忆未填写完整或格式不正确，已自动关闭。",
+      "disabledHint": "当前不启用语义记忆。",
+      "providers": {
+        "openai": "OpenAI embeddings",
+        "gemini": "Gemini embeddings"
+      }
+    }
   },
   "updateBanner": {
     "available": "新版本 v{{version}} 可用",

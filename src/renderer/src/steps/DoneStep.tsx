@@ -8,6 +8,7 @@ import ManagementModal from '../components/ManagementModal'
 import ProviderSwitchModal from '../components/ProviderSwitchModal'
 import { useManagement } from '../hooks/useManagement'
 import type { ChannelType } from './TelegramGuideStep'
+import type { CurrentMemorySearchConfig } from '../../../shared/types/memory-search'
 
 const UPDATE_CHECK_INTERVAL = 30 * 60 * 1000 // 30 min
 
@@ -32,6 +33,7 @@ export default function DoneStep({
   const [autoLaunch, setAutoLaunch] = useState(false)
   const [currentModel, setCurrentModel] = useState<string | null>(null)
   const [currentProvider, setCurrentProvider] = useState<string | undefined>()
+  const [currentMemorySearch, setCurrentMemorySearch] = useState<CurrentMemorySearchConfig | undefined>()
   const [configReady, setConfigReady] = useState<boolean | null>(null)
   const [showProviderModal, setShowProviderModal] = useState(false)
 
@@ -43,12 +45,19 @@ export default function DoneStep({
   const [updating, setUpdating] = useState(false)
   const [updateLogs, setUpdateLogs] = useState<string[]>([])
   const updateCheckedRef = useRef(false)
+  const expectedStopRef = useRef(false)
   const shouldRenderLogs = status === 'starting' || logs.length > 0 || hasError
 
   const tRef = useRef<TFunction>(t)
   tRef.current = t
 
   const { uninstall, backup } = useManagement(setStatus)
+
+  const syncGatewayStatus = useCallback(async (): Promise<'running' | 'stopped'> => {
+    const nextStatus = await window.electronAPI.gateway.status()
+    setStatus(nextStatus === 'running' ? 'running' : 'stopped')
+    return nextStatus
+  }, [])
 
   // Check for OpenClaw updates
   const checkOpenclawUpdate = useCallback(async () => {
@@ -94,7 +103,11 @@ export default function DoneStep({
       if (result.success) {
         setUpdateLogs((prev) => [...prev, tRef.current('done.restartingGw')])
         await window.electronAPI.gateway.restart()
-        setStatus('running')
+        const nextStatus = await syncGatewayStatus()
+        if (nextStatus !== 'running') {
+          setHasError(true)
+          setShowLogs(true)
+        }
         await checkOpenclawUpdate()
       }
     } finally {
@@ -102,7 +115,7 @@ export default function DoneStep({
       unsubError()
       setUpdating(false)
     }
-  }, [checkOpenclawUpdate])
+  }, [checkOpenclawUpdate, syncGatewayStatus])
 
   // Load auto launch settings
   useEffect(() => {
@@ -120,12 +133,14 @@ export default function DoneStep({
     if (result.success && result.config) {
       setCurrentModel(result.config.model || null)
       setCurrentProvider(result.config.provider)
+      setCurrentMemorySearch(result.config.memorySearch)
       setConfigReady(result.config.isConfigured === true)
       return result.config
     }
 
     setCurrentModel(null)
     setCurrentProvider(undefined)
+    setCurrentMemorySearch(undefined)
     setConfigReady(false)
     return null
   }, [])
@@ -157,9 +172,20 @@ export default function DoneStep({
   useEffect(() => {
     const unsub = window.electronAPI.gateway.onStatusChanged((s) => {
       setStatus(s === 'running' ? 'running' : 'stopped')
+      if (s === 'running') {
+        expectedStopRef.current = false
+      }
+      if (s === 'stopped' && !expectedStopRef.current) {
+        setHasError(true)
+        setShowLogs(true)
+        appendLogOnce(tRef.current('done.stoppedUnexpectedlyLog'))
+      }
+      if (s === 'stopped' && expectedStopRef.current) {
+        expectedStopRef.current = false
+      }
     })
     return unsub
-  }, [])
+  }, [appendLogOnce])
 
   useEffect(() => {
     if (configReady === null) return
@@ -188,8 +214,15 @@ export default function DoneStep({
       if (cancelled) return
       const r = await window.electronAPI.gateway.start()
       if (!cancelled) {
-        setStatus(r.success ? 'running' : 'stopped')
-        if (!r.success) {
+        if (r.success) {
+          const nextStatus = await syncGatewayStatus()
+          if (cancelled) return
+          if (nextStatus !== 'running') {
+            setHasError(true)
+            setShowLogs(true)
+          }
+        } else {
+          setStatus('stopped')
           setHasError(true)
           if (r.error) {
             setLogs((prev) => [...prev, tRef.current('done.errorPrefix', { msg: r.error })])
@@ -203,27 +236,35 @@ export default function DoneStep({
     return () => {
       cancelled = true
     }
-  }, [appendLogOnce, configReady])
+  }, [appendLogOnce, configReady, syncGatewayStatus])
 
   const handleStop = async (): Promise<void> => {
+    expectedStopRef.current = true
     await window.electronAPI.gateway.stop()
     setStatus('stopped')
   }
 
   const handleRestart = useCallback(async (): Promise<void> => {
+    expectedStopRef.current = true
     setStatus('starting')
     setLogs([])
     setHasError(false)
     const r = await window.electronAPI.gateway.restart()
-    setStatus(r.success ? 'running' : 'stopped')
-    if (!r.success) {
+    if (r.success) {
+      const nextStatus = await syncGatewayStatus()
+      if (nextStatus !== 'running') {
+        setHasError(true)
+        setShowLogs(true)
+      }
+    } else {
+      setStatus('stopped')
       setHasError(true)
       if (r.error) {
         setLogs((prev) => [...prev, tRef.current('done.errorPrefix', { msg: r.error })])
         setShowLogs(true)
       }
     }
-  }, [])
+  }, [syncGatewayStatus])
 
   return (
     <div className="w-full px-10 pt-8 pb-28">
@@ -498,6 +539,7 @@ export default function DoneStep({
           <ProviderSwitchModal
             currentProvider={currentProvider}
             currentModel={currentModel || undefined}
+            currentMemorySearch={currentMemorySearch}
             onClose={() => setShowProviderModal(false)}
             onSuccess={() => {
               void loadCurrentConfig()

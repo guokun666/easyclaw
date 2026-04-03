@@ -18,6 +18,10 @@
       "windows": "Windows",
       "linux": "Linux"
     },
+    "proxy": "Windows 代理",
+    "proxyDetected": "已检测到",
+    "proxyAutoBridge": "检测到 localhost 系统代理。后续 WSL 安装、配置和 Gateway 启动时，会自动改写成 WSL 可访问的宿主机地址。",
+    "proxyDirect": "已检测到系统代理。当前无需额外改写，WSL 将直接沿用该代理设置。",
     "wsl": "WSL",
     "wslState": {
       "ready": "就绪",
@@ -207,6 +211,22 @@
     "feishuSecretHint": "请输入飞书应用密钥",
     "wechatOneClickTitle": "微信一键安装",
     "wechatOneClickDesc": "会直接执行 npx 安装命令，并实时显示二维码或交互提示。微信当前不提供手动填写模式。",
+    "memorySearch": {
+      "title": "语义记忆",
+      "optional": "可选",
+      "desc": "为 OpenClaw 额外配置 embeddings。未填写或后续校验失败时，会自动关闭，不影响主流程。",
+      "provider": "Embedding 提供方",
+      "apiKeyLabel": "Embedding API Key",
+      "hint": "只有想启用语义记忆时才需要填写。留空、格式不正确或后续校验失败时，安装器会自动关闭这项功能。",
+      "disabledHint": "当前不启用语义记忆。这样不会因为 embeddings 未配置而影响 Gateway 启动。",
+      "autoDisabledInvalid": "语义记忆输入不完整或格式不正确，已自动关闭。主流程会继续执行。",
+      "noticeTitleSuccess": "语义记忆已启用",
+      "noticeTitleWarning": "语义记忆已自动关闭",
+      "providers": {
+        "openai": "使用 OpenAI embeddings，默认模型为 text-embedding-3-small。",
+        "gemini": "使用 Gemini embeddings，默认模型为 gemini-embedding-001。"
+      }
+    },
     "testBtn": "测试连接",
     "testingBtn": "测试中...",
     "apiKeyTestSuccess": "小龙虾已经可以通过这个 API Key 访问提供商。",

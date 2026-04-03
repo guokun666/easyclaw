@@ -4,10 +4,15 @@ import { platform, homedir, tmpdir } from 'os'
 import { join } from 'path'
 import https from 'https'
 import { BrowserWindow } from 'electron'
-import { runInWsl, readWslFile, writeWslFile } from './wsl-utils'
+import { runInWsl, readWslFile, writeWslFile, buildWslBashArgs } from './wsl-utils'
 import { getManagedNpmEnv } from './npm-paths'
 import { createTerminalLineEmitter } from './terminal-output'
 import { t } from '../../shared/i18n/main'
+import type {
+  CurrentMemorySearchConfig,
+  MemorySearchConfigPayload,
+  MemorySearchProvider
+} from '../../shared/types/memory-search'
 
 interface OnboardConfig {
   provider:
@@ -27,6 +32,7 @@ interface OnboardConfig {
   feishuAppId?: string
   feishuAppSecret?: string
   modelId?: string
+  memorySearch?: MemorySearchConfigPayload
 }
 
 interface OnboardResult {
@@ -251,6 +257,21 @@ const MODEL_SPECS: Partial<
   minimax: { contextWindow: 1000000, maxTokens: 16384 }
 }
 
+const MEMORY_SEARCH_PROVIDER_CONFIG_PATH: Record<MemorySearchProvider, 'openai' | 'google'> = {
+  openai: 'openai',
+  gemini: 'google'
+}
+
+const MEMORY_SEARCH_PROVIDER_LABEL: Record<MemorySearchProvider, string> = {
+  openai: 'OpenAI',
+  gemini: 'Gemini'
+}
+
+const MEMORY_SEARCH_DEFAULT_MODELS: Record<MemorySearchProvider, string> = {
+  openai: 'text-embedding-3-small',
+  gemini: 'gemini-embedding-001'
+}
+
 const createRunCmd = (): ((
   cmd: string,
   args: string[],
@@ -260,21 +281,20 @@ const createRunCmd = (): ((
   return async (cmd, args, onLog) => {
     const stdoutEmitter = await createTerminalLineEmitter(onLog)
     const stderrEmitter = await createTerminalLineEmitter(onLog)
+    let fullCmd: string
+    let fullArgs: string[]
+
+    if (isWindows) {
+      // WSL mode: wsl -d Ubuntu -u root -- bash -lc "cmd args..."
+      const script = `${cmd} ${args.map((a) => `'${a.replace(/'/g, "'\\''")}'`).join(' ')}`
+      fullCmd = 'wsl'
+      fullArgs = await buildWslBashArgs(script)
+    } else {
+      fullCmd = cmd
+      fullArgs = args
+    }
 
     return new Promise((resolve, reject) => {
-      let fullCmd: string
-      let fullArgs: string[]
-
-      if (isWindows) {
-        // WSL mode: wsl -d Ubuntu -u root -- bash -lc "cmd args..."
-        const script = `${cmd} ${args.map((a) => `'${a.replace(/'/g, "'\\''")}'`).join(' ')}`
-        fullCmd = 'wsl'
-        fullArgs = ['-d', 'Ubuntu', '-u', 'root', '--', 'bash', '-lc', script]
-      } else {
-        fullCmd = cmd
-        fullArgs = args
-      }
-
       const child = spawn(fullCmd, fullArgs, {
         env: isWindows ? process.env : getManagedNpmEnv(getPathEnv())
       })
@@ -321,6 +341,39 @@ const writeOpenClawConfig = async (config: Record<string, unknown>): Promise<voi
   }
 
   writeFileSync(getConfigPath(), serialized, { mode: 0o600 })
+}
+
+const shouldForceDisableOptionalMemorySearch = (memorySearch: unknown): boolean => {
+  if (!memorySearch || typeof memorySearch !== 'object') return true
+
+  const config = memorySearch as Record<string, unknown>
+  if (typeof config.enabled === 'boolean') return false
+
+  return Object.keys(config).every((key) => key === 'enabled')
+}
+
+export const ensureOptionalMemorySearchDisabled = async (
+  onLog?: (msg: string) => void
+): Promise<boolean> => {
+  const cfg = await readOpenClawConfig()
+  if (!cfg) return false
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const typed = cfg as any
+  typed.agents = typed.agents ?? {}
+  typed.agents.defaults = typed.agents.defaults ?? {}
+
+  if (!shouldForceDisableOptionalMemorySearch(typed.agents.defaults.memorySearch)) {
+    return false
+  }
+
+  typed.agents.defaults.memorySearch = {
+    ...(typed.agents.defaults.memorySearch ?? {}),
+    enabled: false
+  }
+  await writeOpenClawConfig(cfg)
+  onLog?.(t('onboarder.memorySearch.migratedDisabled'))
+  return true
 }
 
 const hasOpenClawConfig = async (): Promise<boolean> => {
@@ -668,7 +721,97 @@ export const validateProviderApiKey = async (config: {
           ? t('onboarder.providerValidateFailed.openai', { message: result.message })
           : config.provider === 'anthropic'
             ? t('onboarder.providerValidateFailed.anthropic', { message: result.message })
-            : result.message
+          : result.message
+  }
+}
+
+interface ResolvedMemorySearchConfig {
+  enabled: boolean
+  provider?: MemorySearchProvider
+  apiKey?: string
+  model?: string
+  warning?: string
+}
+
+const validateMemorySearchApiKey = async (
+  provider: MemorySearchProvider,
+  apiKey: string
+): Promise<{ ok: true } | { ok: false; kind: 'auth' | 'timeout' | 'network'; message: string }> =>
+  provider === 'openai' ? validateOpenAIApiKey(apiKey) : validateGeminiApiKey(apiKey)
+
+const resolveMemorySearchConfig = async (
+  config: MemorySearchConfigPayload | undefined,
+  onLog?: (msg: string) => void
+): Promise<ResolvedMemorySearchConfig> => {
+  if (!config?.enabled) {
+    return { enabled: false }
+  }
+
+  const provider = config.provider
+  const apiKey = config.apiKey?.trim()
+  if (!provider || !apiKey) {
+    const warning = t('onboarder.memorySearch.disabledMissing')
+    onLog?.(warning)
+    return { enabled: false, warning }
+  }
+
+  const result = await validateMemorySearchApiKey(provider, apiKey)
+  if (!result.ok) {
+    const warning = t('onboarder.memorySearch.disabledInvalid', {
+      provider: MEMORY_SEARCH_PROVIDER_LABEL[provider],
+      message: result.message
+    })
+    onLog?.(warning)
+    return { enabled: false, warning }
+  }
+
+  const resolved: ResolvedMemorySearchConfig = {
+    enabled: true,
+    provider,
+    apiKey,
+    model: MEMORY_SEARCH_DEFAULT_MODELS[provider]
+  }
+  onLog?.(
+    t('onboarder.memorySearch.enabled', {
+      provider: MEMORY_SEARCH_PROVIDER_LABEL[provider],
+      model: resolved.model
+    })
+  )
+  return resolved
+}
+
+const applyMemorySearchConfig = (
+  ocConfig: Record<string, unknown>,
+  resolved: ResolvedMemorySearchConfig
+): void => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const cfg = ocConfig as any
+  cfg.agents = cfg.agents ?? {}
+  cfg.agents.defaults = cfg.agents.defaults ?? {}
+  cfg.agents.defaults.memorySearch = cfg.agents.defaults.memorySearch ?? {}
+
+  if (!resolved.enabled) {
+    cfg.agents.defaults.memorySearch = {
+      ...cfg.agents.defaults.memorySearch,
+      enabled: false
+    }
+    return
+  }
+
+  cfg.agents.defaults.memorySearch = {
+    ...cfg.agents.defaults.memorySearch,
+    enabled: true,
+    provider: resolved.provider,
+    model: resolved.model
+  }
+
+  cfg.models = cfg.models ?? {}
+  cfg.models.providers = cfg.models.providers ?? {}
+
+  const providerKey = MEMORY_SEARCH_PROVIDER_CONFIG_PATH[resolved.provider!]
+  cfg.models.providers[providerKey] = {
+    ...(cfg.models.providers[providerKey] ?? {}),
+    apiKey: resolved.apiKey
   }
 }
 
@@ -1000,6 +1143,8 @@ export const runOnboard = async (
     await new Promise((resolve) => setTimeout(resolve, 5000))
   }
 
+  const resolvedMemorySearch = await resolveMemorySearchConfig(config.memorySearch, log)
+
   // Set recommended model per provider
   const patchConfig = (ocConfig: Record<string, unknown>): void => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1071,6 +1216,8 @@ export const runOnboard = async (
         }
       }
     }
+
+    applyMemorySearchConfig(cfg, resolvedMemorySearch)
   }
 
   // Patch config file
@@ -1184,6 +1331,7 @@ export interface CurrentConfig {
   model?: string
   hasChannel?: boolean
   channelType?: 'feishu' | 'wechat' | 'telegram'
+  memorySearch?: CurrentMemorySearchConfig
   hasCredentials?: boolean
   gatewayMode?: string
   isConfigured?: boolean
@@ -1216,29 +1364,74 @@ const hasWslCredentialFiles = async (): Promise<boolean> => {
   }
 }
 
-export const readCurrentConfig = async (): Promise<CurrentConfig | null> => {
-  const isWindows = platform() === 'win32'
+const validateGeminiApiKey = async (
+  apiKey: string
+): Promise<{ ok: true } | { ok: false; kind: 'auth' | 'timeout' | 'network'; message: string }> => {
   try {
-    let raw: string
-    if (isWindows) {
-      raw = await readWslFile('/root/.openclaw/openclaw.json')
-    } else {
-      const configPath = join(homedir(), '.openclaw', 'openclaw.json')
-      if (!existsSync(configPath)) return null
-      raw = readFileSync(configPath, 'utf-8')
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}`,
+      {
+        method: 'GET',
+        signal: AbortSignal.timeout(PROVIDER_KEY_VALIDATION_TIMEOUT_MS)
+      }
+    )
+
+    if (response.ok) return { ok: true }
+
+    const body = await response.text()
+    let message = `HTTP ${response.status}`
+    try {
+      const json = JSON.parse(body) as {
+        error?: { message?: string }
+      }
+      if (json.error?.message) message = json.error.message
+    } catch {
+      if (body.trim()) message = body.trim()
     }
+
+    const kind =
+      response.status === 400 ||
+      response.status === 401 ||
+      response.status === 403 ||
+      /api key|permission|unauth/i.test(message)
+        ? 'auth'
+        : 'network'
+    return { ok: false, kind, message }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    const kind =
+      /aborted|timeout/i.test(message) || error instanceof DOMException ? 'timeout' : 'network'
+    return { ok: false, kind, message }
+  }
+}
+
+export const readCurrentConfig = async (): Promise<CurrentConfig | null> => {
+  try {
+    await ensureOptionalMemorySearchDisabled()
+    const cfg = await readOpenClawConfig()
+    if (!cfg) return null
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const cfg = JSON.parse(raw) as any
-    const model = cfg?.agents?.defaults?.model?.primary as string | undefined
-    const channelType = getActiveChannelType(cfg?.channels)
+    const typed = cfg as any
+    const model = typed?.agents?.defaults?.model?.primary as string | undefined
+    const channelType = getActiveChannelType(typed?.channels)
     const hasChannel = !!channelType
-    const gatewayMode = cfg?.gateway?.mode as string | undefined
+    const rawMemorySearch = typed?.agents?.defaults?.memorySearch as
+      | { enabled?: boolean; provider?: string }
+      | undefined
+    const memorySearchProvider =
+      rawMemorySearch?.provider === 'openai' || rawMemorySearch?.provider === 'gemini'
+        ? rawMemorySearch.provider
+        : undefined
+    const memorySearchEnabled =
+      rawMemorySearch?.enabled === false ? false : memorySearchProvider !== undefined
+    const gatewayMode = typed?.gateway?.mode as string | undefined
     // Extract provider from model ID (e.g. "anthropic/claude-sonnet-4-6" → "anthropic")
     const provider = model?.split('/')[0]
-    const providerConfig = provider ? cfg?.models?.providers?.[provider] : undefined
+    const providerConfig = provider ? typed?.models?.providers?.[provider] : undefined
     const hasEmbeddedCredential =
       typeof providerConfig?.apiKey === 'string' && providerConfig.apiKey.trim().length > 0
-    const hasConfigAuthProfile = Object.keys(cfg?.auth?.profiles ?? {}).length > 0
+    const hasConfigAuthProfile = Object.keys(typed?.auth?.profiles ?? {}).length > 0
+    const isWindows = platform() === 'win32'
     const hasCredentialFiles = isWindows ? await hasWslCredentialFiles() : hasLocalCredentialFiles()
     const hasCredentials = provider
       ? provider === 'ollama' || hasEmbeddedCredential || hasConfigAuthProfile || hasCredentialFiles
@@ -1254,6 +1447,10 @@ export const readCurrentConfig = async (): Promise<CurrentConfig | null> => {
       model,
       hasChannel,
       channelType,
+      memorySearch: {
+        enabled: memorySearchEnabled,
+        ...(memorySearchProvider ? { provider: memorySearchProvider } : {})
+      },
       hasCredentials,
       gatewayMode,
       isConfigured: issues.length === 0,
@@ -1271,8 +1468,9 @@ export const switchProvider = async (
     apiKey?: string
     authMethod?: 'api-key' | 'oauth'
     modelId?: string
+    memorySearch?: MemorySearchConfigPayload
   }
-): Promise<void> => {
+): Promise<{ warning?: string }> => {
   const progress = createInstallProgressEmitter(win)
   const log = progress.log
 
@@ -1422,6 +1620,8 @@ export const switchProvider = async (
     await new Promise((resolve) => setTimeout(resolve, 3000))
   }
 
+  const resolvedMemorySearch = await resolveMemorySearchConfig(config.memorySearch, log)
+
   // 7. Patch model
   log(t('onboarder.applyingModel'))
 
@@ -1497,6 +1697,7 @@ export const switchProvider = async (
         }
       }
     }
+    applyMemorySearchConfig(ocConfig, resolvedMemorySearch)
     // Restore previous channel config
     if (channels) {
       ocConfig.channels = { ...ocConfig.channels, ...channels }
@@ -1522,6 +1723,7 @@ export const switchProvider = async (
   }
 
     log(t('onboarder.switchDone'))
+    return resolvedMemorySearch.warning ? { warning: resolvedMemorySearch.warning } : {}
   } finally {
     progress.dispose()
   }

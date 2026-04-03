@@ -3,6 +3,8 @@ import { platform } from 'os'
 import { getPathEnv, resolvePreferredBin } from './path-utils'
 import { checkPort } from './troubleshooter'
 import { createTerminalLineEmitter } from './terminal-output'
+import { buildWslBashArgs, getWslProxyRuntimeInfo } from './wsl-utils'
+import { ensureOptionalMemorySearchDisabled } from './onboarder'
 import { t } from '../../shared/i18n/main'
 
 export interface GatewayResult {
@@ -15,13 +17,22 @@ let wslGatewayProcess: ChildProcess | null = null
 
 // Gateway log callback (set from ipc-handlers)
 let logCallback: ((msg: string) => void) | null = null
+let statusCallback: ((status: 'running' | 'stopped') => void) | null = null
 
 export const setGatewayLogCallback = (cb: ((msg: string) => void) | null): void => {
   logCallback = cb
 }
 
+export const setGatewayStatusCallback = (cb: ((status: 'running' | 'stopped') => void) | null): void => {
+  statusCallback = cb
+}
+
 const emitLog = (msg: string): void => {
   logCallback?.(msg)
+}
+
+const emitStatus = (status: 'running' | 'stopped'): void => {
+  statusCallback?.(status)
 }
 
 const runGateway = (args: string[]): Promise<string> => {
@@ -61,6 +72,11 @@ const waitForGatewayPort = async (timeoutMs = 10000, intervalMs = 500): Promise<
   return false
 }
 
+const isGatewayPortActive = async (): Promise<boolean> => {
+  const { inUse } = await checkPort()
+  return inUse
+}
+
 const startGatewayWsl = async (): Promise<GatewayResult> => {
   if (wslGatewayProcess) {
     wslGatewayProcess.kill()
@@ -79,22 +95,14 @@ const startGatewayWsl = async (): Promise<GatewayResult> => {
     emitLog(msg)
     stderrBuffer += msg + '\n'
   })
+  const proxyInfo = await getWslProxyRuntimeInfo()
+  if (proxyInfo.needsAutoBridge && proxyInfo.displayValue) {
+    emitLog(t('gateway.proxyAutoBridge', { proxy: proxyInfo.displayValue }))
+  }
+  const wslArgs = await buildWslBashArgs('NODE_OPTIONS=--dns-result-order=ipv4first openclaw gateway run')
 
   return new Promise((resolve) => {
-    const child = spawn(
-      'wsl',
-      [
-        '-d',
-        'Ubuntu',
-        '-u',
-        'root',
-        '--',
-        'bash',
-        '-lc',
-        'NODE_OPTIONS=--dns-result-order=ipv4first openclaw gateway run'
-      ],
-      { stdio: ['ignore', 'pipe', 'pipe'] }
-    )
+    const child = spawn('wsl', wslArgs, { stdio: ['ignore', 'pipe', 'pipe'] })
 
     wslGatewayProcess = child
 
@@ -112,24 +120,38 @@ const startGatewayWsl = async (): Promise<GatewayResult> => {
     })
 
     child.on('close', (code) => {
-      wslGatewayProcess = null
-      emitLog(t('gateway.processExit', { code }))
-      if (code !== 0 && stderrBuffer) {
-        emitLog(`${t('gateway.errorDetail')}\n${stderrBuffer.trim()}`)
-      }
-      if (!resolved) {
-        resolved = true
-        if (code !== 0) {
-          resolve({ status: 'stopped', error: stderrBuffer.trim() || `exit code ${code}` })
-        } else {
-          resolve({ status: 'stopped' })
+      void (async () => {
+        wslGatewayProcess = null
+
+        if (await isGatewayPortActive()) {
+          emitStatus('running')
+          if (!resolved) {
+            resolved = true
+            resolve({ status: 'started' })
+          }
+          return
         }
-      }
+
+        emitLog(t('gateway.processExit', { code }))
+        if (code !== 0 && stderrBuffer) {
+          emitLog(`${t('gateway.errorDetail')}\n${stderrBuffer.trim()}`)
+        }
+        emitStatus('stopped')
+        if (!resolved) {
+          resolved = true
+          if (code !== 0) {
+            resolve({ status: 'stopped', error: stderrBuffer.trim() || `exit code ${code}` })
+          } else {
+            resolve({ status: 'stopped' })
+          }
+        }
+      })()
     })
 
     child.on('error', (err) => {
       wslGatewayProcess = null
       emitLog(t('gateway.error', { message: err.message }))
+      emitStatus('stopped')
       if (!resolved) {
         resolved = true
         resolve({ status: 'error', error: err.message })
@@ -141,6 +163,7 @@ const startGatewayWsl = async (): Promise<GatewayResult> => {
       if (resolved) return
 
       if (portReady) {
+        emitStatus('running')
         resolved = true
         resolve({ status: 'started' })
         return
@@ -185,6 +208,7 @@ const stopGatewayWsl = async (): Promise<string> => {
   }
   await killWslGateway()
   await new Promise((r) => setTimeout(r, 1000))
+  emitStatus('stopped')
   return 'stopped'
 }
 
@@ -192,19 +216,13 @@ const runDoctorFix = async (): Promise<void> => {
   const stdoutEmitter = await createTerminalLineEmitter((msg) => emitLog(msg))
   const stderrEmitter = await createTerminalLineEmitter((msg) => emitLog(msg))
 
+  const isWin = platform() === 'win32'
+  const cmd = isWin ? 'wsl' : resolvePreferredBin('openclaw')
+  const args = isWin
+    ? await buildWslBashArgs('openclaw doctor --fix')
+    : ['doctor', '--fix']
+
   return new Promise((resolve) => {
-    const isWin = platform() === 'win32'
-    let cmd: string
-    let args: string[]
-
-    if (isWin) {
-      cmd = 'wsl'
-      args = ['-d', 'Ubuntu', '-u', 'root', '--', 'bash', '-lc', 'openclaw doctor --fix']
-    } else {
-      cmd = resolvePreferredBin('openclaw')
-      args = ['doctor', '--fix']
-    }
-
     const child = spawn(cmd, args, {
       env: isWin ? process.env : getPathEnv()
     })
@@ -245,6 +263,7 @@ export const waitUntilStopped = async (timeoutMs = 5000): Promise<void> => {
 }
 
 export const startGateway = async (): Promise<GatewayResult> => {
+  await ensureOptionalMemorySearchDisabled((msg) => emitLog(msg))
   const isWin = platform() === 'win32'
   if (isWin) {
     const result = await startGatewayWsl()
@@ -257,6 +276,7 @@ export const startGateway = async (): Promise<GatewayResult> => {
   try {
     await runGateway(['start'])
     await runDoctorFix()
+    emitStatus('running')
     return { status: 'started' }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
@@ -270,6 +290,7 @@ export const startGateway = async (): Promise<GatewayResult> => {
       await runGateway(['install'])
       await runGateway(['start'])
       await runDoctorFix()
+      emitStatus('running')
       return { status: 'started' }
     } catch (retryErr) {
       const retryMsg = retryErr instanceof Error ? retryErr.message : String(retryErr)
@@ -281,7 +302,10 @@ export const startGateway = async (): Promise<GatewayResult> => {
 export const stopGateway = (): Promise<string> => {
   const isWin = platform() === 'win32'
   if (isWin) return stopGatewayWsl()
-  return runGateway(['stop'])
+  return runGateway(['stop']).then((result) => {
+    emitStatus('stopped')
+    return result
+  })
 }
 
 export const restartGateway = async (): Promise<GatewayResult> => {
@@ -296,9 +320,7 @@ export const restartGateway = async (): Promise<GatewayResult> => {
 
 export const getGatewayStatus = async (): Promise<'running' | 'stopped'> => {
   if (platform() === 'win32') {
-    if (!wslGatewayProcess || wslGatewayProcess.killed) return 'stopped'
-    const { inUse } = await checkPort()
-    return inUse ? 'running' : 'stopped'
+    return (await isGatewayPortActive()) ? 'running' : 'stopped'
   }
   try {
     const output = await runGateway(['status'])

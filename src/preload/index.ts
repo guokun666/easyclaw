@@ -18,6 +18,11 @@ const electronAPI = {
         | 'no_distro'
         | 'not_initialized'
         | 'ready'
+      wslProxyInfo?: {
+        enabled: boolean
+        displayValue?: string
+        needsAutoBridge: boolean
+      }
     }> => ipcRenderer.invoke('env:check')
   },
   settings: {
@@ -94,6 +99,11 @@ const electronAPI = {
       feishuAppId?: string
       feishuAppSecret?: string
       modelId?: string
+      memorySearch?: {
+        enabled?: boolean
+        provider?: 'openai' | 'gemini'
+        apiKey?: string
+      }
     }): Promise<{ success: boolean; error?: string; botUsername?: string }> =>
       ipcRenderer.invoke('onboard:run', config)
   },
@@ -183,6 +193,10 @@ const electronAPI = {
         model?: string
         hasChannel?: boolean
         channelType?: 'feishu' | 'wechat' | 'telegram'
+        memorySearch?: {
+          enabled: boolean
+          provider?: 'openai' | 'gemini'
+        }
         hasCredentials?: boolean
         gatewayMode?: string
         isConfigured?: boolean
@@ -218,7 +232,12 @@ const electronAPI = {
       apiKey?: string
       authMethod?: 'api-key' | 'oauth'
       modelId?: string
-    }): Promise<{ success: boolean; error?: string }> =>
+      memorySearch?: {
+        enabled?: boolean
+        provider?: 'openai' | 'gemini'
+        apiKey?: string
+      }
+    }): Promise<{ success: boolean; error?: string; warning?: string }> =>
       ipcRenderer.invoke('config:switch-provider', config)
   },
   openclaw: {

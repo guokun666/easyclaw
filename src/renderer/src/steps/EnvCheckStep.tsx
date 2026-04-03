@@ -23,6 +23,11 @@ interface EnvResult {
   openclawVersion: string | null
   openclawLatestVersion: string | null
   wslState?: WslState
+  wslProxyInfo?: {
+    enabled: boolean
+    displayValue?: string
+    needsAutoBridge: boolean
+  }
 }
 
 type InstallSourceMode = 'auto' | 'official' | 'mirror'
@@ -172,6 +177,21 @@ export default function EnvCheckStep({
                 ok={env.wslState === 'ready'}
                 detail={wslStateLabel(env.wslState)}
               />
+            )}
+            {env.os === 'windows' && env.wslProxyInfo?.enabled && (
+              <div className="glass-card px-4 py-3 space-y-1.5">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-sm font-semibold">{t('envCheck.proxy')}</span>
+                  <span className="text-xs font-mono text-text-muted">
+                    {env.wslProxyInfo.displayValue || t('envCheck.proxyDetected')}
+                  </span>
+                </div>
+                <p className="text-xs leading-5 text-text-muted">
+                  {env.wslProxyInfo.needsAutoBridge
+                    ? t('envCheck.proxyAutoBridge')
+                    : t('envCheck.proxyDirect')}
+                </p>
+              </div>
             )}
             <CheckRow
               label={t('envCheck.nodejs')}

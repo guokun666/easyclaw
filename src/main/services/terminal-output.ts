@@ -6,6 +6,11 @@ const ANSI_PATTERN = /\u001B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g
 const CJK_PATTERN = /[\u3400-\u9fff]/g
 const LATIN_SUPPLEMENT_PATTERN = /[\u00c0-\u024f]/g
 const UTF16_NULL_BYTE_RATIO = 0.2
+const WSL_PROXY_WARNING_PATTERNS = [
+  /localhost.*proxy/i,
+  /localhost.*代理/,
+  /localhost proxy/i
+]
 
 const WINDOWS_CODE_PAGE_ENCODINGS: Record<string, string> = {
   '65001': 'utf-8',
@@ -31,6 +36,13 @@ const countMatches = (value: string, pattern: RegExp): number => value.match(pat
 
 const normalizeTerminalText = (value: string): string =>
   value.replace(ANSI_PATTERN, '').replace(/\u0000/g, '')
+
+export const isIgnorableWslWarningLine = (value: string): boolean => {
+  const normalized = normalizeTerminalText(value).trim()
+  if (!normalized) return false
+  if (!normalized.toLowerCase().startsWith('wsl:')) return false
+  return WSL_PROXY_WARNING_PATTERNS.some((pattern) => pattern.test(normalized))
+}
 
 const shouldDecodeAsUtf16Le = (chunk: Buffer): boolean => {
   if (chunk.length < 4 || chunk.length % 2 !== 0) return false
@@ -124,7 +136,7 @@ export const createTerminalLineEmitter = async (
 
     for (const chunk of chunks) {
       const line = chunk.trimEnd()
-      if (line.trim()) onLine(line)
+      if (line.trim() && !isIgnorableWslWarningLine(line)) onLine(line)
     }
   }
 
@@ -157,7 +169,7 @@ export const createTerminalLineEmitter = async (
       )
 
       const line = pending.trimEnd()
-      if (line.trim()) onLine(line)
+      if (line.trim() && !isIgnorableWslWarningLine(line)) onLine(line)
       pending = ''
     }
   }

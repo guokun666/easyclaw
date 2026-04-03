@@ -24,6 +24,11 @@ interface ElectronAPI {
       openclawVersion: string | null
       openclawLatestVersion: string | null
       wslState?: WslState
+      wslProxyInfo?: {
+        enabled: boolean
+        displayValue?: string
+        needsAutoBridge: boolean
+      }
     }>
   }
   settings: {
@@ -73,6 +78,11 @@ interface ElectronAPI {
       feishuAppId?: string
       feishuAppSecret?: string
       modelId?: string
+      memorySearch?: {
+        enabled?: boolean
+        provider?: 'openai' | 'gemini'
+        apiKey?: string
+      }
     }) => Promise<{ success: boolean; error?: string; botUsername?: string }>
   }
   oauth: {
@@ -122,6 +132,10 @@ interface ElectronAPI {
         model?: string
         hasChannel?: boolean
         channelType?: 'feishu' | 'wechat' | 'telegram'
+        memorySearch?: {
+          enabled: boolean
+          provider?: 'openai' | 'gemini'
+        }
         hasCredentials?: boolean
         gatewayMode?: string
         isConfigured?: boolean
@@ -157,7 +171,12 @@ interface ElectronAPI {
       apiKey?: string
       authMethod?: 'api-key' | 'oauth'
       modelId?: string
-    }) => Promise<{ success: boolean; error?: string }>
+      memorySearch?: {
+        enabled?: boolean
+        provider?: 'openai' | 'gemini'
+        apiKey?: string
+      }
+    }) => Promise<{ success: boolean; error?: string; warning?: string }>
   }
   openclaw: {
     checkUpdate: () => Promise<{ currentVersion: string | null; latestVersion: string | null }>
