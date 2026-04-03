@@ -65,6 +65,9 @@ function App({ debugMode }: { debugMode?: string }): React.JSX.Element {
       const state = await window.electronAPI.wizard.loadState()
       if (state) {
         goTo(state.step as 'wslSetup' | 'envCheck')
+      } else if (env.nodeVersionOk && env.openclawInstalled) {
+        // Already installed → skip wizard, go directly to dashboard
+        goTo('done')
       }
     })
   }, [goTo, isDebugBareShell, isDebugNoEffects, isDebugWelcomeOnly])
@@ -189,6 +192,7 @@ function App({ debugMode }: { debugMode?: string }): React.JSX.Element {
                   window.electronAPI.wizard.clearState()
                   goTo('welcome')
                 }}
+                onReconfigure={(step) => goTo(step)}
               />
             )}
             {currentStep === 'troubleshoot' && (

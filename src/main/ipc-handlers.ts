@@ -4,6 +4,7 @@ import { platform } from 'os'
 import { join } from 'path'
 import { existsSync, readFileSync, writeFileSync, unlinkSync } from 'fs'
 import { checkEnvironment, checkOpenclawUpdate } from './services/env-checker'
+import { getPathEnv, resolvePreferredBin } from './services/path-utils'
 import { checkPort, runDoctorFix } from './services/troubleshooter'
 import {
   installNodeMac,
@@ -114,6 +115,21 @@ export const registerIpcHandlers = (getWin: () => BrowserWindow | null): void =>
   ipcMain.handle('openclaw:check-update', () => {
     applyInstallSourceSettings()
     return checkOpenclawUpdate()
+  })
+
+  ipcMain.handle('openclaw:dashboard', () => {
+    const openclaw = resolvePreferredBin('openclaw')
+    return new Promise<{ success: boolean; error?: string }>((resolve) => {
+      const child = spawn(openclaw, ['dashboard'], {
+        env: getPathEnv(),
+        stdio: 'ignore',
+        detached: true
+      })
+      child.unref()
+      child.on('error', (err) => resolve({ success: false, error: err.message }))
+      // Give it a moment to launch the browser, then resolve
+      setTimeout(() => resolve({ success: true }), 1000)
+    })
   })
 
   // WSL-related IPC

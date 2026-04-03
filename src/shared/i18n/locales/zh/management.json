@@ -12,6 +12,7 @@
       "wechat": "微信需在命令中完成",
       "telegram": "打开 Telegram"
     },
+    "openDashboard": "打开控制台",
     "restartBtn": "重启",
     "stopBtn": "停止",
     "startBtn": "重新启动",
@@ -25,6 +26,8 @@
     "troubleshoot": "问题排查",
     "backup": "备份",
     "restore": "恢复",
+    "configKey": "配置密钥",
+    "configChannel": "配置渠道",
     "delete": "删除",
     "restartingGw": "正在重启 Gateway...",
     "errorPrefix": "[错误] {{msg}}",

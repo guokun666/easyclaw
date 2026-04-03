@@ -1066,14 +1066,16 @@ export const runOnboard = async (
             id: 'claude-opus-4-6',
             name: 'Claude Opus 4.6',
             reasoning: true,
-            contextWindow: 200000,
+            input: ['text', 'image'],
+            contextWindow: 500000,
             maxTokens: 32768
           },
           {
             id: 'claude-sonnet-4-6',
             name: 'Claude Sonnet 4.6',
             reasoning: true,
-            contextWindow: 200000,
+            input: ['text', 'image'],
+            contextWindow: 500000,
             maxTokens: 32768
           }
         ]
@@ -1436,14 +1438,16 @@ export const switchProvider = async (
             id: 'claude-opus-4-6',
             name: 'Claude Opus 4.6',
             reasoning: true,
-            contextWindow: 200000,
+            input: ['text', 'image'],
+            contextWindow: 500000,
             maxTokens: 32768
           },
           {
             id: 'claude-sonnet-4-6',
             name: 'Claude Sonnet 4.6',
             reasoning: true,
-            contextWindow: 200000,
+            input: ['text', 'image'],
+            contextWindow: 500000,
             maxTokens: 32768
           }
         ]

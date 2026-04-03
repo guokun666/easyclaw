@@ -211,7 +211,9 @@ const electronAPI = {
   },
   openclaw: {
     checkUpdate: (): Promise<{ currentVersion: string | null; latestVersion: string | null }> =>
-      ipcRenderer.invoke('openclaw:check-update')
+      ipcRenderer.invoke('openclaw:check-update'),
+    dashboard: (): Promise<{ success: boolean; error?: string }> =>
+      ipcRenderer.invoke('openclaw:dashboard')
   },
   autoLaunch: {
     get: (): Promise<{ enabled: boolean }> => ipcRenderer.invoke('autolaunch:get'),

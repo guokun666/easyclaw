@@ -15,12 +15,14 @@ export default function DoneStep({
   botUsername: _botUsername,
   channelType: _channelType,
   onTroubleshoot,
-  onUninstallDone
+  onUninstallDone,
+  onReconfigure
 }: {
   botUsername?: string
   channelType: ChannelType
   onTroubleshoot?: () => void
   onUninstallDone?: () => void
+  onReconfigure?: (step: 'apiKeyGuide' | 'telegramGuide') => void
 }): React.JSX.Element {
   const { t } = useTranslation('management')
   const [status, setStatus] = useState<'starting' | 'running' | 'stopped'>('starting')
@@ -288,6 +290,13 @@ export default function DoneStep({
       <div className="flex gap-3">
         {status === 'running' ? (
           <>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => window.electronAPI.openclaw.dashboard()}
+            >
+              {t('done.openDashboard')}
+            </Button>
             <Button variant="secondary" size="sm" onClick={handleRestart}>
               {t('done.restartBtn')}
             </Button>
@@ -339,6 +348,24 @@ export default function DoneStep({
           >
             <span className="text-sm">🔧</span>
             <span className="text-[11px] font-bold flex-1 text-left">{t('done.troubleshoot')}</span>
+          </button>
+        )}
+        {onReconfigure && (
+          <button
+            onClick={() => onReconfigure('apiKeyGuide')}
+            className="glass-card flex items-center gap-2 px-3 py-2 cursor-pointer hover:border-primary/40 transition-all duration-200"
+          >
+            <span className="text-sm">🔑</span>
+            <span className="text-[11px] font-bold flex-1 text-left">{t('done.configKey')}</span>
+          </button>
+        )}
+        {onReconfigure && (
+          <button
+            onClick={() => onReconfigure('telegramGuide')}
+            className="glass-card flex items-center gap-2 px-3 py-2 cursor-pointer hover:border-primary/40 transition-all duration-200"
+          >
+            <span className="text-sm">📱</span>
+            <span className="text-[11px] font-bold flex-1 text-left">{t('done.configChannel')}</span>
           </button>
         )}
         <button

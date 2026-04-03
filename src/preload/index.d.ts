@@ -150,6 +150,7 @@ interface ElectronAPI {
   }
   openclaw: {
     checkUpdate: () => Promise<{ currentVersion: string | null; latestVersion: string | null }>
+    dashboard: () => Promise<{ success: boolean; error?: string }>
   }
   autoLaunch: {
     get: () => Promise<{ enabled: boolean }>
