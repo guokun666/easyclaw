@@ -100,6 +100,9 @@ interface ElectronAPI {
   troubleshoot: {
     checkPort: () => Promise<{ inUse: boolean; pid?: string }>
     doctorFix: () => Promise<{ success: boolean }>
+    aiRepair: (payload?: {
+      logs?: string[]
+    }) => Promise<{ success: boolean; summary: string; actions: string[]; error?: string }>
   }
   wsl: {
     check: () => Promise<WslState>

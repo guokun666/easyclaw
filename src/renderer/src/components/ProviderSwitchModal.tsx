@@ -8,7 +8,10 @@ import {
   memorySearchProviderOptions
 } from '../constants/memory-search'
 import {
+  getActiveModels,
+  normalizeModelInput,
   providerConfigs,
+  stripModelNamespace,
   visibleProviderConfigs,
   visibleProviderIds,
   type Provider,
@@ -40,18 +43,21 @@ export default function ProviderSwitchModal({
   const { t: tp } = useTranslation('providers')
   const [phase, setPhase] = useState<Phase>('form')
   const initProvider =
-    currentProvider && visibleProviderIds.includes(currentProvider as Provider)
-      ? (currentProvider as Provider)
-      : 'modelfamily'
+    currentProvider === 'openai-codex' || currentModel?.startsWith('openai-codex/')
+      ? 'openai'
+      : currentProvider && visibleProviderIds.includes(currentProvider as Provider)
+        ? (currentProvider as Provider)
+        : 'modelfamily'
+  const initAuthMethod: AuthMethod =
+    currentProvider === 'openai-codex' || currentModel?.startsWith('openai-codex/')
+      ? 'oauth'
+      : 'api-key'
   const [provider, setProvider] = useState<Provider>(initProvider)
-  const initConfig = providerConfigs.find((p) => p.id === initProvider)!
-  const initModelId =
-    currentModel && initConfig.models.some((m) => m.id === currentModel)
-      ? currentModel
-      : initConfig.models[0].id
-  const [modelId, setModelId] = useState(initModelId)
+  const [authMethod, setAuthMethod] = useState<AuthMethod>(initAuthMethod)
+  const [modelId, setModelId] = useState(
+    currentModel ?? getActiveModels(initProvider, initAuthMethod)[0]?.id ?? ''
+  )
   const [apiKey, setApiKey] = useState('')
-  const [authMethod, setAuthMethod] = useState<AuthMethod>('api-key')
   const [oauthDone, setOauthDone] = useState(false)
   const [oauthLoading, setOauthLoading] = useState(false)
   const [memorySearchEnabled, setMemorySearchEnabled] = useState(currentMemorySearch?.enabled ?? false)
@@ -67,19 +73,20 @@ export default function ProviderSwitchModal({
   const apiKeyValid = selected.pattern.test(apiKey)
   const memorySearchOption = memorySearchProviderMap[memorySearchProvider]
   const memorySearchApiKeyValid = memorySearchOption.pattern.test(memorySearchApiKey)
+  const activeModels = getActiveModels(provider, authMethod)
+  const modelInputValue = stripModelNamespace(modelId)
+  const modelSuggestionsId = `provider-switch-models-${provider}-${authMethod}`
 
   const handleProviderChange = (id: Provider): void => {
     setProvider(id)
     setApiKey('')
     setAuthMethod('api-key')
     setOauthDone(false)
-    const cfg = providerConfigs.find((p) => p.id === id)!
-    setModelId(cfg.models[0].id)
+    setModelId(getActiveModels(id, 'api-key')[0]?.id ?? '')
   }
 
   const isOAuth = provider === 'openai' && authMethod === 'oauth'
   const isOllama = provider === 'ollama'
-  const activeModels = isOAuth ? (selected.oauthModels ?? selected.models) : selected.models
 
   const handleOAuthLogin = async (): Promise<void> => {
     setOauthLoading(true)
@@ -166,9 +173,7 @@ export default function ProviderSwitchModal({
                     onClick={() => {
                       setAuthMethod(m)
                       setOauthDone(false)
-                      const models =
-                        m === 'oauth' ? (selected.oauthModels ?? selected.models) : selected.models
-                      setModelId(models[0].id)
+                      setModelId(getActiveModels(provider, m)[0]?.id ?? '')
                     }}
                     className={`flex-1 py-1.5 text-center text-xs font-bold transition-colors duration-200 cursor-pointer ${
                       authMethod === m
@@ -182,43 +187,46 @@ export default function ProviderSwitchModal({
               </div>
             )}
 
-            {/* Model list */}
-            <div className="space-y-1">
+            <div className="space-y-2">
               <label className="text-xs font-bold text-text-muted">
                 {t('providerSwitch.modelSelect')}
               </label>
-              <div className="space-y-1 max-h-48 overflow-y-auto pr-1">
+              <input
+                list={modelSuggestionsId}
+                value={modelInputValue}
+                onChange={(e) => setModelId(normalizeModelInput(provider, e.target.value, authMethod))}
+                placeholder={t('providerSwitch.modelPlaceholder')}
+                className="w-full bg-bg-input rounded-xl px-4 py-2 text-sm font-mono outline-none border border-glass-border transition-all duration-200 placeholder:text-text-muted/30 focus:border-primary focus:shadow-[0_0_0_3px_var(--color-primary-glow)]"
+              />
+              <datalist id={modelSuggestionsId}>
                 {activeModels.map((m) => (
-                  <button
-                    key={m.id}
-                    onClick={() => setModelId(m.id)}
-                    className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-left transition-all duration-150 cursor-pointer ${
-                      modelId === m.id
-                        ? 'bg-primary/15 border border-primary/40'
-                        : 'bg-white/5 border border-transparent hover:bg-white/8'
-                    }`}
-                  >
-                    <div
-                      className={`w-3 h-3 rounded-full border-2 shrink-0 transition-colors ${
-                        modelId === m.id
-                          ? 'border-primary bg-primary'
-                          : 'border-text-muted/30 bg-transparent'
-                      }`}
-                    />
-                    <div className="min-w-0 flex-1 flex items-baseline gap-1.5">
-                      <span className="text-xs font-bold whitespace-nowrap">{m.name}</span>
-                      <span className="text-[10px] text-text-muted/60 truncate">
-                        {tp(`desc.${m.id}`, m.desc)}
-                      </span>
-                      {m.price && (
-                        <span className="text-[10px] text-text-muted/40 font-mono ml-auto shrink-0">
-                          {m.price}
-                        </span>
-                      )}
-                    </div>
-                  </button>
+                  <option key={m.id} value={stripModelNamespace(m.id)}>
+                    {m.name}
+                  </option>
                 ))}
+              </datalist>
+              <div className="flex flex-wrap gap-2">
+                {activeModels.map((m) => {
+                  const isSelected = modelId === m.id
+                  return (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => setModelId(m.id)}
+                      className={`rounded-xl border px-3 py-1.5 text-xs font-bold transition-all duration-200 ${
+                        isSelected
+                          ? 'border-primary/45 bg-primary/12 text-primary'
+                          : 'border-white/8 bg-black/10 text-text-muted hover:border-primary/25 hover:bg-white/6 hover:text-text'
+                      }`}
+                    >
+                      {m.name}
+                    </button>
+                  )
+                })}
               </div>
+              <p className="text-[11px] leading-5 text-text-muted">
+                {t('providerSwitch.modelHint')}
+              </p>
             </div>
 
             {isOllama ? (
@@ -264,17 +272,26 @@ export default function ProviderSwitchModal({
               </div>
             )}
 
-            <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3.5 space-y-3">
-              <div className="flex items-start justify-between gap-4">
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <label className="text-xs font-bold text-text">{t('providerSwitch.memory.title')}</label>
+            <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 space-y-2.5">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <label className="text-xs font-bold text-text">
+                      {t('providerSwitch.memory.title')}
+                    </label>
                     <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-bold text-text-muted">
                       {t('providerSwitch.memory.optional')}
                     </span>
+                    {memorySearchEnabled && (
+                      <span className="rounded-full border border-primary/35 bg-primary/14 px-2 py-0.5 text-[10px] font-bold text-primary">
+                        {memorySearchOption.label}
+                      </span>
+                    )}
                   </div>
-                  <p className="text-[11px] leading-5 text-text-muted">
-                    {t('providerSwitch.memory.desc')}
+                  <p className="mt-1 text-[11px] leading-5 text-text-muted">
+                    {memorySearchEnabled
+                      ? t('providerSwitch.memory.enabledHint')
+                      : t('providerSwitch.memory.disabledHint')}
                   </p>
                 </div>
 
@@ -303,9 +320,9 @@ export default function ProviderSwitchModal({
                 </button>
               </div>
 
-              {memorySearchEnabled ? (
-                <>
-                  <div className="grid grid-cols-2 gap-2">
+              {memorySearchEnabled && (
+                <div className="grid gap-2">
+                  <div className="flex flex-wrap gap-2">
                     {memorySearchProviderOptions.map((option) => (
                       <button
                         key={option.id}
@@ -315,31 +332,18 @@ export default function ProviderSwitchModal({
                           setMemorySearchApiKey('')
                           setMemorySearchWarning('')
                         }}
-                        className={`rounded-xl border px-3 py-2 text-left transition-all duration-200 ${
+                        className={`rounded-xl border px-3 py-1.5 text-xs font-bold transition-all duration-200 ${
                           memorySearchProvider === option.id
-                            ? 'border-primary/45 bg-primary/12'
-                            : 'border-white/8 bg-black/10 hover:border-primary/25 hover:bg-white/6'
+                            ? 'border-primary/45 bg-primary/12 text-primary'
+                            : 'border-white/8 bg-black/10 text-text-muted hover:border-primary/25 hover:bg-white/6 hover:text-text'
                         }`}
                       >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-xs font-bold">{option.label}</span>
-                          {memorySearchProvider === option.id && (
-                            <span className="rounded-full border border-primary/35 bg-primary/14 px-2 py-0.5 text-[10px] font-bold text-primary">
-                              {t('providerSwitch.memory.selected')}
-                            </span>
-                          )}
-                        </div>
-                        <p className="mt-1 text-[10px] leading-5 text-text-muted">
-                          {t(`providerSwitch.memory.providers.${option.id}`)}
-                        </p>
+                        {option.label}
                       </button>
                     ))}
                   </div>
 
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-text-muted">
-                      {t('providerSwitch.memory.apiKey')}
-                    </label>
+                  <div className="space-y-1">
                     <input
                       type="password"
                       value={memorySearchApiKey}
@@ -347,7 +351,7 @@ export default function ProviderSwitchModal({
                         setMemorySearchApiKey(e.target.value)
                         setMemorySearchWarning('')
                       }}
-                      placeholder={memorySearchOption.placeholder}
+                      placeholder={`${t('providerSwitch.memory.apiKey')} · ${memorySearchOption.placeholder}`}
                       className={`w-full bg-bg-input rounded-xl px-4 py-2 text-sm font-mono outline-none border transition-all duration-200 placeholder:text-text-muted/30 ${
                         memorySearchApiKey && !memorySearchApiKeyValid
                           ? 'border-error/50 focus:border-error'
@@ -358,11 +362,7 @@ export default function ProviderSwitchModal({
                       {t('providerSwitch.memory.hint')}
                     </p>
                   </div>
-                </>
-              ) : (
-                <p className="text-[11px] leading-5 text-text-muted">
-                  {t('providerSwitch.memory.disabledHint')}
-                </p>
+                </div>
               )}
             </div>
 

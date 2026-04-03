@@ -238,6 +238,15 @@ function App({ debugMode }: { debugMode?: string }): React.JSX.Element {
                 provider={provider}
                 authMethod={authMethod}
                 modelId={modelId}
+                onModelChange={(model) => {
+                  setModelId(model)
+                  setConfigDraft((current) => ({
+                    ...current,
+                    validatedApiKey: null,
+                    apiKeyTestState: 'idle',
+                    apiKeyTestMessage: null
+                  }))
+                }}
                 channelType={channelType}
                 draft={configDraft}
                 onDraftChange={setConfigDraft}

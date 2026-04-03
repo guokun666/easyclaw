@@ -2,7 +2,12 @@ import { useState, type Dispatch, type SetStateAction } from 'react'
 import { useTranslation } from 'react-i18next'
 import LobsterLogo from '../components/LobsterLogo'
 import Button from '../components/Button'
-import type { Provider } from '../constants/providers'
+import {
+  getActiveModels,
+  normalizeModelInput,
+  stripModelNamespace,
+  type Provider
+} from '../constants/providers'
 import {
   memorySearchProviderMap,
   memorySearchProviderOptions
@@ -91,6 +96,7 @@ interface Props {
   provider: Provider
   authMethod?: 'api-key' | 'oauth'
   modelId?: string
+  onModelChange: (modelId: string) => void
   channelType: ChannelType
   draft: ConfigDraft
   onDraftChange: Dispatch<SetStateAction<ConfigDraft>>
@@ -101,6 +107,7 @@ export default function ConfigStep({
   provider,
   authMethod,
   modelId,
+  onModelChange,
   channelType,
   draft,
   onDraftChange,
@@ -139,6 +146,14 @@ export default function ConfigStep({
   const label =
     provider === 'modelfamily' ? 'Model Family API Key' : t(`config.apiKeyLabel.${provider}`)
   const placeholder = tp(`apiKeyPlaceholder.${provider}`, providerPlaceholders[provider])
+  const activeModels = getActiveModels(provider, authMethod ?? 'api-key')
+  const resolvedModelId = normalizeModelInput(
+    provider,
+    modelId ?? activeModels[0]?.id ?? '',
+    authMethod ?? 'api-key'
+  )
+  const modelInputValue = stripModelNamespace(resolvedModelId)
+  const modelSuggestionsId = `config-model-options-${provider}-${authMethod ?? 'api-key'}`
   const apiKeyValid = pattern.test(apiKey)
   const telegramBotTokenValid = TELEGRAM_BOT_TOKEN_PATTERN.test(telegramBotToken)
   const feishuAppIdValid = FEISHU_APP_ID_PATTERN.test(feishuAppId)
@@ -200,7 +215,7 @@ export default function ConfigStep({
         provider,
         apiKey,
         authMethod: authMethod ?? 'api-key',
-        modelId
+        modelId: resolvedModelId
       })
 
       if (!result.success) {
@@ -293,7 +308,7 @@ export default function ConfigStep({
       telegramBotToken: telegramBotToken || undefined,
       feishuAppId: feishuAppId || undefined,
       feishuAppSecret: feishuAppSecret || undefined,
-      modelId,
+      modelId: resolvedModelId,
       memorySearch: normalizedMemorySearch
     })
   }
@@ -311,146 +326,179 @@ export default function ConfigStep({
 
         {error && <p className="text-error text-xs font-medium">{error}</p>}
 
-        {isOllama ? (
-          <div className="space-y-1.5">
-            <label className="text-sm font-bold">Ollama</label>
-            <p className="text-xs text-text-muted">{t('config.ollamaInfo')}</p>
-          </div>
-        ) : isOAuth ? (
-          <div className="space-y-1.5">
-            <label className="text-sm font-bold">OpenAI {t('apiKeyGuide.authMethod.oauth')}</label>
-            {oauthDone ? (
-              <div className="flex items-center gap-2 px-4 py-2.5 bg-success/10 border border-success/30 rounded-xl">
-                <svg
-                  width="16"
-                  height="16"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  className="text-success"
-                >
-                  <polyline points="20 6 9 17 4 12" />
-                </svg>
-                <span className="text-sm font-medium text-success">{t('config.oauthSuccess')}</span>
+        <div className="space-y-2">
+          <div className="grid gap-3 md:grid-cols-[minmax(0,0.95fr)_minmax(0,1.25fr)]">
+            <div className="space-y-1.5">
+              <label className="text-sm font-bold">
+                {t('config.modelLabel')} <span className="text-error text-xs">{t('config.required')}</span>
+              </label>
+              <input
+                list={modelSuggestionsId}
+                value={modelInputValue}
+                onChange={(e) =>
+                  onModelChange(
+                    normalizeModelInput(provider, e.target.value, authMethod ?? 'api-key')
+                  )
+                }
+                placeholder={t('config.modelPlaceholder')}
+                className="w-full bg-bg-input rounded-xl px-4 py-2.5 text-sm font-mono outline-none border border-glass-border transition-all duration-200 placeholder:text-text-muted/30 focus:border-primary focus:shadow-[0_0_0_3px_var(--color-primary-glow)]"
+              />
+              <datalist id={modelSuggestionsId}>
+                {activeModels.map((model) => (
+                  <option key={model.id} value={stripModelNamespace(model.id)}>
+                    {model.name}
+                  </option>
+                ))}
+              </datalist>
+              <p className="text-[11px] leading-5 text-text-muted">{t('config.modelHint')}</p>
+            </div>
+
+            {isOllama ? (
+              <div className="space-y-1.5">
+                <label className="text-sm font-bold">Ollama</label>
+                <p className="text-xs text-text-muted">{t('config.ollamaInfo')}</p>
+              </div>
+            ) : isOAuth ? (
+              <div className="space-y-1.5">
+                <label className="text-sm font-bold">OpenAI {t('apiKeyGuide.authMethod.oauth')}</label>
+                {oauthDone ? (
+                  <div className="flex items-center gap-2 px-4 py-2.5 bg-success/10 border border-success/30 rounded-xl">
+                    <svg
+                      width="16"
+                      height="16"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      className="text-success"
+                    >
+                      <polyline points="20 6 9 17 4 12" />
+                    </svg>
+                    <span className="text-sm font-medium text-success">{t('config.oauthSuccess')}</span>
+                  </div>
+                ) : (
+                  <button
+                    onClick={handleOAuthLogin}
+                    disabled={oauthLoading}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-white/10 hover:bg-white/15 border border-glass-border rounded-xl text-sm font-semibold transition-all duration-200 cursor-pointer disabled:opacity-50"
+                  >
+                    {oauthLoading ? (
+                      <>
+                        <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                          <circle
+                            cx="12"
+                            cy="12"
+                            r="10"
+                            stroke="currentColor"
+                            strokeWidth="3"
+                            opacity="0.25"
+                          />
+                          <path
+                            d="M12 2a10 10 0 0 1 10 10"
+                            stroke="currentColor"
+                            strokeWidth="3"
+                            strokeLinecap="round"
+                          />
+                        </svg>
+                        {t('config.oauthLoggingIn')}
+                      </>
+                    ) : (
+                      t('config.oauthLogin')
+                    )}
+                  </button>
+                )}
               </div>
             ) : (
-              <button
-                onClick={handleOAuthLogin}
-                disabled={oauthLoading}
-                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-white/10 hover:bg-white/15 border border-glass-border rounded-xl text-sm font-semibold transition-all duration-200 cursor-pointer disabled:opacity-50"
-              >
-                {oauthLoading ? (
-                  <>
-                    <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
-                      <circle
-                        cx="12"
-                        cy="12"
-                        r="10"
-                        stroke="currentColor"
-                        strokeWidth="3"
-                        opacity="0.25"
-                      />
-                      <path
-                        d="M12 2a10 10 0 0 1 10 10"
-                        stroke="currentColor"
-                        strokeWidth="3"
-                        strokeLinecap="round"
-                      />
-                    </svg>
-                    {t('config.oauthLoggingIn')}
-                  </>
-                ) : (
-                  t('config.oauthLogin')
-                )}
-              </button>
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between gap-3">
+                  <label className="text-sm font-bold">
+                    {label} <span className="text-error text-xs">{t('config.required')}</span>
+                  </label>
+                  {showConnectionTest && (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => void runApiKeyValidation()}
+                      disabled={!apiKey || keyValidating}
+                    >
+                      {keyValidating ? t('config.testingBtn') : t('config.testBtn')}
+                    </Button>
+                  )}
+                </div>
+                <input
+                  type="password"
+                  placeholder={placeholder}
+                  value={apiKey}
+                  onChange={(e) => {
+                    updateDraft({
+                      apiKey: e.target.value
+                    })
+                    clearApiKeyTestState()
+                  }}
+                  className={`w-full bg-bg-input rounded-xl px-4 py-2.5 text-sm font-mono outline-none border transition-all duration-200 placeholder:text-text-muted/30 ${
+                    apiKey && !apiKeyValid
+                      ? 'border-error/50 focus:border-error'
+                      : 'border-glass-border focus:border-primary focus:shadow-[0_0_0_3px_var(--color-primary-glow)]'
+                  }`}
+                />
+              </div>
             )}
           </div>
-        ) : (
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between gap-3">
-              <label className="text-sm font-bold">
-                {label} <span className="text-error text-xs">{t('config.required')}</span>
-              </label>
-              {showConnectionTest && (
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => void runApiKeyValidation()}
-                  disabled={!apiKey || keyValidating}
-                >
-                  {keyValidating ? t('config.testingBtn') : t('config.testBtn')}
-                </Button>
-              )}
-            </div>
-            <div className="space-y-2">
-              <input
-                type="password"
-                placeholder={placeholder}
-                value={apiKey}
-                onChange={(e) => {
-                  updateDraft({
-                    apiKey: e.target.value
-                  })
-                  clearApiKeyTestState()
-                }}
-                className={`w-full bg-bg-input rounded-xl px-4 py-2.5 text-sm font-mono outline-none border transition-all duration-200 placeholder:text-text-muted/30 ${
-                  apiKey && !apiKeyValid
-                    ? 'border-error/50 focus:border-error'
-                    : 'border-glass-border focus:border-primary focus:shadow-[0_0_0_3px_var(--color-primary-glow)]'
-                }`}
-              />
 
-              {showConnectionTest && apiKeyTestState !== 'idle' && (
-                <div
-                  className={`rounded-2xl border px-4 py-3 text-xs ${
-                    apiKeyTestState === 'success'
-                      ? 'border-success/35 bg-success/10 text-success'
+          {showConnectionTest && apiKeyTestState !== 'idle' && (
+            <div
+              className={`rounded-2xl border px-4 py-3 text-xs ${
+                apiKeyTestState === 'success'
+                  ? 'border-success/35 bg-success/10 text-success'
+                  : apiKeyTestState === 'warning'
+                    ? 'border-warning/35 bg-warning/10 text-warning'
+                    : 'border-error/35 bg-error/10 text-error'
+              }`}
+            >
+              <div className="flex items-start gap-2">
+                <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-current/30 text-[10px] font-bold">
+                  {apiKeyTestState === 'success'
+                    ? 'OK'
+                    : apiKeyTestState === 'warning'
+                      ? '!'
+                      : 'X'}
+                </span>
+                <div className="min-w-0 space-y-1">
+                  <p className="font-semibold">
+                    {apiKeyTestState === 'success'
+                      ? t('config.testResult.successTitle')
                       : apiKeyTestState === 'warning'
-                        ? 'border-warning/35 bg-warning/10 text-warning'
-                        : 'border-error/35 bg-error/10 text-error'
-                  }`}
-                >
-                  <div className="flex items-start gap-2">
-                    <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-current/30 text-[10px] font-bold">
-                      {apiKeyTestState === 'success'
-                        ? 'OK'
-                        : apiKeyTestState === 'warning'
-                          ? '!'
-                          : 'X'}
-                    </span>
-                    <div className="min-w-0 space-y-1">
-                      <p className="font-semibold">
-                        {apiKeyTestState === 'success'
-                          ? t('config.testResult.successTitle')
-                          : apiKeyTestState === 'warning'
-                            ? t('config.testResult.warningTitle')
-                            : t('config.testResult.errorTitle')}
-                      </p>
-                      <p className="leading-relaxed text-current/85">{apiKeyTestMessage}</p>
-                    </div>
-                  </div>
+                        ? t('config.testResult.warningTitle')
+                        : t('config.testResult.errorTitle')}
+                  </p>
+                  <p className="leading-relaxed text-current/85">{apiKeyTestMessage}</p>
                 </div>
-              )}
-
+              </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
 
-        <div className="glass-card space-y-4 px-4 py-4">
-          <div className="flex items-start justify-between gap-4">
-            <div className="space-y-1">
-              <div className="flex items-center gap-2">
+        <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 space-y-2.5">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
                 <label className="text-sm font-bold">{t('config.memorySearch.title')}</label>
                 <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-bold text-text-muted">
                   {t('config.memorySearch.optional')}
                 </span>
+                {memorySearchEnabled && (
+                  <span className="rounded-full border border-primary/35 bg-primary/14 px-2 py-0.5 text-[10px] font-bold text-primary">
+                    {memorySearchOption.label}
+                  </span>
+                )}
               </div>
-              <p className="text-xs leading-relaxed text-text-muted">
-                {t('config.memorySearch.desc')}
+              <p className="mt-1 text-[11px] leading-5 text-text-muted">
+                {memorySearchEnabled
+                  ? t('config.memorySearch.enabledHint')
+                  : t('config.memorySearch.disabledHint')}
               </p>
             </div>
 
@@ -465,7 +513,7 @@ export default function ConfigStep({
                   ...(nextEnabled
                     ? {}
                     : {
-                        memorySearchApiKey: '',
+                        memorySearchApiKey: ''
                       })
                 })
               }}
@@ -484,57 +532,37 @@ export default function ConfigStep({
             </button>
           </div>
 
-          {memorySearchEnabled ? (
-            <div className="space-y-3">
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between gap-3">
-                  <label className="text-sm font-bold">{t('config.memorySearch.provider')}</label>
-                  <span className="rounded-full border border-primary/35 bg-primary/14 px-2 py-0.5 text-[10px] font-bold text-primary">
-                    {memorySearchOption.label}
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2">
-                  {memorySearchProviderOptions.map((option) => (
-                    <button
-                      key={option.id}
-                      type="button"
-                      onClick={() => {
-                        updateDraft({
-                          memorySearchProvider: option.id,
-                          memorySearchApiKey: '',
-                          memorySearchNoticeTone: 'idle',
-                          memorySearchNotice: null
-                        })
-                      }}
-                      aria-pressed={memorySearchProvider === option.id}
-                      className={`glass-card group relative cursor-pointer px-3 py-2 text-left transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/35 hover:bg-white/6 ${
-                        memorySearchProvider === option.id
-                          ? 'border-primary/60 bg-primary/12 shadow-[0_10px_30px_rgba(255,122,26,0.14)]'
-                          : ''
-                      }`}
-                    >
-                      <div className="mb-1 flex items-center justify-between gap-2">
-                        <div className="text-sm font-bold">{option.label}</div>
-                        {memorySearchProvider === option.id && (
-                          <span className="rounded-full border border-primary/35 bg-primary/14 px-2 py-0.5 text-[10px] font-bold text-primary">
-                            {t('channelGuide.selectedBadge')}
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-[11px] text-text-muted leading-snug">
-                        {t(`config.memorySearch.providers.${option.id}`)}
-                      </div>
-                    </button>
-                  ))}
-                </div>
+          {memorySearchEnabled && (
+            <div className="grid gap-2 md:grid-cols-[auto_1fr] md:items-center">
+              <div className="flex flex-wrap gap-2">
+                {memorySearchProviderOptions.map((option) => (
+                  <button
+                    key={option.id}
+                    type="button"
+                    onClick={() => {
+                      updateDraft({
+                        memorySearchProvider: option.id,
+                        memorySearchApiKey: '',
+                        memorySearchNoticeTone: 'idle',
+                        memorySearchNotice: null
+                      })
+                    }}
+                    aria-pressed={memorySearchProvider === option.id}
+                    className={`rounded-xl border px-3 py-1.5 text-xs font-bold transition-all duration-200 ${
+                      memorySearchProvider === option.id
+                        ? 'border-primary/45 bg-primary/12 text-primary'
+                        : 'border-white/8 bg-black/10 text-text-muted hover:border-primary/25 hover:bg-white/6 hover:text-text'
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                ))}
               </div>
 
-              <div className="space-y-1.5">
-                <label className="text-sm font-bold">{t('config.memorySearch.apiKeyLabel')}</label>
+              <div className="space-y-1">
                 <input
                   type="password"
-                  placeholder={memorySearchOption.placeholder}
+                  placeholder={`${t('config.memorySearch.apiKeyLabel')} · ${memorySearchOption.placeholder}`}
                   value={memorySearchApiKey}
                   onChange={(e) => {
                     updateDraft({
@@ -542,22 +570,16 @@ export default function ConfigStep({
                     })
                     clearMemorySearchNotice()
                   }}
-                  className={`w-full bg-bg-input rounded-xl px-4 py-2.5 text-sm font-mono outline-none border transition-all duration-200 placeholder:text-text-muted/30 ${
+                  className={`w-full bg-bg-input rounded-xl px-4 py-2 text-sm font-mono outline-none border transition-all duration-200 placeholder:text-text-muted/30 ${
                     memorySearchApiKey && !memorySearchApiKeyValid
                       ? 'border-error/50 focus:border-error'
                       : 'border-glass-border focus:border-primary focus:shadow-[0_0_0_3px_var(--color-primary-glow)]'
                   }`}
                 />
-                <p className="text-[11px] leading-6 text-text-muted">
+                <p className="text-[11px] leading-5 text-text-muted">
                   {t('config.memorySearch.hint')}
                 </p>
               </div>
-            </div>
-          ) : (
-            <div className="rounded-2xl border border-white/8 bg-black/10 px-4 py-3">
-              <p className="text-xs leading-6 text-text-muted">
-                {t('config.memorySearch.disabledHint')}
-              </p>
             </div>
           )}
 

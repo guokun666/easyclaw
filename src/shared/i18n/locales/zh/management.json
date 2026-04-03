@@ -33,7 +33,10 @@
     "errorPrefix": "[错误] {{msg}}",
     "configRequiredLog": "[错误] 检测到 OpenClaw 尚未完成配置。请先点击“配置密钥”选择模型并填写密钥，完成后 Gateway 才会启动。",
     "stoppedUnexpectedlyLog": "[错误] Gateway 进程已退出，请查看上方日志并重试。",
-    "settingsBackup": "配置备份"
+    "settingsBackup": "配置备份",
+    "aiRepair": "AI 自动修复",
+    "aiRepairing": "AI 修复中...",
+    "aiRepairStarted": "[AI修复] 正在调用已配置模型分析日志并执行修复..."
   },
   "uninstall": {
     "title": "删除 OpenClaw",
@@ -63,6 +66,8 @@
   "providerSwitch": {
     "title": "更改 AI 模型",
     "modelSelect": "选择模型",
+    "modelPlaceholder": "claude-opus-4-6",
+    "modelHint": "可直接手动输入模型 ID，也可以点击下方推荐项。",
     "apiKey": "API 密钥",
     "cancel": "取消",
     "change": "更改",
@@ -79,6 +84,7 @@
       "title": "语义记忆",
       "optional": "可选",
       "desc": "为语义记忆单独配置 embeddings。未填写或校验失败时，会自动关闭，不影响模型切换。",
+      "enabledHint": "已启用可选语义记忆，只在填写有效 embedding key 时生效。",
       "selected": "已选",
       "apiKey": "Embedding API Key",
       "hint": "只在想启用语义记忆时填写。留空或无效时，这项功能会被自动关闭。",

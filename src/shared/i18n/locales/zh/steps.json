@@ -174,6 +174,9 @@
   "config": {
     "title": "API 密钥配置",
     "desc": "请输入您获取的密钥",
+    "modelLabel": "模型",
+    "modelPlaceholder": "claude-opus-4-6",
+    "modelHint": "可从下拉建议里选，也可以直接手动输入模型 ID。安装器会自动补齐 provider 前缀。",
     "apiKeyLabel": {
       "anthropic": "Anthropic API 密钥",
       "google": "Gemini API 密钥",
@@ -215,6 +218,7 @@
       "title": "语义记忆",
       "optional": "可选",
       "desc": "为 OpenClaw 额外配置 embeddings。未填写或后续校验失败时，会自动关闭，不影响主流程。",
+      "enabledHint": "已启用可选语义记忆，只在填写有效 embedding key 时生效。",
       "provider": "Embedding 提供方",
       "apiKeyLabel": "Embedding API Key",
       "hint": "只有想启用语义记忆时才需要填写。留空、格式不正确或后续校验失败时，安装器会自动关闭这项功能。",
@@ -302,6 +306,8 @@
     "reinstall": "重新安装",
     "restartGw": "重启",
     "doctorFix": "Doctor Fix",
+    "aiRepair": "AI 自动修复",
+    "aiRepairing": "AI 修复中...",
     "rediagnose": "重新诊断",
     "showLog": "▶ 查看日志",
     "hideLog": "▼ 隐藏日志",

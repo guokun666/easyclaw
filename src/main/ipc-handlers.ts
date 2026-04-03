@@ -1,6 +1,6 @@
-import { ipcMain, BrowserWindow, app } from 'electron'
+import { ipcMain, BrowserWindow, app, shell } from 'electron'
 import { spawn } from 'child_process'
-import { platform } from 'os'
+import { platform, homedir } from 'os'
 import { join } from 'path'
 import { existsSync, readFileSync, writeFileSync, unlinkSync } from 'fs'
 import { checkEnvironment, checkOpenclawUpdate } from './services/env-checker'
@@ -29,11 +29,12 @@ import {
   setGatewayLogCallback,
   setGatewayStatusCallback
 } from './services/gateway'
-import { checkWslState } from './services/wsl-utils'
+import { checkWslState, readWslFile } from './services/wsl-utils'
 import { checkForUpdates, downloadUpdate, installUpdate } from './services/updater'
 import { uninstallOpenClaw } from './services/uninstaller'
 import { exportBackup, importBackup } from './services/backup'
 import { loginOpenAICodex } from './services/oauth'
+import { runAiRepair } from './services/ai-repair'
 import type { InstallSourceMode } from './services/install-sources'
 
 interface WizardPersistedState {
@@ -176,19 +177,60 @@ export const registerIpcHandlers = (getWin: () => BrowserWindow | null): void =>
     }
   })
 
-  ipcMain.handle('openclaw:dashboard', () => {
-    const openclaw = resolvePreferredBin('openclaw')
-    return new Promise<{ success: boolean; error?: string }>((resolve) => {
-      const child = spawn(openclaw, ['dashboard'], {
-        env: getPathEnv(),
-        stdio: 'ignore',
-        detached: true
+  ipcMain.handle('openclaw:dashboard', async () => {
+    try {
+      if (platform() === 'win32') {
+        let raw: string
+        try {
+          raw = await readWslFile('/root/.openclaw/openclaw.json')
+        } catch (err) {
+          return {
+            success: false,
+            error: err instanceof Error ? err.message : String(err)
+          }
+        }
+        const cfg = JSON.parse(raw) as {
+          gateway?: { auth?: { token?: string } }
+        }
+        const token = cfg.gateway?.auth?.token
+        const dashboardUrl = token
+          ? `http://127.0.0.1:18789/#token=${encodeURIComponent(token)}`
+          : 'http://127.0.0.1:18789/'
+        await shell.openExternal(dashboardUrl)
+        return { success: true }
+      }
+
+      const configPath = join(homedir(), '.openclaw', 'openclaw.json')
+      if (existsSync(configPath)) {
+        try {
+          const cfg = JSON.parse(readFileSync(configPath, 'utf-8')) as {
+            gateway?: { auth?: { token?: string } }
+          }
+          const token = cfg.gateway?.auth?.token
+          const dashboardUrl = token
+            ? `http://127.0.0.1:18789/#token=${encodeURIComponent(token)}`
+            : 'http://127.0.0.1:18789/'
+          await shell.openExternal(dashboardUrl)
+          return { success: true }
+        } catch {
+          /* fall back to CLI dashboard */
+        }
+      }
+
+      const openclaw = resolvePreferredBin('openclaw')
+      return await new Promise<{ success: boolean; error?: string }>((resolve) => {
+        const child = spawn(openclaw, ['dashboard'], {
+          env: getPathEnv(),
+          stdio: 'ignore',
+          detached: true
+        })
+        child.unref()
+        child.on('error', (err) => resolve({ success: false, error: err.message }))
+        setTimeout(() => resolve({ success: true }), 1000)
       })
-      child.unref()
-      child.on('error', (err) => resolve({ success: false, error: err.message }))
-      // Give it a moment to launch the browser, then resolve
-      setTimeout(() => resolve({ success: true }), 1000)
-    })
+    } catch (e) {
+      return { success: false, error: e instanceof Error ? e.message : String(e) }
+    }
   })
 
   // WSL-related IPC
@@ -465,6 +507,32 @@ export const registerIpcHandlers = (getWin: () => BrowserWindow | null): void =>
 
   ipcMain.handle('troubleshoot:check-port', () => checkPort())
   ipcMain.handle('troubleshoot:doctor-fix', () => runDoctorFix(win()))
+  ipcMain.handle(
+    'troubleshoot:ai-repair',
+    async (
+      _e,
+      payload?: {
+        logs?: string[]
+      }
+    ) => {
+      try {
+        return await runAiRepair(win(), payload)
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e)
+        try {
+          win().webContents.send('install:error', msg)
+        } catch {
+          /* window destroyed */
+        }
+        return {
+          success: false,
+          summary: 'AI 修复执行失败。',
+          actions: [],
+          error: msg
+        }
+      }
+    }
+  )
 
   ipcMain.handle('newsletter:subscribe', async (_e, email: string) => {
     try {

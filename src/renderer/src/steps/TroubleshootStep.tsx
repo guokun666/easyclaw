@@ -25,8 +25,9 @@ interface TroubleshootStepProps {
 
 export default function TroubleshootStep({ onBack }: TroubleshootStepProps): React.JSX.Element {
   const { t } = useTranslation('steps')
-  const { logs, clearLogs } = useInstallLogs()
+  const { logs, error, clearLogs } = useInstallLogs()
   const [showLogs, setShowLogs] = useState(false)
+  const [aiFixing, setAiFixing] = useState(false)
 
   const CHECKING: I18nText = { key: 'common:status.checking' }
 
@@ -153,6 +154,18 @@ export default function TroubleshootStep({ onBack }: TroubleshootStepProps): Rea
     diagnose()
   }
 
+  const fixWithAi = async (): Promise<void> => {
+    setAiFixing(true)
+    clearLogs()
+    setShowLogs(true)
+    try {
+      await window.electronAPI.troubleshoot.aiRepair({ logs })
+      diagnose()
+    } finally {
+      setAiFixing(false)
+    }
+  }
+
   const items: DiagItem[] = [
     {
       label: t('troubleshoot.env'),
@@ -205,7 +218,12 @@ export default function TroubleshootStep({ onBack }: TroubleshootStepProps): Rea
         </div>
       )}
 
+      {error && <p className="w-full max-w-md text-xs text-error">{error}</p>}
+
       <div className="flex gap-3 mt-2">
+        <Button variant="secondary" size="sm" onClick={fixWithAi} loading={aiFixing}>
+          {aiFixing ? t('troubleshoot.aiRepairing') : t('troubleshoot.aiRepair')}
+        </Button>
         <Button
           variant="primary"
           size="sm"

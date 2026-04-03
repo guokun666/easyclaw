@@ -26,6 +26,9 @@ export interface ProviderConfig {
   authMethods?: AuthMethod[]
 }
 
+const getProviderConfigById = (provider: Provider): ProviderConfig =>
+  providerConfigs.find((item) => item.id === provider)!
+
 export const providerConfigs: ProviderConfig[] = [
   {
     id: 'modelfamily',
@@ -294,3 +297,33 @@ export const visibleProviderIds: Provider[] = ['modelfamily', 'openai', 'anthrop
 export const visibleProviderConfigs = providerConfigs.filter((provider) =>
   visibleProviderIds.includes(provider.id)
 )
+
+export const getActiveModels = (
+  provider: Provider,
+  authMethod: AuthMethod = 'api-key'
+): ModelOption[] => {
+  const config = getProviderConfigById(provider)
+  return provider === 'openai' && authMethod === 'oauth'
+    ? (config.oauthModels ?? config.models)
+    : config.models
+}
+
+export const stripModelNamespace = (modelId?: string): string => {
+  if (!modelId) return ''
+  const [, suffix] = modelId.split('/')
+  return suffix || modelId
+}
+
+export const normalizeModelInput = (
+  provider: Provider,
+  rawValue: string,
+  authMethod: AuthMethod = 'api-key'
+): string => {
+  const trimmed = rawValue.trim()
+  if (!trimmed) {
+    return getActiveModels(provider, authMethod)[0]?.id ?? ''
+  }
+  if (trimmed.includes('/')) return trimmed
+  const namespace = getActiveModels(provider, authMethod)[0]?.id.split('/')[0] ?? provider
+  return `${namespace}/${trimmed}`
+}

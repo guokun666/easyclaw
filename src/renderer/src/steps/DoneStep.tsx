@@ -36,6 +36,7 @@ export default function DoneStep({
   const [currentMemorySearch, setCurrentMemorySearch] = useState<CurrentMemorySearchConfig | undefined>()
   const [configReady, setConfigReady] = useState<boolean | null>(null)
   const [showProviderModal, setShowProviderModal] = useState(false)
+  const [aiRepairing, setAiRepairing] = useState(false)
 
   // OpenClaw update state
   const [openclawUpdate, setOpenclawUpdate] = useState<{
@@ -55,7 +56,12 @@ export default function DoneStep({
 
   const syncGatewayStatus = useCallback(async (): Promise<'running' | 'stopped'> => {
     const nextStatus = await window.electronAPI.gateway.status()
-    setStatus(nextStatus === 'running' ? 'running' : 'stopped')
+    const normalizedStatus = nextStatus === 'running' ? 'running' : 'stopped'
+    setStatus(normalizedStatus)
+    if (normalizedStatus === 'running') {
+      setHasError(false)
+      expectedStopRef.current = false
+    }
     return nextStatus
   }, [])
 
@@ -174,6 +180,7 @@ export default function DoneStep({
       setStatus(s === 'running' ? 'running' : 'stopped')
       if (s === 'running') {
         expectedStopRef.current = false
+        setHasError(false)
       }
       if (s === 'stopped' && !expectedStopRef.current) {
         setHasError(true)
@@ -207,6 +214,7 @@ export default function DoneStep({
         if (cancelled) return
         if (s === 'running') {
           setStatus('running')
+          setHasError(false)
           return
         }
         await new Promise((r) => setTimeout(r, 2000))
@@ -220,6 +228,8 @@ export default function DoneStep({
           if (nextStatus !== 'running') {
             setHasError(true)
             setShowLogs(true)
+          } else {
+            setHasError(false)
           }
         } else {
           setStatus('stopped')
@@ -255,6 +265,8 @@ export default function DoneStep({
       if (nextStatus !== 'running') {
         setHasError(true)
         setShowLogs(true)
+      } else {
+        setHasError(false)
       }
     } else {
       setStatus('stopped')
@@ -265,6 +277,38 @@ export default function DoneStep({
       }
     }
   }, [syncGatewayStatus])
+
+  const handleAiRepair = useCallback(async (): Promise<void> => {
+    setAiRepairing(true)
+    setShowLogs(true)
+    setHasError(false)
+
+    const unsubProgress = window.electronAPI.install.onProgress((msg) => {
+      setLogs((prev) => [...prev, ...msg.split('\n').filter(Boolean)])
+    })
+    const unsubError = window.electronAPI.install.onError((msg) => {
+      setLogs((prev) => [...prev, tRef.current('done.errorPrefix', { msg })])
+      setHasError(true)
+      setShowLogs(true)
+    })
+
+    try {
+      setLogs((prev) => [...prev, tRef.current('done.aiRepairStarted')])
+      const result = await window.electronAPI.troubleshoot.aiRepair({ logs })
+      setLogs((prev) => [...prev, `[AI修复] ${result.summary}`])
+      const nextStatus = await syncGatewayStatus()
+      if (result.success && nextStatus === 'running') {
+        setHasError(false)
+      } else {
+        setHasError(true)
+        setShowLogs(true)
+      }
+    } finally {
+      unsubProgress()
+      unsubError()
+      setAiRepairing(false)
+    }
+  }, [logs, syncGatewayStatus])
 
   return (
     <div className="w-full px-10 pt-8 pb-28">
@@ -372,6 +416,20 @@ export default function DoneStep({
             </Button>
             <Button variant="secondary" size="lg" onClick={handleStop}>
               {t('done.stopBtn')}
+            </Button>
+            {hasError && (
+              <Button variant="secondary" size="lg" onClick={handleAiRepair} loading={aiRepairing}>
+                {aiRepairing ? t('done.aiRepairing') : t('done.aiRepair')}
+              </Button>
+            )}
+          </>
+        ) : configReady ? (
+          <>
+            <Button variant="primary" size="lg" onClick={handleRestart}>
+              {t('done.startBtn')}
+            </Button>
+            <Button variant="secondary" size="lg" onClick={handleAiRepair} loading={aiRepairing}>
+              {aiRepairing ? t('done.aiRepairing') : t('done.aiRepair')}
             </Button>
           </>
         ) : null}
@@ -551,6 +609,9 @@ export default function DoneStep({
               setTimeout(async () => {
                 const s = await window.electronAPI.gateway.status()
                 setStatus(s === 'running' ? 'running' : 'stopped')
+                if (s === 'running') {
+                  setHasError(false)
+                }
               }, 3000)
             }}
           />
