@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell } from 'electron'
+import { app, BrowserWindow, screen, shell } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer } from '@electron-toolkit/utils'
 import { registerIpcHandlers, applySavedInstallSourceSettings } from './ipc-handlers'
@@ -13,18 +13,55 @@ let mainWindow: BrowserWindow | null = null
 let isQuitting = false
 
 const getWin = (): BrowserWindow | null => mainWindow
+const WINDOW_MARGIN = 48
+const MIN_WINDOW_WIDTH = 1040
+const MIN_WINDOW_HEIGHT = 680
+const MAX_WINDOW_WIDTH = 1480
+const MAX_WINDOW_HEIGHT = 960
+
+const clamp = (value: number, min: number, max: number): number => {
+  return Math.min(Math.max(value, min), max)
+}
+
+const getInitialWindowBounds = (): {
+  width: number
+  height: number
+  minWidth: number
+  minHeight: number
+} => {
+  const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint())
+  const { width: workAreaWidth, height: workAreaHeight } = display.workAreaSize
+  const maxAllowedWidth = Math.max(MIN_WINDOW_WIDTH, workAreaWidth - WINDOW_MARGIN)
+  const maxAllowedHeight = Math.max(MIN_WINDOW_HEIGHT, workAreaHeight - WINDOW_MARGIN)
+  const minWidth = Math.min(MIN_WINDOW_WIDTH, maxAllowedWidth)
+  const minHeight = Math.min(MIN_WINDOW_HEIGHT, maxAllowedHeight)
+  const width = clamp(
+    Math.round(workAreaWidth * 0.78),
+    minWidth,
+    Math.min(MAX_WINDOW_WIDTH, maxAllowedWidth)
+  )
+  const height = clamp(
+    Math.round(workAreaHeight * 0.86),
+    minHeight,
+    Math.min(MAX_WINDOW_HEIGHT, maxAllowedHeight)
+  )
+
+  return { width, height, minWidth, minHeight }
+}
 
 function createWindow(): void {
   const startHidden =
     app.getLoginItemSettings().wasOpenedAsHidden || process.argv.includes('--hidden')
+  const { width, height, minWidth, minHeight } = getInitialWindowBounds()
 
   mainWindow = new BrowserWindow({
-    width: 800,
-    height: 600,
+    width,
+    height,
     resizable: true,
-    minWidth: 800,
-    minHeight: 600,
+    minWidth,
+    minHeight,
     show: false,
+    center: true,
     autoHideMenuBar: true,
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 16, y: 16 },
