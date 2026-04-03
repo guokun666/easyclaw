@@ -1206,6 +1206,36 @@ export interface CurrentConfig {
   model?: string
   hasChannel?: boolean
   channelType?: 'feishu' | 'wechat' | 'telegram'
+  hasCredentials?: boolean
+  gatewayMode?: string
+  isConfigured?: boolean
+  issues?: string[]
+}
+
+const hasLocalCredentialFiles = (): boolean => {
+  const authDir = join(homedir(), '.openclaw', 'agents', 'main', 'agent')
+  const authFiles = ['auth.json', 'auth-profiles.json']
+
+  return authFiles.some((file) => {
+    const filePath = join(authDir, file)
+    try {
+      return existsSync(filePath) && readFileSync(filePath, 'utf-8').trim().length > 0
+    } catch {
+      return false
+    }
+  })
+}
+
+const hasWslCredentialFiles = async (): Promise<boolean> => {
+  try {
+    const output = await runInWsl(
+      "[ -s /root/.openclaw/agents/main/agent/auth.json ] || [ -s /root/.openclaw/agents/main/agent/auth-profiles.json ] && echo yes || true",
+      10000
+    )
+    return output.trim().includes('yes')
+  } catch {
+    return false
+  }
 }
 
 export const readCurrentConfig = async (): Promise<CurrentConfig | null> => {
@@ -1224,9 +1254,33 @@ export const readCurrentConfig = async (): Promise<CurrentConfig | null> => {
     const model = cfg?.agents?.defaults?.model?.primary as string | undefined
     const channelType = getActiveChannelType(cfg?.channels)
     const hasChannel = !!channelType
+    const gatewayMode = cfg?.gateway?.mode as string | undefined
     // Extract provider from model ID (e.g. "anthropic/claude-sonnet-4-6" → "anthropic")
     const provider = model?.split('/')[0]
-    return { provider, model, hasChannel, channelType }
+    const providerConfig = provider ? cfg?.models?.providers?.[provider] : undefined
+    const hasEmbeddedCredential =
+      typeof providerConfig?.apiKey === 'string' && providerConfig.apiKey.trim().length > 0
+    const hasConfigAuthProfile = Object.keys(cfg?.auth?.profiles ?? {}).length > 0
+    const hasCredentialFiles = isWindows ? await hasWslCredentialFiles() : hasLocalCredentialFiles()
+    const hasCredentials = provider
+      ? provider === 'ollama' || hasEmbeddedCredential || hasConfigAuthProfile || hasCredentialFiles
+      : false
+
+    const issues: string[] = []
+    if (!model || !provider) issues.push('missing-model')
+    if (gatewayMode !== 'local') issues.push('missing-gateway-mode')
+    if (provider && provider !== 'ollama' && !hasCredentials) issues.push('missing-credentials')
+
+    return {
+      provider,
+      model,
+      hasChannel,
+      channelType,
+      hasCredentials,
+      gatewayMode,
+      isConfigured: issues.length === 0,
+      issues
+    }
   } catch {
     return null
   }

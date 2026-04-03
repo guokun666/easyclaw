@@ -45,6 +45,21 @@ const runGateway = (args: string[]): Promise<string> => {
   })
 }
 
+const waitForGatewayPort = async (timeoutMs = 10000, intervalMs = 500): Promise<boolean> => {
+  const start = Date.now()
+
+  while (Date.now() - start < timeoutMs) {
+    if (!wslGatewayProcess || wslGatewayProcess.killed) return false
+
+    const { inUse } = await checkPort()
+    if (inUse) return true
+
+    await new Promise((r) => setTimeout(r, intervalMs))
+  }
+
+  return false
+}
+
 const startGatewayWsl = async (): Promise<GatewayResult> => {
   if (wslGatewayProcess) {
     wslGatewayProcess.kill()
@@ -73,13 +88,13 @@ const startGatewayWsl = async (): Promise<GatewayResult> => {
 
     let resolved = false
     let stderrBuffer = ''
+    const stdoutLines: string[] = []
 
     child.stdout.on('data', (d) => {
       const msg = d.toString().trim()
-      if (msg) emitLog(msg)
-      if (!resolved) {
-        resolved = true
-        resolve({ status: 'started' })
+      if (msg) {
+        emitLog(msg)
+        stdoutLines.push(msg)
       }
     })
 
@@ -88,10 +103,6 @@ const startGatewayWsl = async (): Promise<GatewayResult> => {
       if (msg) {
         emitLog(msg)
         stderrBuffer += msg + '\n'
-      }
-      if (!resolved) {
-        resolved = true
-        resolve({ status: 'started' })
       }
     })
 
@@ -120,12 +131,28 @@ const startGatewayWsl = async (): Promise<GatewayResult> => {
       }
     })
 
-    setTimeout(() => {
-      if (!resolved) {
+    void (async () => {
+      const portReady = await waitForGatewayPort()
+      if (resolved) return
+
+      if (portReady) {
         resolved = true
         resolve({ status: 'started' })
+        return
       }
-    }, 3000)
+
+      if (wslGatewayProcess && !wslGatewayProcess.killed) {
+        const error =
+          stderrBuffer.trim() ||
+          stdoutLines[stdoutLines.length - 1] ||
+          'Gateway did not become ready in time'
+        wslGatewayProcess.kill()
+        await killWslGateway().catch(() => {})
+        wslGatewayProcess = null
+        resolved = true
+        resolve({ status: 'error', error })
+      }
+    })()
   })
 }
 
@@ -257,7 +284,9 @@ export const restartGateway = async (): Promise<GatewayResult> => {
 
 export const getGatewayStatus = async (): Promise<'running' | 'stopped'> => {
   if (platform() === 'win32') {
-    return wslGatewayProcess && !wslGatewayProcess.killed ? 'running' : 'stopped'
+    if (!wslGatewayProcess || wslGatewayProcess.killed) return 'stopped'
+    const { inUse } = await checkPort()
+    return inUse ? 'running' : 'stopped'
   }
   try {
     const output = await runGateway(['status'])

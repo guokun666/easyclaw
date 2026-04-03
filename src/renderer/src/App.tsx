@@ -29,6 +29,25 @@ interface InstallNeeds {
   needOpenclaw: boolean
 }
 
+const KNOWN_PROVIDERS: Provider[] = [
+  'modelfamily',
+  'anthropic',
+  'google',
+  'openai',
+  'minimax',
+  'glm',
+  'deepseek',
+  'ollama'
+]
+
+const KNOWN_CHANNEL_TYPES: ChannelType[] = ['feishu', 'wechat', 'telegram']
+
+const isKnownProvider = (value?: string): value is Provider =>
+  value !== undefined && KNOWN_PROVIDERS.includes(value as Provider)
+
+const isKnownChannelType = (value?: string): value is ChannelType =>
+  value !== undefined && KNOWN_CHANNEL_TYPES.includes(value as ChannelType)
+
 function App({ debugMode }: { debugMode?: string }): React.JSX.Element {
   const { t } = useTranslation('common')
   const { currentStep, next, prev, canGoBack, goTo } = useWizard()
@@ -66,9 +85,25 @@ function App({ debugMode }: { debugMode?: string }): React.JSX.Element {
       const state = await window.electronAPI.wizard.loadState()
       if (state) {
         goTo(state.step as 'wslSetup' | 'envCheck')
-      } else if (env.nodeVersionOk && env.openclawInstalled) {
-        // Already installed → skip wizard, go directly to dashboard
-        goTo('done')
+        return
+      }
+
+      if (env.nodeVersionOk && env.openclawInstalled) {
+        const configResult = await window.electronAPI.config.read()
+        const currentConfig = configResult.success ? configResult.config : null
+
+        if (isKnownProvider(currentConfig?.provider)) setProvider(currentConfig.provider)
+        if (currentConfig?.model) setModelId(currentConfig.model)
+        if (isKnownChannelType(currentConfig?.channelType)) setChannelType(currentConfig.channelType)
+
+        if (currentConfig?.isConfigured) {
+          // Installed and configured → skip wizard, go directly to dashboard
+          goTo('done')
+          return
+        }
+
+        // Installed but not configured yet → continue with provider/model setup
+        goTo('apiKeyGuide')
       }
     })
   }, [goTo, isDebugBareShell, isDebugNoEffects, isDebugWelcomeOnly])

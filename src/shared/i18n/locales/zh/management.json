@@ -31,6 +31,7 @@
     "delete": "删除",
     "restartingGw": "正在重启 Gateway...",
     "errorPrefix": "[错误] {{msg}}",
+    "configRequiredLog": "[错误] 检测到 OpenClaw 尚未完成配置。请先点击“配置密钥”选择模型并填写密钥，完成后 Gateway 才会启动。",
     "settingsBackup": "配置备份"
   },
   "uninstall": {

@@ -32,6 +32,7 @@ export default function DoneStep({
   const [autoLaunch, setAutoLaunch] = useState(false)
   const [currentModel, setCurrentModel] = useState<string | null>(null)
   const [currentProvider, setCurrentProvider] = useState<string | undefined>()
+  const [configReady, setConfigReady] = useState<boolean | null>(null)
   const [showProviderModal, setShowProviderModal] = useState(false)
 
   // OpenClaw update state
@@ -107,18 +108,29 @@ export default function DoneStep({
     window.electronAPI.autoLaunch.get().then((r) => setAutoLaunch(r.enabled))
   }, [])
 
+  const appendLogOnce = useCallback((message: string) => {
+    setLogs((prev) => (prev.includes(message) ? prev : [...prev, message]))
+  }, [])
+
   // Read current provider/model
-  const loadCurrentConfig = useCallback(() => {
-    window.electronAPI.config.read().then((r) => {
-      if (r.success && r.config) {
-        setCurrentModel(r.config.model || null)
-        setCurrentProvider(r.config.provider)
-      }
-    })
+  const loadCurrentConfig = useCallback(async () => {
+    const result = await window.electronAPI.config.read()
+
+    if (result.success && result.config) {
+      setCurrentModel(result.config.model || null)
+      setCurrentProvider(result.config.provider)
+      setConfigReady(result.config.isConfigured === true)
+      return result.config
+    }
+
+    setCurrentModel(null)
+    setCurrentProvider(undefined)
+    setConfigReady(false)
+    return null
   }, [])
 
   useEffect(() => {
-    loadCurrentConfig()
+    void loadCurrentConfig()
   }, [loadCurrentConfig])
 
   const toggleAutoLaunch = async (): Promise<void> => {
@@ -143,6 +155,16 @@ export default function DoneStep({
   }, [])
 
   useEffect(() => {
+    if (configReady === null) return
+
+    if (!configReady) {
+      setStatus('stopped')
+      setHasError(true)
+      setShowLogs(true)
+      appendLogOnce(tRef.current('done.configRequiredLog'))
+      return
+    }
+
     let cancelled = false
 
     const poll = async (): Promise<void> => {
@@ -174,7 +196,7 @@ export default function DoneStep({
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [appendLogOnce, configReady])
 
   const handleStop = async (): Promise<void> => {
     await window.electronAPI.gateway.stop()
@@ -471,9 +493,12 @@ export default function DoneStep({
             currentModel={currentModel || undefined}
             onClose={() => setShowProviderModal(false)}
             onSuccess={() => {
-              loadCurrentConfig()
+              void loadCurrentConfig()
               // Gateway restart is handled by IPC handler (config:switch-provider)
               setStatus('starting')
+              setLogs([])
+              setShowLogs(false)
+              setHasError(false)
               setTimeout(async () => {
                 const s = await window.electronAPI.gateway.status()
                 setStatus(s === 'running' ? 'running' : 'stopped')

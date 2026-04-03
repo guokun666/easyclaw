@@ -110,6 +110,10 @@
   "channelGuide": {
     "title": "选择消息渠道",
     "desc": "选择要接入的消息渠道，默认推荐飞书",
+    "currentSelection": "当前已选：",
+    "clickHint": "点击上方卡片可切换",
+    "selectedBadge": "已选",
+    "continueBtnPrefix": "继续配置",
     "readyBtn": "渠道已准备好！",
     "channels": {
       "feishu": {

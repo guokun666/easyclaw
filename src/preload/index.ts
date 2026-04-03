@@ -183,6 +183,10 @@ const electronAPI = {
         model?: string
         hasChannel?: boolean
         channelType?: 'feishu' | 'wechat' | 'telegram'
+        hasCredentials?: boolean
+        gatewayMode?: string
+        isConfigured?: boolean
+        issues?: string[]
       } | null
       error?: string
     }> => ipcRenderer.invoke('config:read'),
