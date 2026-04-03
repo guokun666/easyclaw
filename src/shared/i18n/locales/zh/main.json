@@ -15,6 +15,7 @@
     "ocWslInstalling": "正在 WSL 内部安装 OpenClaw...",
     "ocWslDone": "OpenClaw 安装完成！",
     "nodeDownloading": "正在下载 Node.js 22...",
+    "nodeInstalling": "正在安装 Node.js...",
     "nodeInstallerOpening": "正在打开 Node.js 安装窗口...",
     "nodeDone": "Node.js 安装完成！",
     "xcodeOpening": "正在打开 Xcode Command Line Tools 安装窗口...",

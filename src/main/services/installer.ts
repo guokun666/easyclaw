@@ -344,9 +344,28 @@ export const installNodeMac = async (win: BrowserWindow): Promise<void> => {
       sendStatus(win, percent, t('installer.nodeDownloading'))
     }
   )
-  sendStatus(win, 88, t('installer.nodeInstallerOpening'))
-  log(t('installer.nodeInstallerOpening'))
-  await runWithLog('open', ['-W', dest], log)
+
+  // Try silent command-line install via osascript (admin privileges prompt)
+  sendStatus(win, 85, t('installer.nodeInstalling'))
+  log(t('installer.nodeInstalling'))
+  try {
+    const escapedDest = dest.replace(/'/g, "'\\''")
+    await runWithLog(
+      'osascript',
+      [
+        '-e',
+        `do shell script "installer -pkg '${escapedDest}' -target /" with administrator privileges`
+      ],
+      log
+    )
+  } catch (silentErr) {
+    // Fallback to GUI pkg installer if silent install fails
+    log(`Silent install failed (${silentErr instanceof Error ? silentErr.message : silentErr}), falling back to GUI installer`)
+    sendStatus(win, 88, t('installer.nodeInstallerOpening'))
+    log(t('installer.nodeInstallerOpening'))
+    await runWithLog('open', ['-W', dest], log)
+  }
+
   sendStatus(win, 100, t('installer.nodeDone'))
   log(t('installer.nodeDone'))
 }
