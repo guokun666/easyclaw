@@ -331,6 +331,7 @@ export default function ConfigStep({
             <ModelCombobox
               label={t('config.modelLabel')}
               required
+              reserveHeaderHeight
               value={modelInputValue}
               options={activeModels}
               placeholder={t('config.modelPlaceholder')}

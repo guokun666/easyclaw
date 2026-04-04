@@ -8,6 +8,7 @@ interface ModelComboboxProps {
   placeholder: string
   hint?: string
   required?: boolean
+  reserveHeaderHeight?: boolean
   onChange: (rawValue: string) => void
   onSelect: (modelId: string) => void
   className?: string
@@ -20,6 +21,7 @@ export default function ModelCombobox({
   placeholder,
   hint,
   required,
+  reserveHeaderHeight = false,
   onChange,
   onSelect,
   className = ''
@@ -40,9 +42,11 @@ export default function ModelCombobox({
 
   return (
     <div className={`space-y-1.5 ${className}`.trim()} ref={rootRef}>
-      <label className="text-sm font-bold">
-        {label} {required && <span className="text-error text-xs">必填</span>}
-      </label>
+      <div className={reserveHeaderHeight ? 'min-h-[2.625rem] flex items-center' : undefined}>
+        <label className="text-sm font-bold">
+          {label} {required && <span className="text-error text-xs">必填</span>}
+        </label>
+      </div>
 
       <div className="relative">
         <input
