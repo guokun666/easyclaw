@@ -6,9 +6,23 @@ import Button from '../components/Button'
 import LogViewer from '../components/LogViewer'
 import ManagementModal from '../components/ManagementModal'
 import ProviderSwitchModal from '../components/ProviderSwitchModal'
+import AiRepairApprovalModal from '../components/AiRepairApprovalModal'
 import { useManagement } from '../hooks/useManagement'
 import type { ChannelType } from './TelegramGuideStep'
 import type { CurrentMemorySearchConfig } from '../../../shared/types/memory-search'
+
+interface PendingAiRepairPlan {
+  planId: string
+  summary: string
+  actions: Array<{
+    label: string
+    reason: string
+    effect: string
+    commandPreview: string
+    commandRuntime: string
+    approval: 'auto' | 'confirm'
+  }>
+}
 
 const UPDATE_CHECK_INTERVAL = 30 * 60 * 1000 // 30 min
 
@@ -37,6 +51,8 @@ export default function DoneStep({
   const [configReady, setConfigReady] = useState<boolean | null>(null)
   const [showProviderModal, setShowProviderModal] = useState(false)
   const [aiRepairing, setAiRepairing] = useState(false)
+  const [aiRepairConfirming, setAiRepairConfirming] = useState(false)
+  const [pendingAiRepairPlan, setPendingAiRepairPlan] = useState<PendingAiRepairPlan | null>(null)
 
   // OpenClaw update state
   const [openclawUpdate, setOpenclawUpdate] = useState<{
@@ -130,6 +146,22 @@ export default function DoneStep({
 
   const appendLogOnce = useCallback((message: string) => {
     setLogs((prev) => (prev.includes(message) ? prev : [...prev, message]))
+  }, [])
+
+  const bindAiRepairLogBridge = useCallback(() => {
+    const unsubProgress = window.electronAPI.install.onProgress((msg) => {
+      setLogs((prev) => [...prev, ...msg.split('\n').filter(Boolean)])
+    })
+    const unsubError = window.electronAPI.install.onError((msg) => {
+      setLogs((prev) => [...prev, tRef.current('done.errorPrefix', { msg })])
+      setHasError(true)
+      setShowLogs(true)
+    })
+
+    return () => {
+      unsubProgress()
+      unsubError()
+    }
   }, [])
 
   // Read current provider/model
@@ -282,19 +314,29 @@ export default function DoneStep({
     setAiRepairing(true)
     setShowLogs(true)
     setHasError(false)
-
-    const unsubProgress = window.electronAPI.install.onProgress((msg) => {
-      setLogs((prev) => [...prev, ...msg.split('\n').filter(Boolean)])
-    })
-    const unsubError = window.electronAPI.install.onError((msg) => {
-      setLogs((prev) => [...prev, tRef.current('done.errorPrefix', { msg })])
-      setHasError(true)
-      setShowLogs(true)
-    })
+    setPendingAiRepairPlan(null)
+    const teardown = bindAiRepairLogBridge()
 
     try {
       setLogs((prev) => [...prev, tRef.current('done.aiRepairStarted')])
-      const result = await window.electronAPI.troubleshoot.aiRepair({ logs })
+      const plan = await window.electronAPI.troubleshoot.aiRepairPlan({ logs })
+      if (!plan.success || !plan.planId) {
+        setHasError(true)
+        setShowLogs(true)
+        return
+      }
+
+      if (plan.requiresApproval) {
+        setLogs((prev) => [...prev, tRef.current('done.aiRepairAwaitingApproval')])
+        setPendingAiRepairPlan({
+          planId: plan.planId,
+          summary: plan.summary,
+          actions: plan.actions
+        })
+        return
+      }
+
+      const result = await window.electronAPI.troubleshoot.aiRepairExecute({ planId: plan.planId })
       const nextStatus = await syncGatewayStatus()
       if (result.success && nextStatus === 'running') {
         setHasError(false)
@@ -303,11 +345,46 @@ export default function DoneStep({
         setShowLogs(true)
       }
     } finally {
-      unsubProgress()
-      unsubError()
+      teardown()
       setAiRepairing(false)
     }
-  }, [logs, syncGatewayStatus])
+  }, [bindAiRepairLogBridge, logs, syncGatewayStatus])
+
+  const handleAiRepairConfirm = useCallback(async (): Promise<void> => {
+    if (!pendingAiRepairPlan) return
+
+    setAiRepairConfirming(true)
+    setShowLogs(true)
+    const teardown = bindAiRepairLogBridge()
+
+    try {
+      const result = await window.electronAPI.troubleshoot.aiRepairExecute({
+        planId: pendingAiRepairPlan.planId
+      })
+      const nextStatus = await syncGatewayStatus()
+      if (result.success && nextStatus === 'running') {
+        setHasError(false)
+      } else {
+        setHasError(true)
+        setShowLogs(true)
+      }
+      setPendingAiRepairPlan(null)
+    } finally {
+      teardown()
+      setAiRepairConfirming(false)
+    }
+  }, [bindAiRepairLogBridge, pendingAiRepairPlan, syncGatewayStatus])
+
+  const handleAiRepairCancel = useCallback((): void => {
+    setPendingAiRepairPlan(null)
+    setLogs((prev) => [...prev, tRef.current('done.aiRepairCancelled')])
+    void syncGatewayStatus().then((nextStatus) => {
+      if (nextStatus !== 'running') {
+        setHasError(true)
+        setShowLogs(true)
+      }
+    })
+  }, [syncGatewayStatus])
 
   return (
     <div className="w-full px-10 pt-8 pb-28">
@@ -613,6 +690,25 @@ export default function DoneStep({
                 }
               }, 3000)
             }}
+          />
+        )}
+
+        {pendingAiRepairPlan && (
+          <AiRepairApprovalModal
+            title={t('done.aiRepairReviewTitle')}
+            description={t('done.aiRepairReviewDesc')}
+            summaryLabel={t('done.aiRepairProblemLabel')}
+            actionLabel={t('done.aiRepairActionLabel')}
+            commandLabel={t('done.aiRepairCommandLabel')}
+            runtimeLabel={t('done.aiRepairRuntimeLabel')}
+            effectLabel={t('done.aiRepairEffectLabel')}
+            cancelLabel={t('common:button.cancel')}
+            confirmLabel={t('done.aiRepairApprove')}
+            summary={pendingAiRepairPlan.summary}
+            actions={pendingAiRepairPlan.actions}
+            onClose={handleAiRepairCancel}
+            onConfirm={handleAiRepairConfirm}
+            confirming={aiRepairConfirming}
           />
         )}
 

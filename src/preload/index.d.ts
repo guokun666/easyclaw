@@ -100,6 +100,28 @@ interface ElectronAPI {
   troubleshoot: {
     checkPort: () => Promise<{ inUse: boolean; pid?: string }>
     doctorFix: () => Promise<{ success: boolean }>
+    aiRepairPlan: (payload?: {
+      logs?: string[]
+    }) => Promise<{
+      success: boolean
+      summary: string
+      source: 'ai' | 'fallback'
+      actions: Array<{
+        type: 'doctor_fix' | 'disable_memory_search' | 'set_gateway_mode_local' | 'restart_gateway'
+        label: string
+        reason: string
+        effect: string
+        commandPreview: string
+        commandRuntime: string
+        approval: 'auto' | 'confirm'
+      }>
+      requiresApproval: boolean
+      planId?: string
+      error?: string
+    }>
+    aiRepairExecute: (payload: {
+      planId: string
+    }) => Promise<{ success: boolean; summary: string; actions: string[]; error?: string }>
     aiRepair: (payload?: {
       logs?: string[]
     }) => Promise<{ success: boolean; summary: string; actions: string[]; error?: string }>

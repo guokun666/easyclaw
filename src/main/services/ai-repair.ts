@@ -3,6 +3,7 @@ import { platform, homedir } from 'os'
 import { join } from 'path'
 import { BrowserWindow } from 'electron'
 import { spawn } from 'child_process'
+import { randomUUID } from 'crypto'
 import { getGatewayStatus, restartGateway } from './gateway'
 import { checkPort, runDoctorFix } from './troubleshooter'
 import { readWslFile, runInWsl, writeWslFile } from './wsl-utils'
@@ -15,6 +16,8 @@ type RepairActionType =
   | 'restart_gateway'
   | 'none'
 
+type RepairApprovalMode = 'auto' | 'confirm'
+
 interface RepairAction {
   type: RepairActionType
   reason: string
@@ -24,6 +27,13 @@ interface RepairPlan {
   summary: string
   actions: RepairAction[]
   source: 'ai' | 'fallback'
+}
+
+interface PendingRepairPlan {
+  summary: string
+  actions: RepairAction[]
+  source: 'ai' | 'fallback'
+  createdAt: number
 }
 
 interface RawOpenClawConfig {
@@ -72,14 +82,64 @@ export interface AiRepairRequest {
   logs?: string[]
 }
 
+export interface AiRepairPlanAction {
+  type: Exclude<RepairActionType, 'none'>
+  label: string
+  reason: string
+  effect: string
+  commandPreview: string
+  commandRuntime: string
+  approval: RepairApprovalMode
+}
+
+export interface AiRepairPlanResult {
+  success: boolean
+  summary: string
+  source: 'ai' | 'fallback'
+  actions: AiRepairPlanAction[]
+  requiresApproval: boolean
+  planId?: string
+  error?: string
+}
+
+export interface AiRepairExecuteRequest {
+  planId: string
+}
+
 const MAX_CONTEXT_LOG_LINES = 80
 const MAX_ACTIONS = 3
+const PENDING_PLAN_TTL_MS = 10 * 60 * 1000
 const REPAIR_ACTION_LABELS: Record<Exclude<RepairActionType, 'none'>, string> = {
   doctor_fix: '执行 doctor fix',
   disable_memory_search: '关闭语义记忆',
   set_gateway_mode_local: '设置 gateway.mode=local',
   restart_gateway: '重启 Gateway'
 }
+const REPAIR_ACTION_META: Record<
+  Exclude<RepairActionType, 'none'>,
+  {
+    effect: string
+    approval: RepairApprovalMode
+  }
+> = {
+  doctor_fix: {
+    effect: '调用 OpenClaw 自检修复，自动处理端口、依赖和部分配置问题。',
+    approval: 'confirm'
+  },
+  disable_memory_search: {
+    effect: '关闭语义记忆，避免 embeddings 未配置时影响 Gateway 启动。',
+    approval: 'auto'
+  },
+  set_gateway_mode_local: {
+    effect: '把 Gateway 模式切回 local，确保桌面安装器按本地网关模式运行。',
+    approval: 'auto'
+  },
+  restart_gateway: {
+    effect: '重新拉起 Gateway，让刚修过的配置立即生效。',
+    approval: 'auto'
+  }
+}
+const pendingRepairPlans = new Map<string, PendingRepairPlan>()
 
 const emitProgress = (win: BrowserWindow, message: string): void => {
   try {
@@ -98,6 +158,39 @@ const emitError = (win: BrowserWindow, message: string): void => {
     }
   } catch {
     /* ignore */
+  }
+}
+
+const cleanupPendingRepairPlans = (): void => {
+  const now = Date.now()
+  for (const [planId, plan] of pendingRepairPlans) {
+    if (now - plan.createdAt > PENDING_PLAN_TTL_MS) {
+      pendingRepairPlans.delete(planId)
+    }
+  }
+}
+
+const buildCommandPreview = async (
+  actionType: Exclude<RepairActionType, 'none'>
+): Promise<{ commandPreview: string; commandRuntime: string }> => {
+  const scriptMap: Record<Exclude<RepairActionType, 'none'>, string> = {
+    doctor_fix: 'openclaw doctor --fix',
+    disable_memory_search: 'openclaw config set agents.defaults.memorySearch.enabled false',
+    set_gateway_mode_local: 'openclaw config set gateway.mode local',
+    restart_gateway: 'openclaw gateway restart'
+  }
+
+  const script = scriptMap[actionType]
+  if (platform() !== 'win32') {
+    return {
+      commandPreview: script,
+      commandRuntime: '会在当前系统 Shell 中执行'
+    }
+  }
+
+  return {
+    commandPreview: script,
+    commandRuntime: 'Windows 下会自动在 WSL Ubuntu 中执行'
   }
 }
 
@@ -294,6 +387,57 @@ const buildFallbackPlan = (context: RepairContext, reason: string): RepairPlan =
     actions: actions.slice(0, MAX_ACTIONS),
     source: 'fallback'
   }
+}
+
+const resolveRepairActions = (plan: RepairPlan, context: RepairContext): RepairAction[] => {
+  let actionsToRun = plan.actions.filter((action) => action.type !== 'none')
+
+  if (actionsToRun.length === 0 && context.gatewayStatus !== 'running') {
+    actionsToRun = buildFallbackPlan(
+      context,
+      '模型未给出可执行动作，自动补充保守修复流程。'
+    ).actions.filter((action) => action.type !== 'none')
+  }
+
+  return actionsToRun.slice(0, MAX_ACTIONS)
+}
+
+const describeRepairAction = async (action: RepairAction): Promise<AiRepairPlanAction | null> => {
+  if (action.type === 'none') return null
+  const meta = REPAIR_ACTION_META[action.type]
+  const { commandPreview, commandRuntime } = await buildCommandPreview(action.type)
+
+  return {
+    type: action.type,
+    label: REPAIR_ACTION_LABELS[action.type],
+    reason: action.reason,
+    effect: meta.effect,
+    commandPreview,
+    commandRuntime,
+    approval: meta.approval
+  }
+}
+
+const registerPendingPlan = (
+  plan: RepairPlan,
+  actions: RepairAction[]
+): Promise<{ planId: string; requiresApproval: boolean; describedActions: AiRepairPlanAction[] }> => {
+  cleanupPendingRepairPlans()
+
+  return Promise.all(actions.map((action) => describeRepairAction(action))).then((described) => {
+    const describedActions = described.filter((action): action is AiRepairPlanAction => !!action)
+    const requiresApproval = describedActions.some((action) => action.approval === 'confirm')
+    const planId = randomUUID()
+
+    pendingRepairPlans.set(planId, {
+      summary: plan.summary,
+      actions,
+      source: plan.source,
+      createdAt: Date.now()
+    })
+
+    return { planId, requiresApproval, describedActions }
+  })
 }
 
 const callAnthropicCompatibleRepairModel = async (
@@ -584,10 +728,10 @@ const executeRepairAction = async (
   }
 }
 
-export const runAiRepair = async (
+export const planAiRepair = async (
   win: BrowserWindow,
   request: AiRepairRequest = {}
-): Promise<AiRepairResult> => {
+): Promise<AiRepairPlanResult> => {
   emitProgress(win, '[AI修复] 正在读取当前配置、状态和最近日志...')
   const initialContext = await readRepairContext(request)
   let plan: RepairPlan
@@ -612,19 +756,51 @@ export const runAiRepair = async (
     `[AI修复] ${plan.source === 'ai' ? '模型诊断完成' : '已切换为保守修复'}：${plan.summary}`
   )
 
-  let actionsToRun = plan.actions.filter((action) => action.type !== 'none')
-  if (actionsToRun.length === 0 && initialContext.gatewayStatus !== 'running') {
-    actionsToRun = buildFallbackPlan(
-      initialContext,
-      '模型未给出可执行动作，自动补充保守修复流程。'
-    ).actions.filter((action) => action.type !== 'none')
+  const actionsToRun = resolveRepairActions(plan, initialContext)
+  const { planId, requiresApproval, describedActions } = await registerPendingPlan(plan, actionsToRun)
+
+  if (requiresApproval) {
+    emitProgress(win, '[AI修复] 已生成高影响修复计划，等待你确认后再执行。')
+  }
+
+  return {
+    success: true,
+    summary: plan.summary,
+    source: plan.source,
+    actions: describedActions,
+    requiresApproval,
+    planId
+  }
+}
+
+export const executeAiRepairPlan = async (
+  win: BrowserWindow,
+  request: AiRepairExecuteRequest
+): Promise<AiRepairResult> => {
+  cleanupPendingRepairPlans()
+  const pendingPlan = pendingRepairPlans.get(request.planId)
+
+  if (!pendingPlan) {
+    throw new Error('修复计划已失效，请重新分析后再执行。')
+  }
+
+  pendingRepairPlans.delete(request.planId)
+  const actionsToRun = pendingPlan.actions.filter((action) => action.type !== 'none')
+
+  if (actionsToRun.length === 0) {
+    emitProgress(win, '[AI修复] 当前没有需要执行的自动修复动作。')
+    return {
+      success: true,
+      summary: pendingPlan.summary,
+      actions: []
+    }
   }
 
   const executedLabels: string[] = []
   let changedConfig = false
   let restarted = false
 
-  for (const action of actionsToRun.slice(0, MAX_ACTIONS)) {
+  for (const action of actionsToRun) {
     const result = await executeRepairAction(win, action)
     if (action.type !== 'none') {
       executedLabels.push(REPAIR_ACTION_LABELS[action.type])
@@ -644,8 +820,8 @@ export const runAiRepair = async (
 
   const finalGatewayStatus = await getGatewayStatus()
   const summary = executedLabels.length
-    ? `${plan.summary} 已执行：${executedLabels.join('、')}。`
-    : plan.summary
+    ? `${pendingPlan.summary} 已执行：${executedLabels.join('、')}。`
+    : pendingPlan.summary
 
   if (finalGatewayStatus === 'running') {
     emitProgress(win, '[AI修复] Gateway 当前已恢复运行。')
@@ -663,4 +839,32 @@ export const runAiRepair = async (
     actions: executedLabels,
     error: 'Gateway 仍未恢复运行'
   }
+}
+
+export const runAiRepair = async (
+  win: BrowserWindow,
+  request: AiRepairRequest = {}
+): Promise<AiRepairResult> => {
+  const plan = await planAiRepair(win, request)
+
+  if (!plan.planId) {
+    return {
+      success: false,
+      summary: plan.summary,
+      actions: [],
+      error: plan.error || 'AI 修复计划生成失败'
+    }
+  }
+
+  if (plan.requiresApproval) {
+    emitError(win, '当前修复计划包含高影响动作，请确认后再执行。')
+    return {
+      success: false,
+      summary: plan.summary,
+      actions: plan.actions.map((action) => action.label),
+      error: '当前修复计划需要确认'
+    }
+  }
+
+  return executeAiRepairPlan(win, { planId: plan.planId })
 }

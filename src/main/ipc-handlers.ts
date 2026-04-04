@@ -34,7 +34,7 @@ import { checkForUpdates, downloadUpdate, installUpdate } from './services/updat
 import { uninstallOpenClaw } from './services/uninstaller'
 import { exportBackup, importBackup } from './services/backup'
 import { loginOpenAICodex } from './services/oauth'
-import { runAiRepair } from './services/ai-repair'
+import { executeAiRepairPlan, planAiRepair, runAiRepair } from './services/ai-repair'
 import type { InstallSourceMode } from './services/install-sources'
 
 interface WizardPersistedState {
@@ -507,6 +507,60 @@ export const registerIpcHandlers = (getWin: () => BrowserWindow | null): void =>
 
   ipcMain.handle('troubleshoot:check-port', () => checkPort())
   ipcMain.handle('troubleshoot:doctor-fix', () => runDoctorFix(win()))
+  ipcMain.handle(
+    'troubleshoot:ai-repair-plan',
+    async (
+      _e,
+      payload?: {
+        logs?: string[]
+      }
+    ) => {
+      try {
+        return await planAiRepair(win(), payload)
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e)
+        try {
+          win().webContents.send('install:error', msg)
+        } catch {
+          /* window destroyed */
+        }
+        return {
+          success: false,
+          summary: 'AI 修复计划生成失败。',
+          source: 'fallback' as const,
+          actions: [],
+          requiresApproval: false,
+          error: msg
+        }
+      }
+    }
+  )
+  ipcMain.handle(
+    'troubleshoot:ai-repair-execute',
+    async (
+      _e,
+      payload: {
+        planId: string
+      }
+    ) => {
+      try {
+        return await executeAiRepairPlan(win(), payload)
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e)
+        try {
+          win().webContents.send('install:error', msg)
+        } catch {
+          /* window destroyed */
+        }
+        return {
+          success: false,
+          summary: 'AI 修复执行失败。',
+          actions: [],
+          error: msg
+        }
+      }
+    }
+  )
   ipcMain.handle(
     'troubleshoot:ai-repair',
     async (

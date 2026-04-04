@@ -36,7 +36,17 @@
     "settingsBackup": "配置备份",
     "aiRepair": "AI 自动修复",
     "aiRepairing": "AI 修复中...",
-    "aiRepairStarted": "[AI修复] 正在调用已配置模型分析日志并执行修复..."
+    "aiRepairStarted": "[AI修复] 正在分析当前日志并生成修复计划...",
+    "aiRepairAwaitingApproval": "[AI修复] 已生成需要确认的修复计划，请确认后再继续。",
+    "aiRepairCancelled": "[AI修复] 已取消执行高影响修复计划。",
+    "aiRepairReviewTitle": "确认 AI 修复",
+    "aiRepairReviewDesc": "以下计划包含高影响动作。执行前会先明确告诉你发现了什么问题、准备怎么处理，以及每一步的作用。",
+    "aiRepairProblemLabel": "发现的问题",
+    "aiRepairActionLabel": "准备执行",
+    "aiRepairCommandLabel": "对应命令",
+    "aiRepairRuntimeLabel": "执行环境：",
+    "aiRepairEffectLabel": "作用说明",
+    "aiRepairApprove": "确认执行"
   },
   "uninstall": {
     "title": "删除 OpenClaw",
