@@ -140,7 +140,12 @@ const electronAPI = {
       summary: string
       source: 'ai' | 'fallback'
       actions: Array<{
-        type: 'doctor_fix' | 'disable_memory_search' | 'set_gateway_mode_local' | 'restart_gateway'
+        type:
+          | 'doctor_fix'
+          | 'disable_memory_search'
+          | 'set_gateway_mode_local'
+          | 'restart_gateway'
+          | 'run_command'
         label: string
         reason: string
         effect: string

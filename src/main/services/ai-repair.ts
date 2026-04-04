@@ -6,7 +6,8 @@ import { spawn } from 'child_process'
 import { randomUUID } from 'crypto'
 import { getGatewayStatus, restartGateway } from './gateway'
 import { checkPort, runDoctorFix } from './troubleshooter'
-import { readWslFile, runInWsl, writeWslFile } from './wsl-utils'
+import { createTerminalLineEmitter } from './terminal-output'
+import { buildWslBashArgs, readWslFile, runInWsl, writeWslFile } from './wsl-utils'
 import { getPathEnv, resolvePreferredBin } from './path-utils'
 
 type RepairActionType =
@@ -14,13 +15,18 @@ type RepairActionType =
   | 'disable_memory_search'
   | 'set_gateway_mode_local'
   | 'restart_gateway'
+  | 'run_command'
   | 'none'
 
 type RepairApprovalMode = 'auto' | 'confirm'
+type RepairRuntime = 'host' | 'wsl'
 
 interface RepairAction {
   type: RepairActionType
   reason: string
+  command?: string
+  effect?: string
+  runtime?: RepairRuntime
 }
 
 interface RepairPlan {
@@ -113,7 +119,8 @@ const REPAIR_ACTION_LABELS: Record<Exclude<RepairActionType, 'none'>, string> = 
   doctor_fix: '执行 doctor fix',
   disable_memory_search: '关闭语义记忆',
   set_gateway_mode_local: '设置 gateway.mode=local',
-  restart_gateway: '重启 Gateway'
+  restart_gateway: '重启 Gateway',
+  run_command: '执行命令'
 }
 const REPAIR_ACTION_META: Record<
   Exclude<RepairActionType, 'none'>,
@@ -137,9 +144,30 @@ const REPAIR_ACTION_META: Record<
   restart_gateway: {
     effect: '重新拉起 Gateway，让刚修过的配置立即生效。',
     approval: 'auto'
+  },
+  run_command: {
+    effect: '按用户确认后的命令执行更细粒度的诊断或修复。',
+    approval: 'confirm'
   }
 }
 const pendingRepairPlans = new Map<string, PendingRepairPlan>()
+const MAX_COMMAND_LENGTH = 280
+const FORBIDDEN_COMMAND_PATTERNS: RegExp[] = [
+  /\brm\s+-rf\s+\/\b/i,
+  /\bshutdown\b/i,
+  /\breboot\b/i,
+  /\bhalt\b/i,
+  /\bpoweroff\b/i,
+  /\bmkfs\b/i,
+  /\bformat\b/i,
+  /\bdiskpart\b/i,
+  /\bRemove-Item\b/i,
+  /\brd\s+\/s\b/i,
+  /\bdel\s+\/[a-z]*s\b/i,
+  /\bgit\s+reset\s+--hard\b/i,
+  /\btaskkill\b.*\/f/i,
+  /\bpkill\b\s+-9\b/i
+]
 
 const emitProgress = (win: BrowserWindow, message: string): void => {
   try {
@@ -170,27 +198,61 @@ const cleanupPendingRepairPlans = (): void => {
   }
 }
 
+const getDefaultRuntime = (): RepairRuntime => (platform() === 'win32' ? 'wsl' : 'host')
+
+const trimCommand = (value?: string): string => value?.trim() ?? ''
+
+const validateCustomCommand = (command: string): { ok: true } | { ok: false; error: string } => {
+  if (!command) {
+    return { ok: false, error: 'AI 修复计划缺少命令内容。' }
+  }
+
+  if (command.length > MAX_COMMAND_LENGTH) {
+    return { ok: false, error: 'AI 修复命令过长，请拆成更小的步骤。' }
+  }
+
+  if (/[\r\n]/.test(command)) {
+    return { ok: false, error: 'AI 修复命令必须保持单行，不能包含换行。' }
+  }
+
+  if (/(^|[^|])&&|\|\||;/.test(command)) {
+    return { ok: false, error: 'AI 修复命令不能包含链式执行符，请拆成多步确认。' }
+  }
+
+  if (FORBIDDEN_COMMAND_PATTERNS.some((pattern) => pattern.test(command))) {
+    return { ok: false, error: 'AI 修复命令命中了高风险禁用规则，已阻止执行。' }
+  }
+
+  return { ok: true }
+}
+
+const buildRuntimeHint = (runtime: RepairRuntime): string => {
+  if (platform() === 'win32') {
+    return runtime === 'host'
+      ? 'Windows 下会在宿主 PowerShell 中执行'
+      : 'Windows 下会自动在 WSL Ubuntu 中执行'
+  }
+
+  return '会在当前系统 Shell 中执行'
+}
+
 const buildCommandPreview = async (
-  actionType: Exclude<RepairActionType, 'none'>
+  action: RepairAction
 ): Promise<{ commandPreview: string; commandRuntime: string }> => {
   const scriptMap: Record<Exclude<RepairActionType, 'none'>, string> = {
     doctor_fix: 'openclaw doctor --fix',
     disable_memory_search: 'openclaw config set agents.defaults.memorySearch.enabled false',
     set_gateway_mode_local: 'openclaw config set gateway.mode local',
-    restart_gateway: 'openclaw gateway restart'
+    restart_gateway: 'openclaw gateway restart',
+    run_command: trimCommand(action.command)
   }
 
-  const script = scriptMap[actionType]
-  if (platform() !== 'win32') {
-    return {
-      commandPreview: script,
-      commandRuntime: '会在当前系统 Shell 中执行'
-    }
-  }
+  const runtime = action.runtime ?? getDefaultRuntime()
+  const script = scriptMap[action.type]
 
   return {
     commandPreview: script,
-    commandRuntime: 'Windows 下会自动在 WSL Ubuntu 中执行'
+    commandRuntime: buildRuntimeHint(runtime)
   }
 }
 
@@ -312,30 +374,59 @@ const parsePlanFromText = (rawText: string): RepairPlan | null => {
   try {
     const parsed = JSON.parse(rawText.slice(start, end + 1)) as {
       summary?: string
-      actions?: Array<{ type?: string; reason?: string }>
+      actions?: Array<{
+        type?: string
+        reason?: string
+        command?: string
+        effect?: string
+        runtime?: string
+      }>
     }
 
-    const actions =
-      parsed.actions
-        ?.map((item) => {
-          const type = item.type as RepairActionType | undefined
-          if (
-            type !== 'doctor_fix' &&
-            type !== 'disable_memory_search' &&
-            type !== 'set_gateway_mode_local' &&
-            type !== 'restart_gateway' &&
-            type !== 'none'
-          ) {
-            return null
-          }
+    const actions: RepairAction[] = []
 
-          return {
-            type,
-            reason: item.reason?.trim() || '模型建议执行该动作'
-          } satisfies RepairAction
+    for (const item of parsed.actions ?? []) {
+      if (actions.length >= MAX_ACTIONS) break
+
+      const type = item.type as RepairActionType | undefined
+      if (
+        type !== 'doctor_fix' &&
+        type !== 'disable_memory_search' &&
+        type !== 'set_gateway_mode_local' &&
+        type !== 'restart_gateway' &&
+        type !== 'run_command' &&
+        type !== 'none'
+      ) {
+        continue
+      }
+
+      if (type === 'run_command') {
+        const command = trimCommand(item.command)
+        const validation = validateCustomCommand(command)
+        if (!validation.ok) {
+          continue
+        }
+
+        const runtime =
+          item.runtime === 'host' || item.runtime === 'wsl'
+            ? item.runtime
+            : getDefaultRuntime()
+
+        actions.push({
+          type,
+          reason: item.reason?.trim() || '模型建议执行该命令。',
+          command,
+          effect: item.effect?.trim() || '执行一条额外命令来完成诊断或修复。',
+          runtime
         })
-        .filter((item): item is RepairAction => !!item)
-        .slice(0, MAX_ACTIONS) ?? []
+        continue
+      }
+
+      actions.push({
+        type,
+        reason: item.reason?.trim() || '模型建议执行该动作'
+      })
+    }
 
     return {
       summary: parsed.summary?.trim() || '模型已完成诊断。',
@@ -405,13 +496,16 @@ const resolveRepairActions = (plan: RepairPlan, context: RepairContext): RepairA
 const describeRepairAction = async (action: RepairAction): Promise<AiRepairPlanAction | null> => {
   if (action.type === 'none') return null
   const meta = REPAIR_ACTION_META[action.type]
-  const { commandPreview, commandRuntime } = await buildCommandPreview(action.type)
+  const { commandPreview, commandRuntime } = await buildCommandPreview(action)
 
   return {
     type: action.type,
-    label: REPAIR_ACTION_LABELS[action.type],
+    label:
+      action.type === 'run_command' && action.command
+        ? `执行命令：${action.command}`
+        : REPAIR_ACTION_LABELS[action.type],
     reason: action.reason,
-    effect: meta.effect,
+    effect: action.effect?.trim() || meta.effect,
     commandPreview,
     commandRuntime,
     approval: meta.approval
@@ -579,12 +673,18 @@ const buildRepairPrompt = (context: RepairContext): string => {
     '你是 OpenClaw Windows 安装器内置的故障修复规划器。',
     '请只根据给定上下文，返回一个 JSON 对象，不要输出 markdown，不要解释。',
     '你只能从以下动作里选择，且最多返回 3 个动作：',
-    'doctor_fix, disable_memory_search, set_gateway_mode_local, restart_gateway, none。',
+    'doctor_fix, disable_memory_search, set_gateway_mode_local, restart_gateway, run_command, none。',
+    '只有当现有动作不够表达修复方案时，才使用 run_command。',
+    'run_command 必须包含 command、effect、runtime 字段，其中 runtime 只能是 wsl 或 host。',
+    '在 Windows 上，只要命令和 OpenClaw、WSL 内配置、插件、日志相关，优先使用 runtime="wsl"。',
+    'run_command 的 command 必须是一条可复制执行的单行命令，不要包含 &&、||、; 或换行。',
+    '不要输出删除系统文件、关机重启系统、磁盘格式化、git reset、强制杀进程等危险命令。',
     '如果 Gateway 实际已经在运行，不要误判成失败。',
     '如果日志里出现 memorySearch / embedding provider 未就绪，优先 disable_memory_search。',
     '如果 gateway.mode 不是 local，优先 set_gateway_mode_local。',
     '如果无法确定，给出最保守的动作组合。',
     '返回格式：{"summary":"...","actions":[{"type":"restart_gateway","reason":"..."}]}',
+    'run_command 示例：{"type":"run_command","reason":"需要补插件信任配置","command":"openclaw config set plugins.allow [\\"openclaw-lark\\"]","effect":"把插件加入显式信任列表","runtime":"wsl"}',
     '',
     '上下文摘要：',
     JSON.stringify(summary, null, 2),
@@ -685,6 +785,80 @@ const setGatewayModeLocal = async (): Promise<boolean> => {
   return changed
 }
 
+const inferCommandSideEffects = (
+  command: string
+): { changedConfig: boolean; restarted: boolean } => {
+  const normalized = command.toLowerCase()
+  return {
+    changedConfig:
+      /\bopenclaw\s+config\s+set\b/.test(normalized) ||
+      normalized.includes('openclaw.json') ||
+      normalized.includes('auth-profiles.json') ||
+      normalized.includes('plugins.allow'),
+    restarted:
+      /\bopenclaw\s+gateway\s+(restart|start)\b/.test(normalized) ||
+      /\bgateway\s+restart\b/.test(normalized)
+  }
+}
+
+const executeCustomCommand = async (
+  win: BrowserWindow,
+  action: RepairAction
+): Promise<{ changedConfig: boolean; restarted: boolean }> => {
+  const command = trimCommand(action.command)
+  const validation = validateCustomCommand(command)
+  if (!validation.ok) {
+    throw new Error(validation.error)
+  }
+
+  const runtime = action.runtime ?? getDefaultRuntime()
+  const isWindows = platform() === 'win32'
+  const cmd =
+    runtime === 'wsl' && isWindows
+      ? 'wsl'
+      : isWindows
+        ? 'powershell'
+        : process.env.SHELL || '/bin/bash'
+  const args =
+    runtime === 'wsl' && isWindows
+      ? await buildWslBashArgs(command)
+      : isWindows
+        ? ['-NoProfile', '-Command', command]
+        : ['-lc', command]
+  const env = runtime === 'wsl' && isWindows ? process.env : getPathEnv()
+  const stdoutEmitter = await createTerminalLineEmitter((msg) => emitProgress(win, msg))
+  const stderrEmitter = await createTerminalLineEmitter((msg) => emitProgress(win, msg))
+
+  emitProgress(win, `[AI修复] 正在执行命令：${command}`)
+
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn(cmd, args, {
+      env,
+      shell: false
+    })
+
+    child.stdout.on('data', (chunk: Buffer) => stdoutEmitter.push(chunk))
+    child.stderr.on('data', (chunk: Buffer) => stderrEmitter.push(chunk))
+    child.on('close', (code) => {
+      stdoutEmitter.flush()
+      stderrEmitter.flush()
+      if (code === 0) {
+        resolve()
+        return
+      }
+      reject(new Error(`命令执行失败（exit ${code}）`))
+    })
+    child.on('error', (error) => {
+      stdoutEmitter.flush()
+      stderrEmitter.flush()
+      reject(error)
+    })
+  })
+
+  const sideEffects = inferCommandSideEffects(command)
+  return sideEffects
+}
+
 const executeRepairAction = async (
   win: BrowserWindow,
   action: RepairAction
@@ -725,6 +899,9 @@ const executeRepairAction = async (
       }
       return { changedConfig: false, restarted: true }
     }
+    case 'run_command':
+      emitProgress(win, `[AI修复] 正在执行确认后的命令：${action.reason}`)
+      return executeCustomCommand(win, action)
   }
 }
 
@@ -803,7 +980,11 @@ export const executeAiRepairPlan = async (
   for (const action of actionsToRun) {
     const result = await executeRepairAction(win, action)
     if (action.type !== 'none') {
-      executedLabels.push(REPAIR_ACTION_LABELS[action.type])
+      executedLabels.push(
+        action.type === 'run_command' && action.command
+          ? `执行命令(${action.command})`
+          : REPAIR_ACTION_LABELS[action.type]
+      )
     }
     changedConfig = changedConfig || result.changedConfig
     restarted = restarted || result.restarted
