@@ -189,7 +189,16 @@ export default function TroubleshootStep({ onBack }: TroubleshootStepProps): Rea
         return
       }
 
-      await window.electronAPI.troubleshoot.aiRepairExecute({ planId: plan.planId })
+      const result = await window.electronAPI.troubleshoot.aiRepairExecute({ planId: plan.planId })
+      if (result.awaitingApproval) {
+        setPendingAiRepairPlan({
+          planId: result.awaitingApproval.planId,
+          summary: result.awaitingApproval.summary,
+          actions: result.awaitingApproval.actions
+        })
+        return
+      }
+
       diagnose()
     } finally {
       setAiFixing(false)
@@ -202,9 +211,18 @@ export default function TroubleshootStep({ onBack }: TroubleshootStepProps): Rea
     setAiRepairConfirming(true)
     setShowLogs(true)
     try {
-      await window.electronAPI.troubleshoot.aiRepairExecute({
+      const result = await window.electronAPI.troubleshoot.aiRepairExecute({
         planId: pendingAiRepairPlan.planId
       })
+      if (result.awaitingApproval) {
+        setPendingAiRepairPlan({
+          planId: result.awaitingApproval.planId,
+          summary: result.awaitingApproval.summary,
+          actions: result.awaitingApproval.actions
+        })
+        return
+      }
+
       setPendingAiRepairPlan(null)
       diagnose()
     } finally {

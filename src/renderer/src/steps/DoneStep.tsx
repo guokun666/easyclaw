@@ -337,6 +337,20 @@ export default function DoneStep({
       }
 
       const result = await window.electronAPI.troubleshoot.aiRepairExecute({ planId: plan.planId })
+      if (result.awaitingApproval) {
+        const nextStatus = await syncGatewayStatus()
+        if (nextStatus !== 'running') {
+          setHasError(true)
+          setShowLogs(true)
+        }
+        setPendingAiRepairPlan({
+          planId: result.awaitingApproval.planId,
+          summary: result.awaitingApproval.summary,
+          actions: result.awaitingApproval.actions
+        })
+        return
+      }
+
       const nextStatus = await syncGatewayStatus()
       if (result.success && nextStatus === 'running') {
         setHasError(false)
@@ -361,6 +375,20 @@ export default function DoneStep({
       const result = await window.electronAPI.troubleshoot.aiRepairExecute({
         planId: pendingAiRepairPlan.planId
       })
+      if (result.awaitingApproval) {
+        const nextStatus = await syncGatewayStatus()
+        if (nextStatus !== 'running') {
+          setHasError(true)
+          setShowLogs(true)
+        }
+        setPendingAiRepairPlan({
+          planId: result.awaitingApproval.planId,
+          summary: result.awaitingApproval.summary,
+          actions: result.awaitingApproval.actions
+        })
+        return
+      }
+
       const nextStatus = await syncGatewayStatus()
       if (result.success && nextStatus === 'running') {
         setHasError(false)

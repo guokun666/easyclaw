@@ -82,6 +82,13 @@ export interface AiRepairResult {
   summary: string
   actions: string[]
   error?: string
+  roundsCompleted?: number
+  awaitingApproval?: {
+    planId: string
+    summary: string
+    source: 'ai' | 'fallback'
+    actions: AiRepairPlanAction[]
+  }
 }
 
 export interface AiRepairRequest {
@@ -114,6 +121,7 @@ export interface AiRepairExecuteRequest {
 
 const MAX_CONTEXT_LOG_LINES = 80
 const MAX_ACTIONS = 3
+const MAX_AUTO_REPAIR_ROUNDS = 3
 const PENDING_PLAN_TTL_MS = 10 * 60 * 1000
 const REPAIR_ACTION_LABELS: Record<Exclude<RepairActionType, 'none'>, string> = {
   doctor_fix: '执行 doctor fix',
@@ -491,6 +499,14 @@ const resolveRepairActions = (plan: RepairPlan, context: RepairContext): RepairA
   }
 
   return actionsToRun.slice(0, MAX_ACTIONS)
+}
+
+const fingerprintRepairAction = (action: RepairAction): string => {
+  return [action.type, trimCommand(action.command), action.runtime ?? ''].join('|')
+}
+
+const fingerprintRepairPlan = (actions: RepairAction[]): string => {
+  return actions.map((action) => fingerprintRepairAction(action)).join('||')
 }
 
 const describeRepairAction = async (action: RepairAction): Promise<AiRepairPlanAction | null> => {
@@ -905,28 +921,36 @@ const executeRepairAction = async (
   }
 }
 
+const buildPlanForContext = async (
+  context: RepairContext
+): Promise<{ plan: RepairPlan; mode: 'ai' | 'fallback' }> => {
+  try {
+    return {
+      plan: await planWithModel(context),
+      mode: 'ai'
+    }
+  } catch (error) {
+    return {
+      plan: buildFallbackPlan(context, error instanceof Error ? error.message : '模型分析失败'),
+      mode: 'fallback'
+    }
+  }
+}
+
 export const planAiRepair = async (
   win: BrowserWindow,
   request: AiRepairRequest = {}
 ): Promise<AiRepairPlanResult> => {
   emitProgress(win, '[AI修复] 正在读取当前配置、状态和最近日志...')
   const initialContext = await readRepairContext(request)
-  let plan: RepairPlan
 
-  try {
-    emitProgress(
-      win,
-      initialContext.apiKey && initialContext.provider
-        ? `[AI修复] 正在调用 ${initialContext.provider}/${stripNamespace(initialContext.modelId)} 分析问题...`
-        : '[AI修复] 当前没有可直接调用的模型凭据，改用保守修复流程。'
-    )
-    plan = await planWithModel(initialContext)
-  } catch (error) {
-    plan = buildFallbackPlan(
-      initialContext,
-      error instanceof Error ? error.message : '模型分析失败'
-    )
-  }
+  emitProgress(
+    win,
+    initialContext.apiKey && initialContext.provider
+      ? `[AI修复] 正在调用 ${initialContext.provider}/${stripNamespace(initialContext.modelId)} 分析问题...`
+      : '[AI修复] 当前没有可直接调用的模型凭据，改用保守修复流程。'
+  )
+  const { plan } = await buildPlanForContext(initialContext)
 
   emitProgress(
     win,
@@ -962,63 +986,169 @@ export const executeAiRepairPlan = async (
   }
 
   pendingRepairPlans.delete(request.planId)
-  const actionsToRun = pendingPlan.actions.filter((action) => action.type !== 'none')
-
-  if (actionsToRun.length === 0) {
-    emitProgress(win, '[AI修复] 当前没有需要执行的自动修复动作。')
-    return {
-      success: true,
-      summary: pendingPlan.summary,
-      actions: []
-    }
-  }
-
   const executedLabels: string[] = []
-  let changedConfig = false
-  let restarted = false
-
-  for (const action of actionsToRun) {
-    const result = await executeRepairAction(win, action)
-    if (action.type !== 'none') {
-      executedLabels.push(
-        action.type === 'run_command' && action.command
-          ? `执行命令(${action.command})`
-          : REPAIR_ACTION_LABELS[action.type]
-      )
-    }
-    changedConfig = changedConfig || result.changedConfig
-    restarted = restarted || result.restarted
+  const seenPlanFingerprints = new Set<string>()
+  let currentPlan: RepairPlan = {
+    summary: pendingPlan.summary,
+    actions: pendingPlan.actions,
+    source: pendingPlan.source
   }
+  let roundsCompleted = 0
 
-  if (changedConfig && !restarted) {
-    emitProgress(win, '[AI修复] 配置已更新，补充执行一次 Gateway 重启...')
-    const result = await restartGateway()
-    if (result.status !== 'started') {
-      throw new Error(result.error || '配置更新后重启 Gateway 失败')
+  while (roundsCompleted < MAX_AUTO_REPAIR_ROUNDS) {
+    const actionsToRun = currentPlan.actions.filter((action) => action.type !== 'none')
+
+    if (actionsToRun.length === 0) {
+      const finalStatus = await getGatewayStatus()
+      if (finalStatus === 'running') {
+        emitProgress(win, '[AI修复] 当前没有额外修复动作，Gateway 保持运行中。')
+        return {
+          success: true,
+          summary: executedLabels.length
+            ? `${currentPlan.summary} 已执行：${executedLabels.join('、')}。`
+            : currentPlan.summary,
+          actions: executedLabels,
+          roundsCompleted
+        }
+      }
+
+      emitError(win, 'AI 修复没有生成新的动作，但 Gateway 仍未恢复运行。')
+      return {
+        success: false,
+        summary: currentPlan.summary,
+        actions: executedLabels,
+        error: '当前没有新的修复动作可执行',
+        roundsCompleted
+      }
     }
-    executedLabels.push(REPAIR_ACTION_LABELS.restart_gateway)
+
+    const currentFingerprint = fingerprintRepairPlan(actionsToRun)
+    if (seenPlanFingerprints.has(currentFingerprint)) {
+      emitError(win, 'AI 修复计划开始重复，已停止自动重试。')
+      return {
+        success: false,
+        summary: currentPlan.summary,
+        actions: executedLabels,
+        error: '修复计划开始重复，已停止自动重试',
+        roundsCompleted
+      }
+    }
+    seenPlanFingerprints.add(currentFingerprint)
+
+    let changedConfigInRound = false
+    let restartedInRound = false
+
+    emitProgress(win, `[AI修复] 开始执行第 ${roundsCompleted + 1} 轮修复...`)
+
+    for (const action of actionsToRun) {
+      const result = await executeRepairAction(win, action)
+      if (action.type !== 'none') {
+        executedLabels.push(
+          action.type === 'run_command' && action.command
+            ? `执行命令(${action.command})`
+            : REPAIR_ACTION_LABELS[action.type]
+        )
+      }
+      changedConfigInRound = changedConfigInRound || result.changedConfig
+      restartedInRound = restartedInRound || result.restarted
+    }
+
+    if (changedConfigInRound && !restartedInRound) {
+      emitProgress(win, '[AI修复] 本轮配置已更新，补充执行一次 Gateway 重启...')
+      const restartResult = await restartGateway()
+      if (restartResult.status !== 'started') {
+        throw new Error(restartResult.error || '配置更新后重启 Gateway 失败')
+      }
+      executedLabels.push(REPAIR_ACTION_LABELS.restart_gateway)
+      restartedInRound = true
+    }
+
+    roundsCompleted += 1
+
+    if (roundsCompleted >= MAX_AUTO_REPAIR_ROUNDS) {
+      break
+    }
+
+    emitProgress(win, `[AI修复] 第 ${roundsCompleted} 轮执行完成，正在重新分析当前状态...`)
+    const nextContext = await readRepairContext()
+    const { plan: nextPlan } = await buildPlanForContext(nextContext)
+    const nextActions = resolveRepairActions(nextPlan, nextContext)
+
+    if (nextActions.length === 0) {
+      const finalStatus = await getGatewayStatus()
+      const summary = executedLabels.length
+        ? `${nextPlan.summary} 已执行：${executedLabels.join('、')}。`
+        : nextPlan.summary
+
+      if (finalStatus === 'running') {
+        emitProgress(win, '[AI修复] Gateway 当前已恢复运行。')
+        return {
+          success: true,
+          summary,
+          actions: executedLabels,
+          roundsCompleted
+        }
+      }
+
+      emitError(win, 'AI 修复已执行，但 Gateway 仍未恢复运行。')
+      return {
+        success: false,
+        summary,
+        actions: executedLabels,
+        error: 'Gateway 仍未恢复运行',
+        roundsCompleted
+      }
+    }
+
+    const { planId, requiresApproval, describedActions } = await registerPendingPlan(nextPlan, nextActions)
+    if (requiresApproval) {
+      emitProgress(win, `[AI修复] 第 ${roundsCompleted + 1} 轮包含高影响动作，等待你确认后继续。`)
+      return {
+        success: false,
+        summary: executedLabels.length
+          ? `${currentPlan.summary} 已执行：${executedLabels.join('、')}。`
+          : currentPlan.summary,
+        actions: executedLabels,
+        roundsCompleted,
+        awaitingApproval: {
+          planId,
+          summary: nextPlan.summary,
+          source: nextPlan.source,
+          actions: describedActions
+        }
+      }
+    }
+
+    emitProgress(win, `[AI修复] 第 ${roundsCompleted + 1} 轮只包含低影响动作，继续自动修复。`)
+    currentPlan = {
+      summary: nextPlan.summary,
+      actions: nextActions,
+      source: nextPlan.source
+    }
   }
 
   const finalGatewayStatus = await getGatewayStatus()
   const summary = executedLabels.length
-    ? `${pendingPlan.summary} 已执行：${executedLabels.join('、')}。`
-    : pendingPlan.summary
+    ? `${currentPlan.summary} 已执行：${executedLabels.join('、')}。`
+    : currentPlan.summary
 
   if (finalGatewayStatus === 'running') {
-    emitProgress(win, '[AI修复] Gateway 当前已恢复运行。')
+    emitProgress(win, '[AI修复] 已达到本次自动修复轮数上限，Gateway 当前保持运行。')
     return {
       success: true,
       summary,
-      actions: executedLabels
+      actions: executedLabels,
+      roundsCompleted
     }
   }
 
-  emitError(win, 'AI 修复已执行，但 Gateway 仍未恢复运行。')
+  emitError(win, '已达到本次自动修复轮数上限，Gateway 仍未恢复运行。')
   return {
     success: false,
     summary,
     actions: executedLabels,
-    error: 'Gateway 仍未恢复运行'
+    error: '已达到本次自动修复轮数上限',
+    roundsCompleted
   }
 }
 
