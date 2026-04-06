@@ -15,9 +15,11 @@ type InstallSourceMode = 'auto' | 'official' | 'mirror'
 
 export default function InstallStep({
   needs,
+  forceCleanInstall = false,
   onDone
 }: {
   needs: InstallNeeds
+  forceCleanInstall?: boolean
   onDone: () => void
 }): React.JSX.Element {
   const { t } = useTranslation('steps')
@@ -33,6 +35,10 @@ export default function InstallStep({
   const [cleanInstall, setCleanInstall] = useState(false)
 
   useEffect(() => {
+    setCleanInstall(forceCleanInstall)
+  }, [forceCleanInstall])
+
+  useEffect(() => {
     window.electronAPI.settings.getInstallSources().then((settings) => {
       setSourceMode(settings.sourceMode || 'auto')
     })
@@ -45,8 +51,10 @@ export default function InstallStep({
     try {
       // Clean uninstall old OpenClaw if checked
       if (cleanInstall) {
-        await window.electronAPI.openclaw.cleanUninstall()
-        // Ignore errors — old package may not exist
+        const cleanup = await window.electronAPI.openclaw.cleanUninstall()
+        if (!cleanup.success) {
+          throw new Error(cleanup.error || t('install.cleanInstallFailed'))
+        }
       }
       if (needs.needNode) {
         const r = await window.electronAPI.install.node()
@@ -147,14 +155,23 @@ export default function InstallStep({
                   type="checkbox"
                   checked={cleanInstall}
                   onChange={(e) => setCleanInstall(e.target.checked)}
-                  disabled={installing}
+                  disabled={installing || forceCleanInstall}
                   className="w-4 h-4 rounded border-glass-border accent-primary"
                 />
                 <div>
-                  <span className="text-xs font-semibold">{t('install.cleanInstallLabel')}</span>
+                  <span className="text-xs font-semibold">
+                    {forceCleanInstall
+                      ? t('install.cleanInstallForcedLabel')
+                      : t('install.cleanInstallLabel')}
+                  </span>
                   <p className="text-[11px] text-text-muted/60">{t('install.cleanInstallDesc')}</p>
                 </div>
               </label>
+              {forceCleanInstall && (
+                <p className="text-[11px] leading-5 text-warning font-medium">
+                  {t('install.cleanInstallForcedDesc')}
+                </p>
+              )}
               <div className="space-y-1">
                 <label className="text-xs font-semibold">{t('install.sourceModeLabel')}</label>
                 <select

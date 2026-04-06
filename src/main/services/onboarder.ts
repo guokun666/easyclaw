@@ -318,6 +318,10 @@ const createRunCmd = (): ((
 
 const getConfigPath = (): string => join(homedir(), '.openclaw', 'openclaw.json')
 
+const LARK_SECRET_PROVIDER = 'lark-secrets'
+const LARK_PLUGIN_ID = 'openclaw-lark'
+const LARK_PLUGIN_PACKAGE = '@larksuite/openclaw-lark-tools@latest'
+
 const readOpenClawConfig = async (): Promise<Record<string, unknown> | null> => {
   if (platform() === 'win32') {
     try {
@@ -341,6 +345,251 @@ const writeOpenClawConfig = async (config: Record<string, unknown>): Promise<voi
   }
 
   writeFileSync(getConfigPath(), serialized, { mode: 0o600 })
+}
+
+const parseSemanticVersion = (raw: string): [number, number, number] | null => {
+  const match = raw.match(/v?(\d+)\.(\d+)\.(\d+)/)
+  if (!match) return null
+  return [Number(match[1]), Number(match[2]), Number(match[3])]
+}
+
+const compareSemanticVersions = (a: string, b: string): number => {
+  const parsedA = parseSemanticVersion(a)
+  const parsedB = parseSemanticVersion(b)
+  if (!parsedA || !parsedB) {
+    return a === b ? 0 : a.localeCompare(b)
+  }
+
+  for (let i = 0; i < 3; i += 1) {
+    if (parsedA[i] !== parsedB[i]) return parsedA[i] > parsedB[i] ? 1 : -1
+  }
+  return 0
+}
+
+const runSimpleCommand = async (
+  cmd: string,
+  args: string[],
+  env?: NodeJS.ProcessEnv
+): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const child = spawn(cmd, args, { env })
+    let stdout = ''
+    let stderr = ''
+
+    child.stdout.on('data', (chunk: Buffer) => {
+      stdout += chunk.toString('utf-8')
+    })
+    child.stderr.on('data', (chunk: Buffer) => {
+      stderr += chunk.toString('utf-8')
+    })
+    child.on('close', (code) => {
+      if (code === 0) resolve(stdout.trim())
+      else reject(new Error(stderr.trim() || `exit code ${code}`))
+    })
+    child.on('error', reject)
+  })
+
+const getInstalledOpenClawVersion = async (): Promise<string | null> => {
+  if (platform() === 'win32') {
+    try {
+      const raw = await runInWsl('openclaw --version', 10000)
+      const parsed = parseSemanticVersion(raw)
+      return parsed ? raw.match(/v?\d+\.\d+\.\d+/)?.[0]?.replace(/^v/, '') ?? null : null
+    } catch {
+      return null
+    }
+  }
+
+  try {
+    const raw = await runSimpleCommand(resolvePreferredBin('openclaw'), ['--version'], getPathEnv())
+    const parsed = raw.match(/v?(\d+\.\d+\.\d+)/)
+    return parsed ? parsed[1] : null
+  } catch {
+    return null
+  }
+}
+
+const getInstalledLarkPluginVersion = async (
+  config: Record<string, unknown>
+): Promise<string | null> => {
+  const typed = config as Record<string, unknown>
+  const pluginVersion = (
+    typed.plugins as Record<string, unknown> | undefined
+  )?.installs as Record<string, unknown> | undefined
+  const installEntry = pluginVersion?.[LARK_PLUGIN_ID] as Record<string, unknown> | undefined
+  if (typeof installEntry?.version === 'string' && installEntry.version.trim()) {
+    return installEntry.version.trim()
+  }
+
+  const packagePath =
+    platform() === 'win32'
+      ? '/root/.openclaw/extensions/openclaw-lark/package.json'
+      : join(homedir(), '.openclaw', 'extensions', 'openclaw-lark', 'package.json')
+
+  try {
+    const raw =
+      platform() === 'win32' ? await readWslFile(packagePath) : readFileSync(packagePath, 'utf-8')
+    const pkg = JSON.parse(raw) as { version?: string }
+    return typeof pkg.version === 'string' && pkg.version.trim() ? pkg.version.trim() : null
+  } catch {
+    return null
+  }
+}
+
+const hasFeishuPluginConfig = (config: Record<string, unknown>): boolean => {
+  const typed = config as Record<string, unknown>
+  const channels =
+    typed.channels && typeof typed.channels === 'object'
+      ? (typed.channels as Record<string, unknown>)
+      : undefined
+  const feishu =
+    channels?.feishu && typeof channels.feishu === 'object'
+      ? (channels.feishu as Record<string, unknown>)
+      : undefined
+  const pluginEntries =
+    typed.plugins && typeof typed.plugins === 'object'
+      ? ((typed.plugins as Record<string, unknown>).entries as Record<string, unknown> | undefined)
+      : undefined
+  const pluginInstalls =
+    typed.plugins && typeof typed.plugins === 'object'
+      ? ((typed.plugins as Record<string, unknown>).installs as Record<string, unknown> | undefined)
+      : undefined
+
+  return Boolean(
+    pluginInstalls?.[LARK_PLUGIN_ID] ||
+      (pluginEntries?.feishu &&
+        typeof pluginEntries.feishu === 'object' &&
+        (pluginEntries.feishu as Record<string, unknown>).enabled === true) ||
+      (feishu &&
+        ((feishu.enabled === true) ||
+          typeof feishu.appId === 'string' ||
+          typeof feishu.appSecret === 'string' ||
+          (feishu.accounts && typeof feishu.accounts === 'object')))
+  )
+}
+
+export const ensureFeishuPluginCompatible = async (
+  onLog?: (msg: string) => void
+): Promise<boolean> => {
+  const config = await readOpenClawConfig()
+  if (!config || !hasFeishuPluginConfig(config)) return false
+
+  const openclawVersion = await getInstalledOpenClawVersion()
+  if (!openclawVersion) return false
+
+  const pluginVersion = await getInstalledLarkPluginVersion(config)
+  if (pluginVersion && compareSemanticVersions(pluginVersion, openclawVersion) >= 0) {
+    return false
+  }
+
+  await ensureCommandAvailable('npm')
+  await ensureCommandAvailable('npx')
+
+  onLog?.(
+    t('onboarder.feishuPluginSyncing', {
+      openclawVersion,
+      pluginVersion: pluginVersion ?? 'unknown'
+    })
+  )
+
+  try {
+    const runCmd = createRunCmd()
+    await runChannelCommand(
+      runCmd,
+      onLog ?? (() => {}),
+      platform() === 'win32' ? 'npx' : resolvePreferredBin('npx'),
+      ['-y', LARK_PLUGIN_PACKAGE, 'install']
+    )
+    onLog?.(t('onboarder.feishuPluginSynced', { openclawVersion }))
+    return true
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    onLog?.(t('onboarder.feishuPluginSyncFailed', { message }))
+    return false
+  }
+}
+
+const isLarkSecretRefString = (value: string): boolean =>
+  value.trim().startsWith(`file:${LARK_SECRET_PROVIDER}:`)
+
+const isLarkSecretRefObject = (value: unknown): boolean => {
+  if (!value || typeof value !== 'object') return false
+
+  const typed = value as Record<string, unknown>
+  return (
+    typed.provider === LARK_SECRET_PROVIDER ||
+    (typed.source === 'file' && typed.provider === LARK_SECRET_PROVIDER) ||
+    (typeof typed.ref === 'string' && isLarkSecretRefString(typed.ref))
+  )
+}
+
+const isLarkSecretRef = (value: unknown): boolean => {
+  if (typeof value === 'string') return isLarkSecretRefString(value)
+  return isLarkSecretRefObject(value)
+}
+
+const stripBrokenFeishuCredentials = (value: unknown): boolean => {
+  if (!value || typeof value !== 'object') return false
+
+  const target = value as Record<string, unknown>
+  if (!isLarkSecretRef(target.appId) && !isLarkSecretRef(target.appSecret)) {
+    return false
+  }
+
+  delete target.appId
+  delete target.appSecret
+  return true
+}
+
+export const ensureFeishuSecretProviderReady = async (
+  onLog?: (msg: string) => void
+): Promise<boolean> => {
+  const cfg = await readOpenClawConfig()
+  if (!cfg) return false
+
+  const typed = cfg as Record<string, unknown>
+  const channels =
+    typed.channels && typeof typed.channels === 'object'
+      ? (typed.channels as Record<string, unknown>)
+      : null
+  const feishu =
+    channels?.feishu && typeof channels.feishu === 'object'
+      ? (channels.feishu as Record<string, unknown>)
+      : null
+
+  if (!feishu) return false
+
+  const secrets =
+    typed.secrets && typeof typed.secrets === 'object'
+      ? (typed.secrets as Record<string, unknown>)
+      : null
+  const providers =
+    secrets?.providers && typeof secrets.providers === 'object'
+      ? (secrets.providers as Record<string, unknown>)
+      : null
+
+  if (providers?.[LARK_SECRET_PROVIDER]) {
+    return false
+  }
+
+  let changed = stripBrokenFeishuCredentials(feishu)
+  const accounts =
+    feishu.accounts && typeof feishu.accounts === 'object'
+      ? (feishu.accounts as Record<string, unknown>)
+      : null
+
+  if (accounts) {
+    for (const account of Object.values(accounts)) {
+      changed = stripBrokenFeishuCredentials(account) || changed
+    }
+  }
+
+  if (!changed) return false
+
+  feishu.enabled = false
+  await writeOpenClawConfig(cfg)
+  onLog?.(t('onboarder.feishuSecretProviderMissingDisabled'))
+  return true
 }
 
 const shouldForceDisableOptionalMemorySearch = (memorySearch: unknown): boolean => {
@@ -852,7 +1101,7 @@ const runOneClickChannelSetup = async (
   onLog(t('onboarder.channelOneClick.feishu'))
   if (platform() === 'darwin') {
     const commands = [
-      `${shellEscape(resolvePreferredBin('npx'))} -y @larksuite/openclaw-lark-tools install`,
+      `${shellEscape(resolvePreferredBin('npx'))} -y ${LARK_PLUGIN_PACKAGE} install`,
       `test -f ${shellEscape(getConfigPath())}`,
       `${shellEscape(ocBin)} config set channels.feishu.streaming true`,
       `${shellEscape(ocBin)} gateway restart`,
@@ -867,7 +1116,7 @@ const runOneClickChannelSetup = async (
     runCmd,
     onLog,
     platform() === 'win32' ? 'npx' : resolvePreferredBin('npx'),
-    ['-y', '@larksuite/openclaw-lark-tools', 'install']
+    ['-y', LARK_PLUGIN_PACKAGE, 'install']
   )
 
   if (!(await hasOpenClawConfig())) {

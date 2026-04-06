@@ -32,6 +32,7 @@
     "restartingGw": "正在重启 Gateway...",
     "errorPrefix": "[错误] {{msg}}",
     "configRequiredLog": "[错误] 检测到 OpenClaw 尚未完成配置。请先点击“配置密钥”选择模型并填写密钥，完成后 Gateway 才会启动。",
+    "startNotDetectedLog": "[错误] 在启动等待时间内未检测到 Gateway 进入运行状态。安装器不会自动重启，请手动点击“重新启动”。",
     "stoppedUnexpectedlyLog": "[错误] Gateway 进程已退出，请查看上方日志并重试。",
     "settingsBackup": "配置备份",
     "aiRepair": "AI 自动修复",

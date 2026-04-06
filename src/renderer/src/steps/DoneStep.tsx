@@ -252,26 +252,10 @@ export default function DoneStep({
         await new Promise((r) => setTimeout(r, 2000))
       }
       if (cancelled) return
-      const r = await window.electronAPI.gateway.start()
-      if (!cancelled) {
-        if (r.success) {
-          const nextStatus = await syncGatewayStatus()
-          if (cancelled) return
-          if (nextStatus !== 'running') {
-            setHasError(true)
-            setShowLogs(true)
-          } else {
-            setHasError(false)
-          }
-        } else {
-          setStatus('stopped')
-          setHasError(true)
-          if (r.error) {
-            setLogs((prev) => [...prev, tRef.current('done.errorPrefix', { msg: r.error })])
-            setShowLogs(true)
-          }
-        }
-      }
+      setStatus('stopped')
+      setHasError(true)
+      setShowLogs(true)
+      appendLogOnce(tRef.current('done.startNotDetectedLog'))
     }
     poll()
 

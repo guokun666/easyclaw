@@ -4,7 +4,11 @@ import { getPathEnv, resolvePreferredBin } from './path-utils'
 import { checkPort } from './troubleshooter'
 import { createTerminalLineEmitter } from './terminal-output'
 import { buildWslBashArgs, getWslProxyRuntimeInfo } from './wsl-utils'
-import { ensureOptionalMemorySearchDisabled } from './onboarder'
+import {
+  ensureFeishuPluginCompatible,
+  ensureFeishuSecretProviderReady,
+  ensureOptionalMemorySearchDisabled
+} from './onboarder'
 import { t } from '../../shared/i18n/main'
 
 export interface GatewayResult {
@@ -12,8 +16,17 @@ export interface GatewayResult {
   error?: string
 }
 
+interface GatewayPortWaitOptions {
+  timeoutMs?: number
+  intervalMs?: number
+  requireProcessAlive?: boolean
+  abortWhen?: () => boolean
+}
+
 // Windows WSL: keep gateway as a foreground process
 let wslGatewayProcess: ChildProcess | null = null
+let lastGatewayReadySignalAt = 0
+const GATEWAY_READY_SIGNAL_GRACE_MS = 15_000
 
 // Gateway log callback (set from ipc-handlers)
 let logCallback: ((msg: string) => void) | null = null
@@ -32,8 +45,18 @@ const emitLog = (msg: string): void => {
 }
 
 const emitStatus = (status: 'running' | 'stopped'): void => {
+  if (status === 'stopped') {
+    lastGatewayReadySignalAt = 0
+  }
   statusCallback?.(status)
 }
+
+const noteGatewayReadySignal = (): void => {
+  lastGatewayReadySignalAt = Date.now()
+}
+
+const hasRecentGatewayReadySignal = (): boolean =>
+  Date.now() - lastGatewayReadySignalAt <= GATEWAY_READY_SIGNAL_GRACE_MS
 
 const runGateway = (args: string[]): Promise<string> => {
   const openclaw = resolvePreferredBin('openclaw')
@@ -57,11 +80,17 @@ const runGateway = (args: string[]): Promise<string> => {
   })
 }
 
-const waitForGatewayPort = async (timeoutMs = 10000, intervalMs = 500): Promise<boolean> => {
+const waitForGatewayPort = async ({
+  timeoutMs = 10000,
+  intervalMs = 500,
+  requireProcessAlive = true,
+  abortWhen
+}: GatewayPortWaitOptions = {}): Promise<boolean> => {
   const start = Date.now()
 
   while (Date.now() - start < timeoutMs) {
-    if (!wslGatewayProcess || wslGatewayProcess.killed) return false
+    if (abortWhen?.()) return false
+    if (requireProcessAlive && (!wslGatewayProcess || wslGatewayProcess.killed)) return false
 
     const { inUse } = await checkPort()
     if (inUse) return true
@@ -90,6 +119,9 @@ const startGatewayWsl = async (): Promise<GatewayResult> => {
   const stdoutEmitter = await createTerminalLineEmitter((msg) => {
     emitLog(msg)
     stdoutLines.push(msg)
+    if (msg.includes('[gateway] listening on')) {
+      noteGatewayReadySignal()
+    }
   })
   const stderrEmitter = await createTerminalLineEmitter((msg) => {
     emitLog(msg)
@@ -124,6 +156,34 @@ const startGatewayWsl = async (): Promise<GatewayResult> => {
         wslGatewayProcess = null
 
         if (await isGatewayPortActive()) {
+          noteGatewayReadySignal()
+          emitStatus('running')
+          if (!resolved) {
+            resolved = true
+            resolve({ status: 'started' })
+          }
+          return
+        }
+
+        if (hasRecentGatewayReadySignal()) {
+          emitStatus('running')
+          if (!resolved) {
+            resolved = true
+            resolve({ status: 'started' })
+          }
+          return
+        }
+
+        // WSL foreground wrapper can exit before Windows localhost forwarding becomes observable.
+        // Give port forwarding a short grace period before declaring the Gateway stopped.
+        const portReadyAfterExit = await waitForGatewayPort({
+          timeoutMs: 5000,
+          intervalMs: 500,
+          requireProcessAlive: false,
+          abortWhen: () => resolved
+        })
+        if (portReadyAfterExit) {
+          noteGatewayReadySignal()
           emitStatus('running')
           if (!resolved) {
             resolved = true
@@ -159,13 +219,24 @@ const startGatewayWsl = async (): Promise<GatewayResult> => {
     })
 
     void (async () => {
-      const portReady = await waitForGatewayPort()
+      const portReady = await waitForGatewayPort({
+        timeoutMs: 10000,
+        intervalMs: 500,
+        requireProcessAlive: false,
+        abortWhen: () => resolved
+      })
       if (resolved) return
 
       if (portReady) {
+        noteGatewayReadySignal()
         emitStatus('running')
         resolved = true
         resolve({ status: 'started' })
+        return
+      }
+
+      if (!wslGatewayProcess || wslGatewayProcess.killed) {
+        // The wrapper already exited; let the close handler own the final status decision.
         return
       }
 
@@ -208,6 +279,7 @@ const stopGatewayWsl = async (): Promise<string> => {
   }
   await killWslGateway()
   await new Promise((r) => setTimeout(r, 1000))
+  lastGatewayReadySignalAt = 0
   emitStatus('stopped')
   return 'stopped'
 }
@@ -264,6 +336,8 @@ export const waitUntilStopped = async (timeoutMs = 5000): Promise<void> => {
 
 export const startGateway = async (): Promise<GatewayResult> => {
   await ensureOptionalMemorySearchDisabled((msg) => emitLog(msg))
+  await ensureFeishuPluginCompatible((msg) => emitLog(msg))
+  await ensureFeishuSecretProviderReady((msg) => emitLog(msg))
   const isWin = platform() === 'win32'
   if (isWin) {
     const result = await startGatewayWsl()
@@ -320,7 +394,11 @@ export const restartGateway = async (): Promise<GatewayResult> => {
 
 export const getGatewayStatus = async (): Promise<'running' | 'stopped'> => {
   if (platform() === 'win32') {
-    return (await isGatewayPortActive()) ? 'running' : 'stopped'
+    if (await isGatewayPortActive()) {
+      noteGatewayReadySignal()
+      return 'running'
+    }
+    return hasRecentGatewayReadySignal() ? 'running' : 'stopped'
   }
   try {
     const output = await runGateway(['status'])

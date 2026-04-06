@@ -27,6 +27,7 @@ const OFFICIAL_NODE_DIST_BASE = 'https://nodejs.org/dist'
 const MIRROR_NODE_DIST_BASE = 'https://npmmirror.com/mirrors/node'
 const OFFICIAL_NODE_WSL_SETUP_URL = 'https://deb.nodesource.com/setup_22.x'
 const MIRROR_ELECTRON_BASE = 'https://npmmirror.com/mirrors/electron/'
+export const OPENCLAW_RECOMMENDED_VERSION = '2026.4.1'
 
 const normalizeSourceMode = (value: string | undefined): InstallSourceMode => {
   if (value === 'official' || value === 'mirror') return value
@@ -88,12 +89,12 @@ export const getOpenclawPackageCandidates = (): OpenclawPackageCandidate[] => {
   const settings = getInstallSourceSettingsFromEnv()
   const official: OpenclawPackageCandidate = {
     label: 'official npm',
-    packageName: 'openclaw@latest',
+    packageName: `openclaw@${OPENCLAW_RECOMMENDED_VERSION}`,
     registry: OFFICIAL_NPM_REGISTRY
   }
   const mirror: OpenclawPackageCandidate = {
     label: 'mirror npm',
-    packageName: 'openclaw@latest',
+    packageName: `openclaw@${OPENCLAW_RECOMMENDED_VERSION}`,
     registry: MIRROR_NPM_REGISTRY
   }
 
@@ -104,11 +105,11 @@ export const getOpenclawMetaCandidates = (): DownloadSourceCandidate[] => {
   const settings = getInstallSourceSettingsFromEnv()
   const official = {
     label: 'official npm registry',
-    url: `${OFFICIAL_NPM_REGISTRY}/openclaw/latest`
+    url: `${OFFICIAL_NPM_REGISTRY}/openclaw/${OPENCLAW_RECOMMENDED_VERSION}`
   }
   const mirror = {
     label: 'mirror npm registry',
-    url: `${MIRROR_NPM_REGISTRY}/openclaw/latest`
+    url: `${MIRROR_NPM_REGISTRY}/openclaw/${OPENCLAW_RECOMMENDED_VERSION}`
   }
 
   return orderCandidates(settings.sourceMode, official, mirror)

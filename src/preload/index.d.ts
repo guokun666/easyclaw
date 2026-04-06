@@ -23,6 +23,7 @@ interface ElectronAPI {
       openclawInstalled: boolean
       openclawVersion: string | null
       openclawLatestVersion: string | null
+      freshInstallerLaunch?: boolean
       wslState?: WslState
       wslProxyInfo?: {
         enabled: boolean

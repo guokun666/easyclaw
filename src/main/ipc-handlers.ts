@@ -2,7 +2,7 @@ import { ipcMain, BrowserWindow, app, shell } from 'electron'
 import { spawn } from 'child_process'
 import { platform, homedir } from 'os'
 import { join } from 'path'
-import { existsSync, readFileSync, writeFileSync, unlinkSync } from 'fs'
+import { existsSync, readFileSync, writeFileSync, unlinkSync, rmSync } from 'fs'
 import { checkEnvironment, checkOpenclawUpdate } from './services/env-checker'
 import { getPathEnv, resolvePreferredBin } from './services/path-utils'
 import { checkPort, runDoctorFix } from './services/troubleshooter'
@@ -29,7 +29,7 @@ import {
   setGatewayLogCallback,
   setGatewayStatusCallback
 } from './services/gateway'
-import { checkWslState, readWslFile } from './services/wsl-utils'
+import { checkWslState, readWslFile, runInWsl } from './services/wsl-utils'
 import { checkForUpdates, downloadUpdate, installUpdate } from './services/updater'
 import { uninstallOpenClaw } from './services/uninstaller'
 import { exportBackup, importBackup } from './services/backup'
@@ -45,6 +45,7 @@ interface WizardPersistedState {
 
 const getWizardStatePath = (): string => join(app.getPath('userData'), 'wizard-state.json')
 const getSettingsPath = (): string => join(app.getPath('userData'), 'settings.json')
+const INSTALLER_INITIALIZED_KEY = '__installerInitialized'
 
 const readSettings = (): Record<string, unknown> => {
   try {
@@ -114,7 +115,12 @@ export const registerIpcHandlers = (getWin: () => BrowserWindow | null): void =>
 
   ipcMain.handle('env:check', () => {
     applyInstallSourceSettings()
-    return checkEnvironment()
+    const isFreshInstallerLaunch = readSettings()[INSTALLER_INITIALIZED_KEY] !== true
+    writeSettings({ [INSTALLER_INITIALIZED_KEY]: true })
+    return checkEnvironment().then((result) => ({
+      ...result,
+      freshInstallerLaunch: isFreshInstallerLaunch
+    }))
   })
   ipcMain.handle('openclaw:check-update', () => {
     applyInstallSourceSettings()
@@ -157,8 +163,50 @@ export const registerIpcHandlers = (getWin: () => BrowserWindow | null): void =>
   ipcMain.handle('openclaw:clean-uninstall', async () => {
     try {
       await stopGateway().catch(() => {})
+      if (platform() === 'win32') {
+        try {
+          await runInWsl(
+            'openclaw uninstall --all --yes --non-interactive || true; npm uninstall -g openclaw || true; rm -rf /root/.openclaw',
+            120000
+          )
+          return { success: true }
+        } catch (err) {
+          return {
+            success: false,
+            error: err instanceof Error ? err.message : String(err)
+          }
+        }
+      }
+
       const openclaw = resolvePreferredBin('openclaw')
+      const npm = resolvePreferredBin('npm')
       return new Promise<{ success: boolean; error?: string }>((resolve) => {
+        let cleanupStarted = false
+        const finishCleanup = (): void => {
+          if (cleanupStarted) return
+          cleanupStarted = true
+          const npmChild = spawn(npm, ['uninstall', '-g', 'openclaw'], {
+            env: getPathEnv(),
+            stdio: ['ignore', 'pipe', 'pipe']
+          })
+          npmChild.stdout.on('data', (d) => chunks.push(d.toString()))
+          npmChild.stderr.on('data', (d) => chunks.push(d.toString()))
+          npmChild.on('close', () => {
+            try {
+              rmSync(join(homedir(), '.openclaw'), { recursive: true, force: true })
+              const wizardStatePath = getWizardStatePath()
+              if (existsSync(wizardStatePath)) unlinkSync(wizardStatePath)
+              resolve({ success: true })
+            } catch (err) {
+              resolve({
+                success: false,
+                error: err instanceof Error ? err.message : String(err)
+              })
+            }
+          })
+          npmChild.on('error', (err) => resolve({ success: false, error: err.message }))
+        }
+
         const child = spawn(openclaw, ['uninstall', '--all', '--yes', '--non-interactive'], {
           env: getPathEnv(),
           stdio: ['ignore', 'pipe', 'pipe']
@@ -166,11 +214,8 @@ export const registerIpcHandlers = (getWin: () => BrowserWindow | null): void =>
         const chunks: string[] = []
         child.stdout.on('data', (d) => chunks.push(d.toString()))
         child.stderr.on('data', (d) => chunks.push(d.toString()))
-        child.on('close', (code) => {
-          if (code === 0) resolve({ success: true })
-          else resolve({ success: false, error: chunks.join('') || `exit ${code}` })
-        })
-        child.on('error', (err) => resolve({ success: false, error: err.message }))
+        child.on('close', finishCleanup)
+        child.on('error', finishCleanup)
       })
     } catch (e) {
       return { success: false, error: e instanceof Error ? e.message : String(e) }

@@ -22,6 +22,7 @@ interface EnvResult {
   openclawInstalled: boolean
   openclawVersion: string | null
   openclawLatestVersion: string | null
+  freshInstallerLaunch?: boolean
   wslState?: WslState
   wslProxyInfo?: {
     enabled: boolean
@@ -112,6 +113,7 @@ export default function EnvCheckStep({
     env.openclawVersion &&
     env.openclawLatestVersion &&
     env.openclawVersion !== env.openclawLatestVersion
+  const needsFreshReinstall = !!env?.freshInstallerLaunch && env.openclawInstalled
 
   const handleUpdate = async (): Promise<void> => {
     setUpdating(true)
@@ -130,7 +132,9 @@ export default function EnvCheckStep({
     }
   }
 
-  const allReady = env ? env.nodeInstalled && env.nodeVersionOk && env.openclawInstalled : false
+  const allReady = env
+    ? env.nodeInstalled && env.nodeVersionOk && env.openclawInstalled && !needsFreshReinstall
+    : false
 
   const handleContinue = (): void => {
     if (!env) return
@@ -200,9 +204,13 @@ export default function EnvCheckStep({
             />
             <CheckRow
               label={t('envCheck.openclaw')}
-              ok={env.openclawInstalled}
+              ok={env.openclawInstalled && !needsFreshReinstall}
               detail={
-                env.openclawInstalled ? `v${env.openclawVersion}` : t('common:status.notInstalled')
+                needsFreshReinstall
+                  ? t('envCheck.reinstallRequired')
+                  : env.openclawInstalled
+                    ? `v${env.openclawVersion}`
+                    : t('common:status.notInstalled')
               }
             />
             {hasUpdate && (

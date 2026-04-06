@@ -33,6 +33,18 @@ interface InstallNeeds {
   needOpenclaw: boolean
 }
 
+interface EnvResult {
+  os: 'macos' | 'windows' | 'linux'
+  nodeInstalled: boolean
+  nodeVersion: string | null
+  nodeVersionOk: boolean
+  openclawInstalled: boolean
+  openclawVersion: string | null
+  openclawLatestVersion: string | null
+  freshInstallerLaunch?: boolean
+  wslState?: WslState
+}
+
 const KNOWN_PROVIDERS: Provider[] = [
   'modelfamily',
   'anthropic',
@@ -70,6 +82,7 @@ function App({ debugMode }: { debugMode?: string }): React.JSX.Element {
   const [wslState, setWslState] = useState<WslState>('ready')
   const [version, setVersion] = useState('')
   const [channelOnly, setChannelOnly] = useState(false)
+  const [forceCleanInstall, setForceCleanInstall] = useState(false)
   const isDebugWelcomeOnly = debugMode === 'welcome-only'
   const isDebugNoEffects = debugMode === 'no-effects'
   const isDebugNoBanner = debugMode === 'no-banner'
@@ -85,11 +98,23 @@ function App({ debugMode }: { debugMode?: string }): React.JSX.Element {
     window.electronAPI.env.check().then(async (env) => {
       setIsWindows(env.os === 'windows')
       if (env.wslState) setWslState(env.wslState)
+      const needsFreshReinstall = env.freshInstallerLaunch === true && env.openclawInstalled
+      setForceCleanInstall(needsFreshReinstall)
+      if (needsFreshReinstall) {
+        setInstallNeeds({
+          needNode: !env.nodeVersionOk,
+          needOpenclaw: true
+        })
+      }
 
       // Restore state after reboot — run after wslState is correctly set
       const state = await window.electronAPI.wizard.loadState()
       if (state) {
         goTo(state.step as 'wslSetup' | 'envCheck')
+        return
+      }
+
+      if (needsFreshReinstall) {
         return
       }
 
@@ -113,15 +138,12 @@ function App({ debugMode }: { debugMode?: string }): React.JSX.Element {
     })
   }, [goTo, isDebugBareShell, isDebugNoEffects, isDebugWelcomeOnly])
 
-  const handleEnvCheckDone = (env: {
-    os: string
-    nodeVersionOk: boolean
-    openclawInstalled: boolean
-    wslState?: WslState
-  }): void => {
+  const handleEnvCheckDone = (env: EnvResult): void => {
+    const needsFreshReinstall = env.freshInstallerLaunch === true && env.openclawInstalled
+    setForceCleanInstall(needsFreshReinstall)
     setInstallNeeds({
       needNode: !env.nodeVersionOk,
-      needOpenclaw: !env.openclawInstalled
+      needOpenclaw: needsFreshReinstall || !env.openclawInstalled
     })
 
     // Windows + WSL not ready → navigate to wslSetup
@@ -185,7 +207,11 @@ function App({ debugMode }: { debugMode?: string }): React.JSX.Element {
               <WslSetupStep wslState={wslState} onReady={handleWslReady} />
             )}
             {currentStep === 'install' && (
-              <InstallStep needs={installNeeds} onDone={() => goTo('apiKeyGuide')} />
+              <InstallStep
+                needs={installNeeds}
+                forceCleanInstall={forceCleanInstall}
+                onDone={() => goTo('apiKeyGuide')}
+              />
             )}
             {currentStep === 'apiKeyGuide' && (
               <ApiKeyGuideStep

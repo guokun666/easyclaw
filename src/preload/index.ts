@@ -11,6 +11,7 @@ const electronAPI = {
       openclawInstalled: boolean
       openclawVersion: string | null
       openclawLatestVersion: string | null
+      freshInstallerLaunch?: boolean
       wslState?:
         | 'not_available'
         | 'not_installed'

@@ -25,6 +25,7 @@ nsis:
   shortcutName: ${productName}
   uninstallDisplayName: ${productName}
   createDesktopShortcut: always
+  deleteAppDataOnUninstall: true
 mac:
   icon: build/icon.icns
   hardenedRuntime: true

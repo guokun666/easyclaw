@@ -70,6 +70,9 @@
     "gatewayRestarting": "正在重启 Gateway...",
     "feishuAuthPrompt": "飞书应用已创建，请扫描下方二维码完成最后的 Oauth 授权。",
     "feishuChatAuthPrompt": "如后续需要补用户权限授权，请在飞书中向机器人发送 /feishu auth。",
+    "feishuPluginSyncing": "检测到飞书插件版本较旧，正在同步到与 OpenClaw {{openclawVersion}} 兼容的版本（当前插件：{{pluginVersion}}）...",
+    "feishuPluginSynced": "飞书插件已同步完成，已切换到与 OpenClaw {{openclawVersion}} 兼容的版本。",
+    "feishuPluginSyncFailed": "飞书插件自动同步失败：{{message}}。安装器将继续尝试启动 Gateway。",
     "providerValidating": {
       "modelfamily": "正在校验 Model Family API Key..."
     },
@@ -92,6 +95,7 @@
       "disabledInvalid": "语义记忆校验失败，已自动关闭（{{provider}}）：{{message}}",
       "migratedDisabled": "检测到旧配置未显式关闭语义记忆，已自动补齐为关闭状态。"
     },
+    "feishuSecretProviderMissingDisabled": "检测到飞书渠道依赖的密钥提供器 lark-secrets 未配置，已自动停用该渠道以避免 Gateway 启动失败。请在“配置渠道”中重新配置飞书。",
     "channelChecking": {
       "telegram": "正在检查 Telegram 连接状态..."
     },
