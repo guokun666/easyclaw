@@ -138,6 +138,20 @@ function createWindow(): void {
   }
 }
 
+const gotSingleInstanceLock = app.requestSingleInstanceLock()
+
+if (!gotSingleInstanceLock) {
+  app.quit()
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore()
+      mainWindow.show()
+      mainWindow.focus()
+    }
+  })
+}
+
 app.on('before-quit', () => {
   isQuitting = true
 })
@@ -153,7 +167,6 @@ app.whenReady().then(async () => {
 
   createWindow()
 
-  // System tray
   createTray({
     getWin,
     onQuit: async () => {
