@@ -28,10 +28,10 @@ const electronAPI = {
   },
   settings: {
     getInstallSources: (): Promise<{
-      sourceMode: 'auto' | 'official' | 'mirror'
+      sourceMode: 'auto' | 'official' | 'npmmirror' | 'tencent'
     }> => ipcRenderer.invoke('settings:get-install-sources'),
     setInstallSources: (patch: {
-      sourceMode?: 'auto' | 'official' | 'mirror'
+      sourceMode?: 'auto' | 'official' | 'npmmirror' | 'tencent'
     }): Promise<{ success: boolean }> => ipcRenderer.invoke('settings:set-install-sources', patch)
   },
   install: {

@@ -23,7 +23,19 @@
     "xcodeDone": "Xcode Command Line Tools 安装完成！",
     "xcodeTimeout": "Xcode Command Line Tools 安装超时。请在终端运行 xcode-select --install。",
     "ocInstalling": "正在安装 OpenClaw...",
-    "ocDone": "OpenClaw 安装完成！"
+    "ocDone": "OpenClaw 安装完成！",
+    "networkDiagnoseTitle": "检测到这次安装可能是网络相关问题：",
+    "networkCauseTimeout": "可能是下载超时、镜像暂时不可达，或当前网络过慢。",
+    "networkCauseDns": "可能是 DNS 解析失败，或当前网络无法访问对应域名。",
+    "networkCauseProxy": "可能是 Windows 系统代理不可用，或代理未能为 WSL 正常转发。",
+    "networkCauseTls": "可能是 HTTPS 证书校验失败，或当前网络存在 TLS / 证书拦截。",
+    "networkCauseRegistry": "可能是当前下载源返回异常响应，或镜像暂时不可用。",
+    "networkFixSwitchSource": "可尝试在“高级安装源”里改用 {{alternatives}} 后重试。",
+    "networkFixProxy": "当前检测到系统代理 {{proxy}}。如果你依赖代理联网，请先确认代理本身可用，然后重新安装。",
+    "networkFixDns": "可尝试切换网络、检查 DNS / 防火墙，或确认 WSL 当前能访问外网。",
+    "networkFixTls": "如果你处于公司网络或 HTTPS 拦截环境，请检查证书信任链，或切换到不做 HTTPS 拦截的网络。",
+    "networkFixNodeWsl": "Windows 下的 Node.js 安装仍依赖 NodeSource 脚本；如果这一步失败，请额外确认 deb.nodesource.com 可访问。",
+    "networkFixRetry": "修复后可直接点击“重试”重新安装。"
   },
   "onboarder": {
     "starting": "开始 OpenClaw 初始配置...",

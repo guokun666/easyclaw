@@ -34,10 +34,10 @@ interface ElectronAPI {
   }
   settings: {
     getInstallSources: () => Promise<{
-      sourceMode: 'auto' | 'official' | 'mirror'
+      sourceMode: 'auto' | 'official' | 'npmmirror' | 'tencent'
     }>
     setInstallSources: (patch: {
-      sourceMode?: 'auto' | 'official' | 'mirror'
+      sourceMode?: 'auto' | 'official' | 'npmmirror' | 'tencent'
     }) => Promise<{ success: boolean }>
   }
   install: {

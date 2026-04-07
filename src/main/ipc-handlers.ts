@@ -8,6 +8,7 @@ import { getPathEnv, resolvePreferredBin } from './services/path-utils'
 import { checkPort, runDoctorFix } from './services/troubleshooter'
 import {
   beginInstallTask,
+  buildInstallFailureMessage,
   cancelActiveInstall,
   endInstallTask,
   installNodeMac,
@@ -38,7 +39,7 @@ import { uninstallOpenClaw } from './services/uninstaller'
 import { exportBackup, importBackup } from './services/backup'
 import { loginOpenAICodex } from './services/oauth'
 import { executeAiRepairPlan, planAiRepair, runAiRepair } from './services/ai-repair'
-import type { InstallSourceMode } from './services/install-sources'
+import { normalizeInstallSourceMode, type InstallSourceMode } from './services/install-sources'
 
 interface WizardPersistedState {
   step: string
@@ -70,10 +71,9 @@ const getInstallSourceSettings = (): {
 } => {
   const settings = readSettings()
   return {
-    sourceMode:
-      settings.sourceMode === 'official' || settings.sourceMode === 'mirror'
-        ? settings.sourceMode
-        : 'auto'
+    sourceMode: normalizeInstallSourceMode(
+      typeof settings.sourceMode === 'string' ? settings.sourceMode : undefined
+    )
   }
 }
 
@@ -109,7 +109,7 @@ export const registerIpcHandlers = (getWin: () => BrowserWindow | null): void =>
       }
     ) => {
       writeSettings({
-        sourceMode: patch.sourceMode ?? 'auto'
+        sourceMode: normalizeInstallSourceMode(patch.sourceMode)
       })
       applyInstallSourceSettings()
       return { success: true }
@@ -346,7 +346,7 @@ export const registerIpcHandlers = (getWin: () => BrowserWindow | null): void =>
       }
       return { success: true }
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e)
+      const msg = await buildInstallFailureMessage('node', e)
       try {
         win().webContents.send('install:error', msg)
       } catch {
@@ -369,7 +369,7 @@ export const registerIpcHandlers = (getWin: () => BrowserWindow | null): void =>
       }
       return { success: true }
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e)
+      const msg = await buildInstallFailureMessage('openclaw', e)
       try {
         win().webContents.send('install:error', msg)
       } catch {

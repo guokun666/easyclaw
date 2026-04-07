@@ -1,18 +1,25 @@
 import { spawn, type ChildProcess } from 'child_process'
 import { StringDecoder } from 'string_decoder'
 import { createWriteStream, readFileSync, appendFileSync, existsSync, type WriteStream } from 'fs'
-import { tmpdir, homedir } from 'os'
+import { tmpdir, homedir, platform } from 'os'
 import { join } from 'path'
 import https from 'https'
 import type { ClientRequest } from 'http'
 import { BrowserWindow } from 'electron'
-import { buildWslBashArgs, checkWslState, WSL_STATE_ORDER, type WslState } from './wsl-utils'
+import {
+  buildWslBashArgs,
+  checkWslState,
+  getWslProxyRuntimeInfo,
+  WSL_STATE_ORDER,
+  type WslState
+} from './wsl-utils'
 import { getPathEnv } from './path-utils'
 import { getManagedNpmEnv, getManagedBinPath, hasManagedBin } from './npm-paths'
 import { t } from '../../shared/i18n/main'
 import {
   getNodeMacDownloadCandidates,
   getNodeWslSetupCandidates,
+  getInstallSourceSettingsFromEnv,
   getNpmCommandEnv,
   getOpenclawPackageCandidates
 } from './install-sources'
@@ -35,6 +42,8 @@ interface ActiveInstallTask {
   requests: Set<ClientRequest>
   streams: Set<WriteStream>
 }
+
+type InstallPhase = 'node' | 'openclaw'
 
 const INSTALL_CANCELLED_MESSAGE = 'INSTALL_CANCELLED'
 let activeInstallTask: ActiveInstallTask | null = null
@@ -158,6 +167,90 @@ const registerInstallStream = (stream: WriteStream): void => {
   if (task.cancelled) {
     stream.destroy(createInstallCancelledError())
   }
+}
+
+const extractErrorMessage = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error)
+
+const isLikelyNetworkInstallError = (message: string): boolean =>
+  /etimedout|timed out|socket hang up|econnreset|econnrefused|eai_again|enotfound|network is unreachable|temporary failure|name resolution|certificate|self signed|unable to get local issuer|proxy|407|403|502|503|tunneling socket|fetch failed|download source failed|source failed|http\s+\d{3}/i.test(
+    message
+  )
+
+const getAlternativeSourceLabels = (current: ReturnType<typeof getInstallSourceSettingsFromEnv>['sourceMode']): string => {
+  const options = ['npmmirror', '腾讯云镜像', '官方源']
+  if (current === 'npmmirror') return '腾讯云镜像或官方源'
+  if (current === 'tencent') return 'npmmirror 或官方源'
+  if (current === 'official') return 'npmmirror 或腾讯云镜像'
+  return options.join(' / ')
+}
+
+const buildInstallFailureDiagnosis = async (
+  phase: InstallPhase,
+  rawMessage: string
+): Promise<string | null> => {
+  if (!isLikelyNetworkInstallError(rawMessage)) return null
+
+  const normalized = rawMessage.toLowerCase()
+  const sourceMode = getInstallSourceSettingsFromEnv().sourceMode
+  const proxyInfo = platform() === 'win32' ? await getWslProxyRuntimeInfo() : null
+
+  let cause = t('installer.networkCauseRegistry')
+  if (/certificate|self signed|unable to get local issuer|ssl|tls|cert_/i.test(normalized)) {
+    cause = t('installer.networkCauseTls')
+  } else if (/proxy|407|tunneling socket|connect econnrefused 127\.0\.0\.1|connect econnrefused localhost/i.test(normalized)) {
+    cause = t('installer.networkCauseProxy')
+  } else if (/enotfound|eai_again|name resolution|temporary failure|dns/i.test(normalized)) {
+    cause = t('installer.networkCauseDns')
+  } else if (/etimedout|timed out|socket hang up|econnreset|network is unreachable/i.test(normalized)) {
+    cause = t('installer.networkCauseTimeout')
+  }
+
+  const hints = [
+    t('installer.networkFixSwitchSource', {
+      alternatives: getAlternativeSourceLabels(sourceMode)
+    }),
+    t('installer.networkFixRetry')
+  ]
+
+  if (proxyInfo?.enabled) {
+    hints.splice(
+      1,
+      0,
+      t('installer.networkFixProxy', {
+        proxy: proxyInfo.displayValue ?? 'localhost'
+      })
+    )
+  }
+
+  if (/enotfound|eai_again|name resolution|temporary failure|network is unreachable|timed out/i.test(normalized)) {
+    hints.splice(1, 0, t('installer.networkFixDns'))
+  }
+
+  if (/certificate|self signed|unable to get local issuer|ssl|tls|cert_/i.test(normalized)) {
+    hints.splice(1, 0, t('installer.networkFixTls'))
+  }
+
+  if (phase === 'node' && platform() === 'win32') {
+    hints.splice(1, 0, t('installer.networkFixNodeWsl'))
+  }
+
+  return [
+    t('installer.networkDiagnoseTitle'),
+    `- ${cause}`,
+    ...hints.map((hint) => `- ${hint}`)
+  ].join('\n')
+}
+
+export const buildInstallFailureMessage = async (
+  phase: InstallPhase,
+  error: unknown
+): Promise<string> => {
+  const rawMessage = extractErrorMessage(error)
+  if (rawMessage === INSTALL_CANCELLED_MESSAGE) return rawMessage
+
+  const diagnosis = await buildInstallFailureDiagnosis(phase, rawMessage)
+  return diagnosis ? `${rawMessage}\n\n${diagnosis}` : rawMessage
 }
 
 const downloadFile = (

@@ -1,4 +1,4 @@
-export type InstallSourceMode = 'auto' | 'official' | 'mirror'
+export type InstallSourceMode = 'auto' | 'official' | 'npmmirror' | 'tencent'
 
 export interface InstallSourceSettings {
   sourceMode: InstallSourceMode
@@ -21,33 +21,94 @@ export interface OpenclawPackageCandidate extends SourceCandidate {
   registry: string
 }
 
+type ConcreteInstallSource = Exclude<InstallSourceMode, 'auto'>
+
+interface ConcreteSourceDefinition {
+  id: ConcreteInstallSource
+  label: string
+  npmRegistry: string
+  nodeMacBase?: string
+}
+
 const OFFICIAL_NPM_REGISTRY = 'https://registry.npmjs.org'
-const MIRROR_NPM_REGISTRY = 'https://registry.npmmirror.com'
+const NPMMIRROR_NPM_REGISTRY = 'https://registry.npmmirror.com'
+const TENCENT_NPM_REGISTRY = 'https://mirrors.tencent.com/npm'
 const OFFICIAL_NODE_DIST_BASE = 'https://nodejs.org/dist'
-const MIRROR_NODE_DIST_BASE = 'https://npmmirror.com/mirrors/node'
+const NPMMIRROR_NODE_DIST_BASE = 'https://npmmirror.com/mirrors/node'
+const TENCENT_NODE_DIST_BASE = 'https://mirrors.tencent.com/nodejs-release'
 const OFFICIAL_NODE_WSL_SETUP_URL = 'https://deb.nodesource.com/setup_22.x'
 const MIRROR_ELECTRON_BASE = 'https://npmmirror.com/mirrors/electron/'
 export const OPENCLAW_RECOMMENDED_VERSION = '2026.4.1'
 
-const normalizeSourceMode = (value: string | undefined): InstallSourceMode => {
-  if (value === 'official' || value === 'mirror') return value
-  return 'auto'
+const CONCRETE_SOURCES: Record<ConcreteInstallSource, ConcreteSourceDefinition> = {
+  official: {
+    id: 'official',
+    label: 'official',
+    npmRegistry: OFFICIAL_NPM_REGISTRY,
+    nodeMacBase: OFFICIAL_NODE_DIST_BASE
+  },
+  npmmirror: {
+    id: 'npmmirror',
+    label: 'npmmirror',
+    npmRegistry: NPMMIRROR_NPM_REGISTRY,
+    nodeMacBase: NPMMIRROR_NODE_DIST_BASE
+  },
+  tencent: {
+    id: 'tencent',
+    label: 'tencent',
+    npmRegistry: TENCENT_NPM_REGISTRY,
+    nodeMacBase: TENCENT_NODE_DIST_BASE
+  }
 }
 
 const normalizeBaseUrl = (value: string): string => value.replace(/\/$/, '')
 
-const orderCandidates = <T extends SourceCandidate>(
+export const normalizeInstallSourceMode = (value: string | undefined): InstallSourceMode => {
+  if (value === 'mirror') return 'npmmirror'
+  if (value === 'official' || value === 'npmmirror' || value === 'tencent') return value
+  return 'auto'
+}
+
+const getPreferredSources = (sourceMode: InstallSourceMode): ConcreteInstallSource[] => {
+  switch (sourceMode) {
+    case 'official':
+      return ['official']
+    case 'npmmirror':
+      return ['npmmirror', 'official']
+    case 'tencent':
+      return ['tencent', 'official']
+    default:
+      return ['npmmirror', 'tencent', 'official']
+  }
+}
+
+const buildCandidatesFromSources = <T extends SourceCandidate>(
   sourceMode: InstallSourceMode,
-  official: T,
-  mirror?: T | null
+  buildCandidate: (source: ConcreteSourceDefinition) => T | null
 ): T[] => {
-  if (sourceMode === 'official') return [official]
-  if (sourceMode === 'mirror') return mirror ? [mirror] : [official]
-  return mirror ? [mirror, official] : [official]
+  const candidates: T[] = []
+  const seen = new Set<string>()
+
+  for (const sourceId of getPreferredSources(sourceMode)) {
+    const source = CONCRETE_SOURCES[sourceId]
+    const candidate = buildCandidate(source)
+    if (!candidate || seen.has(candidate.label)) continue
+    seen.add(candidate.label)
+    candidates.push(candidate)
+  }
+
+  if (candidates.length === 0) {
+    const officialCandidate = buildCandidate(CONCRETE_SOURCES.official)
+    if (officialCandidate) {
+      candidates.push(officialCandidate)
+    }
+  }
+
+  return candidates
 }
 
 export const getInstallSourceSettingsFromEnv = (): InstallSourceSettings => ({
-  sourceMode: normalizeSourceMode(process.env.OPENCLAW_INSTALL_SOURCE_MODE)
+  sourceMode: normalizeInstallSourceMode(process.env.OPENCLAW_INSTALL_SOURCE_MODE)
 })
 
 export const getElectronMirror = (): string => MIRROR_ELECTRON_BASE
@@ -63,56 +124,47 @@ export const getNpmCommandEnv = (
 export const getNodeMacDownloadCandidates = (version: string): DownloadSourceCandidate[] => {
   const settings = getInstallSourceSettingsFromEnv()
   const pkgName = `node-${version}.pkg`
-  const official = {
-    label: 'official',
-    url: `${OFFICIAL_NODE_DIST_BASE}/${version}/${pkgName}`
-  }
-  const mirror = {
-    label: 'mirror',
-    url: `${MIRROR_NODE_DIST_BASE}/${version}/${pkgName}`
-  }
 
-  return orderCandidates(settings.sourceMode, official, mirror)
+  return buildCandidatesFromSources(settings.sourceMode, (source) =>
+    source.nodeMacBase
+      ? {
+          label: source.label,
+          url: `${source.nodeMacBase}/${version}/${pkgName}`
+        }
+      : null
+  )
 }
 
 export const getNodeWslSetupCandidates = (): ScriptSourceCandidate[] => {
   const settings = getInstallSourceSettingsFromEnv()
-  const official = {
-    label: 'official',
-    scriptUrl: OFFICIAL_NODE_WSL_SETUP_URL
-  }
 
-  return orderCandidates(settings.sourceMode, official)
+  return buildCandidatesFromSources(settings.sourceMode, (source) =>
+    source.id === 'official'
+      ? {
+          label: source.label,
+          scriptUrl: OFFICIAL_NODE_WSL_SETUP_URL
+        }
+      : null
+  )
 }
 
 export const getOpenclawPackageCandidates = (): OpenclawPackageCandidate[] => {
   const settings = getInstallSourceSettingsFromEnv()
-  const official: OpenclawPackageCandidate = {
-    label: 'official npm',
-    packageName: `openclaw@${OPENCLAW_RECOMMENDED_VERSION}`,
-    registry: OFFICIAL_NPM_REGISTRY
-  }
-  const mirror: OpenclawPackageCandidate = {
-    label: 'mirror npm',
-    packageName: `openclaw@${OPENCLAW_RECOMMENDED_VERSION}`,
-    registry: MIRROR_NPM_REGISTRY
-  }
 
-  return orderCandidates(settings.sourceMode, official, mirror)
+  return buildCandidatesFromSources(settings.sourceMode, (source) => ({
+    label: `${source.label} npm`,
+    packageName: `openclaw@${OPENCLAW_RECOMMENDED_VERSION}`,
+    registry: source.npmRegistry
+  }))
 }
 
 export const getOpenclawMetaCandidates = (): DownloadSourceCandidate[] => {
   const settings = getInstallSourceSettingsFromEnv()
-  const official = {
-    label: 'official npm registry',
-    url: `${OFFICIAL_NPM_REGISTRY}/openclaw/${OPENCLAW_RECOMMENDED_VERSION}`
-  }
-  const mirror = {
-    label: 'mirror npm registry',
-    url: `${MIRROR_NPM_REGISTRY}/openclaw/${OPENCLAW_RECOMMENDED_VERSION}`
-  }
 
-  return orderCandidates(settings.sourceMode, official, mirror)
+  return buildCandidatesFromSources(settings.sourceMode, (source) => ({
+    label: `${source.label} npm registry`,
+    url: `${normalizeBaseUrl(source.npmRegistry)}/openclaw/${OPENCLAW_RECOMMENDED_VERSION}`
+  }))
 }
 
 export const getAppUpdateFeedUrl = (): string | null => {

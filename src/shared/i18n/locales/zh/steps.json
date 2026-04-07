@@ -82,12 +82,25 @@
     "cleanInstallForcedDesc": "检测到这是重装后的首次启动。为了避免继续使用之前的 API Key 和配置，本次会强制清除旧 OpenClaw 数据后重新安装。",
     "cleanInstallFailed": "清除旧 OpenClaw 数据失败，请查看日志后重试",
     "advancedTitle": "高级安装源",
-    "advancedDesc": "可选：切换官方源或公共镜像源，auto 会自动选择可用方案",
+    "advancedDesc": "可选：切换官方源、npmmirror 或腾讯云镜像。auto 会自动按可用性依次尝试。",
     "sourceModeLabel": "下载/更新策略",
     "sourceMode": {
-      "auto": "自动（优先镜像，失败后官方）",
-      "official": "仅官方",
-      "mirror": "仅镜像"
+      "auto": {
+        "label": "自动选择",
+        "desc": "优先尝试 npmmirror，其次腾讯云，最后回退官方源。"
+      },
+      "official": {
+        "label": "官方源",
+        "desc": "仅使用官方 npm / Node 下载源，适合镜像异常时回退。"
+      },
+      "npmmirror": {
+        "label": "npmmirror",
+        "desc": "优先使用 npmmirror，加速 OpenClaw 下载；失败时自动回退官方。"
+      },
+      "tencent": {
+        "label": "腾讯云镜像",
+        "desc": "优先使用腾讯云镜像；适合部分国内网络，失败时自动回退官方。"
+      }
     },
     "savingSources": "保存中...",
     "saveSources": "保存安装源",

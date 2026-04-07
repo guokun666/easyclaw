@@ -4,7 +4,9 @@ import LobsterLogo from '../components/LobsterLogo'
 import Button from '../components/Button'
 import InstallProgressCard from '../components/InstallProgressCard'
 import LogViewer from '../components/LogViewer'
+import InstallSourceSelect from '../components/InstallSourceSelect'
 import { useInstallLogs } from '../hooks/useIpc'
+import type { InstallSourceMode } from '../constants/install-sources'
 
 type WslState =
   | 'not_available'
@@ -30,8 +32,6 @@ interface EnvResult {
     needsAutoBridge: boolean
   }
 }
-
-type InstallSourceMode = 'auto' | 'official' | 'mirror'
 
 const CheckRow = ({
   label,
@@ -261,15 +261,11 @@ export default function EnvCheckStep({
               <div className="space-y-3">
                 <div className="space-y-1">
                   <label className="text-xs font-semibold">{t('install.sourceModeLabel')}</label>
-                  <select
+                  <InstallSourceSelect
                     value={sourceMode}
-                    onChange={(e) => setSourceMode(e.target.value as InstallSourceMode)}
-                    className="w-full bg-bg-input rounded-xl px-4 py-2.5 text-xs outline-none border border-glass-border focus:border-primary"
-                  >
-                    <option value="auto">{t('install.sourceMode.auto')}</option>
-                    <option value="official">{t('install.sourceMode.official')}</option>
-                    <option value="mirror">{t('install.sourceMode.mirror')}</option>
-                  </select>
+                    onChange={setSourceMode}
+                    disabled={savingSources || updating}
+                  />
                 </div>
 
                 {sourcesMessage && (
@@ -303,7 +299,9 @@ export default function EnvCheckStep({
           </div>
         )}
         {(updateError || error) && (
-          <p className="w-full max-w-xs text-error text-xs font-medium">{updateError || error}</p>
+          <p className="w-full max-w-xs whitespace-pre-wrap text-error text-xs font-medium">
+            {updateError || error}
+          </p>
         )}
       </div>
     </div>
