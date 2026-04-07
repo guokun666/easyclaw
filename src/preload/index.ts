@@ -110,7 +110,9 @@ const electronAPI = {
         apiKey?: string
       }
     }): Promise<{ success: boolean; error?: string; botUsername?: string }> =>
-      ipcRenderer.invoke('onboard:run', config)
+      ipcRenderer.invoke('onboard:run', config),
+    cancel: (): Promise<{ success: boolean; cancelled: boolean }> =>
+      ipcRenderer.invoke('onboard:cancel')
   },
   oauth: {
     loginCodex: (): Promise<{ success: boolean; error?: string }> =>

@@ -88,6 +88,7 @@ interface ElectronAPI {
         apiKey?: string
       }
     }) => Promise<{ success: boolean; error?: string; botUsername?: string }>
+    cancel: () => Promise<{ success: boolean; cancelled: boolean }>
   }
   oauth: {
     loginCodex: () => Promise<{ success: boolean; error?: string }>

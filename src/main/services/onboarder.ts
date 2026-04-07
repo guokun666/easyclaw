@@ -1,4 +1,4 @@
-import { spawn } from 'child_process'
+import { spawn, type ChildProcess } from 'child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, unlinkSync } from 'fs'
 import { platform, homedir, tmpdir } from 'os'
 import { join } from 'path'
@@ -44,6 +44,11 @@ interface OnboardResult {
   botUsername?: string
 }
 
+interface ActiveOnboardTask {
+  cancelled: boolean
+  children: Set<ChildProcess>
+}
+
 export interface ProviderKeyValidationResult {
   success: boolean
   error?: string
@@ -51,6 +56,68 @@ export interface ProviderKeyValidationResult {
 }
 
 const PROVIDER_KEY_VALIDATION_TIMEOUT_MS = 15000
+const ONBOARD_CANCELLED_MESSAGE = 'ONBOARD_CANCELLED'
+let activeOnboardTask: ActiveOnboardTask | null = null
+
+const createOnboardCancelledError = (): Error => new Error(ONBOARD_CANCELLED_MESSAGE)
+
+const beginOnboardTask = (): ActiveOnboardTask => {
+  const task: ActiveOnboardTask = {
+    cancelled: false,
+    children: new Set<ChildProcess>()
+  }
+  activeOnboardTask = task
+  return task
+}
+
+const endOnboardTask = (task?: ActiveOnboardTask): void => {
+  if (!task || activeOnboardTask === task) {
+    activeOnboardTask = null
+  }
+}
+
+const registerOnboardChild = (
+  child: ChildProcess,
+  task: ActiveOnboardTask | null = activeOnboardTask
+): void => {
+  if (!task) return
+
+  task.children.add(child)
+  const cleanup = (): void => {
+    task.children.delete(child)
+  }
+  child.once('close', cleanup)
+  child.once('error', cleanup)
+
+  if (task.cancelled) {
+    try {
+      child.kill()
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+const assertOnboardNotCancelled = (): void => {
+  if (activeOnboardTask?.cancelled) {
+    throw createOnboardCancelledError()
+  }
+}
+
+export const cancelActiveOnboard = (): boolean => {
+  const task = activeOnboardTask
+  if (!task) return false
+
+  task.cancelled = true
+  for (const child of task.children) {
+    try {
+      child.kill()
+    } catch {
+      /* ignore */
+    }
+  }
+  return true
+}
 
 const LOG_BATCH_INTERVAL_MS = 120
 const LOG_MAX_BATCH_LINES = 24
@@ -284,6 +351,7 @@ const createRunCmd = (): ((
 ) => Promise<void>) => {
   const isWindows = platform() === 'win32'
   return async (cmd, args, onLog) => {
+    assertOnboardNotCancelled()
     const stdoutEmitter = await createTerminalLineEmitter(onLog)
     const stderrEmitter = await createTerminalLineEmitter(onLog)
     let fullCmd: string
@@ -300,22 +368,25 @@ const createRunCmd = (): ((
     }
 
     return new Promise((resolve, reject) => {
+      const task = activeOnboardTask
       const child = spawn(fullCmd, fullArgs, {
         env: isWindows ? process.env : getManagedNpmEnv(getPathEnv())
       })
+      registerOnboardChild(child, task)
 
       child.stdout.on('data', (d: Buffer) => stdoutEmitter.push(d))
       child.stderr.on('data', (d: Buffer) => stderrEmitter.push(d))
       child.on('close', (code) => {
         stdoutEmitter.flush()
         stderrEmitter.flush()
-        if (code === 0) resolve()
+        if (task?.cancelled) reject(createOnboardCancelledError())
+        else if (code === 0) resolve()
         else reject(new Error(`Command failed with exit code ${code}`))
       })
       child.on('error', (error) => {
         stdoutEmitter.flush()
         stderrEmitter.flush()
-        reject(error)
+        reject(task?.cancelled ? createOnboardCancelledError() : error)
       })
     })
   }
@@ -376,7 +447,10 @@ const runSimpleCommand = async (
   env?: NodeJS.ProcessEnv
 ): Promise<string> =>
   new Promise((resolve, reject) => {
+    assertOnboardNotCancelled()
+    const task = activeOnboardTask
     const child = spawn(cmd, args, { env })
+    registerOnboardChild(child, task)
     let stdout = ''
     let stderr = ''
 
@@ -387,10 +461,11 @@ const runSimpleCommand = async (
       stderr += chunk.toString('utf-8')
     })
     child.on('close', (code) => {
-      if (code === 0) resolve(stdout.trim())
+      if (task?.cancelled) reject(createOnboardCancelledError())
+      else if (code === 0) resolve(stdout.trim())
       else reject(new Error(stderr.trim() || `exit code ${code}`))
     })
-    child.on('error', reject)
+    child.on('error', (error) => reject(task?.cancelled ? createOnboardCancelledError() : error))
   })
 
 const getInstalledOpenClawVersion = async (): Promise<string | null> => {
@@ -1248,6 +1323,7 @@ export const runOnboard = async (
   const progress = createInstallProgressEmitter(win)
   const log = progress.log
   const status = progress.status
+  const task = beginOnboardTask()
 
   try {
     status(5, t('onboarder.status.preparing'))
@@ -1596,6 +1672,7 @@ export const runOnboard = async (
 
     return { botUsername }
   } finally {
+    endOnboardTask(task)
     progress.dispose()
   }
 }
@@ -2011,6 +2088,7 @@ export const setupChannelOnly = async (
   win: BrowserWindow,
   config: OnboardConfig
 ): Promise<{ success: boolean; error?: string; botUsername?: string }> => {
+  const task = beginOnboardTask()
   const log = (msg: string): void => {
     try {
       win.webContents.send('install:progress', msg)
@@ -2024,20 +2102,7 @@ export const setupChannelOnly = async (
 
   const isWin = platform() === 'win32'
   const ocBin = isWin ? 'openclaw' : resolvePreferredBin('openclaw')
-  const runCmd = isWin
-    ? async (cmd: string, args: string[], onLog: (m: string) => void): Promise<void> => {
-        await runInWsl(`${cmd} ${args.join(' ')}`, 120000)
-        onLog(`${cmd} ${args.join(' ')} done`)
-      }
-    : async (cmd: string, args: string[], onLog: (m: string) => void): Promise<void> => {
-        await new Promise<void>((resolve, reject) => {
-          const child = spawn(cmd, args, { env: getPathEnv() })
-          child.stdout.on('data', (d) => onLog(d.toString().trim()))
-          child.stderr.on('data', (d) => onLog(d.toString().trim()))
-          child.on('close', (code) => (code === 0 ? resolve() : reject(new Error(`exit ${code}`))))
-          child.on('error', reject)
-        })
-      }
+  const runCmd = createRunCmd()
 
   try {
     // For feishu/wechat one-click, run the external CLI tool
@@ -2084,6 +2149,8 @@ export const setupChannelOnly = async (
     return { success: true, botUsername }
   } catch (error) {
     return { success: false, error: error instanceof Error ? error.message : String(error) }
+  } finally {
+    endOnboardTask(task)
   }
 }
 

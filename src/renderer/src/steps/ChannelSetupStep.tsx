@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import Button from '../components/Button'
 import InstallProgressCard from '../components/InstallProgressCard'
@@ -19,7 +19,9 @@ export default function ChannelSetupStep({
   const { t } = useTranslation(['steps', 'common'])
   const { logs, clearLogs, status } = useInstallLogs()
   const [running, setRunning] = useState(false)
+  const [skipping, setSkipping] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const runIdRef = useRef(0)
   const skippedChannelConfig = payload.skipChannelConfig === true || !payload.channelType
   const channelType = skippedChannelConfig ? null : payload.channelType
   const channelTitle = channelType ? t(`channelGuide.channels.${channelType}.title`) : t('setup.noChannelTitle')
@@ -45,6 +47,14 @@ export default function ChannelSetupStep({
     { label: t('setup.info.mode'), value: modeLabel },
     { label: t('setup.info.afterStart'), value: t('setup.info.afterStartValue') }
   ]
+  const channelExecutionStarted =
+    skippedChannelConfig || !channelType
+      ? false
+      : channelType === 'feishu' || channelType === 'wechat'
+        ? (status?.percent ?? 0) >= 68
+        : (status?.percent ?? 0) >= 62
+  const showSkipChannelAction =
+    !channelOnly && !skippedChannelConfig && (!running || !!error || channelExecutionStarted)
 
   useEffect(() => {
     clearLogs()
@@ -63,10 +73,13 @@ export default function ChannelSetupStep({
         }
       : payload
 
-  const handleRun = (skipChannel = false): void => {
+  const startRun = (skipChannel = false): void => {
+    const runId = runIdRef.current + 1
+    runIdRef.current = runId
     clearLogs()
     setError(null)
     setRunning(true)
+    setSkipping(false)
     const effectivePayload = buildRunPayload(skipChannel)
 
     const apiCall = channelOnly
@@ -81,6 +94,7 @@ export default function ChannelSetupStep({
 
     void apiCall
       .then((result) => {
+        if (runId !== runIdRef.current) return
         if (result.success) {
           onDone(result.botUsername)
         } else {
@@ -88,16 +102,39 @@ export default function ChannelSetupStep({
         }
       })
       .catch((err) => {
-        setError(err instanceof Error ? err.message : t('common:error.unknown'))
+        if (runId !== runIdRef.current) return
+        const message = err instanceof Error ? err.message : t('common:error.unknown')
+        if (message === 'ONBOARD_CANCELLED') return
+        setError(message)
       })
       .finally(() => {
+        if (runId !== runIdRef.current) return
         setRunning(false)
+        setSkipping(false)
       })
+  }
+
+  const handleSkipChannel = async (): Promise<void> => {
+    if (channelOnly || skippedChannelConfig) return
+
+    if (!running) {
+      startRun(true)
+      return
+    }
+
+    setSkipping(true)
+    runIdRef.current += 1
+    await window.electronAPI.onboard.cancel()
+    clearLogs()
+    setError(null)
+    setRunning(false)
+    await new Promise((resolve) => window.setTimeout(resolve, 250))
+    startRun(true)
   }
 
   return (
     <div className="flex-1 flex min-h-0 flex-col overflow-hidden px-8 pt-6">
-      <div className="mx-auto relative flex h-full w-full max-w-4xl flex-1 flex-col min-h-0">
+      <div className="mx-auto relative flex h-full w-full max-w-[min(92vw,1380px)] flex-1 flex-col min-h-0">
         <div className="min-h-0 flex-1 overflow-y-auto pb-28 pr-1">
           <div className="space-y-4">
             <div className="flex items-center gap-3">
@@ -172,7 +209,14 @@ export default function ChannelSetupStep({
 
             {status && <InstallProgressCard status={status} />}
 
-            {logs.length > 0 && <LogViewer lines={logs} defaultExpanded expandedHeightClass="h-[18rem]" />}
+            {logs.length > 0 && (
+              <LogViewer
+                lines={logs}
+                defaultExpanded
+                expandedHeightClass="h-[min(65vh,46rem)]"
+                contentClassName="text-[13px] md:text-[14px] leading-[1.28]"
+              />
+            )}
 
             {error && (
               <div className="rounded-2xl border border-error/30 bg-error/10 px-4 py-3">
@@ -186,17 +230,29 @@ export default function ChannelSetupStep({
 
         <div className="absolute bottom-0 right-0 z-10 flex justify-end py-4">
           {running ? (
-            <div className="inline-flex items-center justify-center rounded-2xl bg-gradient-to-r from-primary to-primary-hover px-8 py-3 text-base font-bold tracking-wide text-white shadow-lg shadow-primary-glow opacity-80">
-              {t('setup.runningBtn')}
+            <div className="flex gap-3">
+              {showSkipChannelAction && (
+                <Button
+                  variant="secondary"
+                  size="lg"
+                  onClick={() => void handleSkipChannel()}
+                  loading={skipping}
+                >
+                  {skipping ? t('setup.skippingBtn') : t('setup.skipChannelBtn')}
+                </Button>
+              )}
+              <div className="inline-flex items-center justify-center rounded-2xl bg-gradient-to-r from-primary to-primary-hover px-8 py-3 text-base font-bold tracking-wide text-white shadow-lg shadow-primary-glow opacity-80">
+                {t('setup.runningBtn')}
+              </div>
             </div>
           ) : (
             <div className="flex gap-3">
-              {!channelOnly && !skippedChannelConfig && (
-                <Button variant="secondary" size="lg" onClick={() => handleRun(true)}>
+              {showSkipChannelAction && (
+                <Button variant="secondary" size="lg" onClick={() => void handleSkipChannel()}>
                   {t('setup.skipChannelBtn')}
                 </Button>
               )}
-              <Button variant="primary" size="lg" onClick={() => handleRun()}>
+              <Button variant="primary" size="lg" onClick={() => startRun()}>
                 {error ? t('setup.retryBtn') : t('setup.startBtn')}
               </Button>
             </div>

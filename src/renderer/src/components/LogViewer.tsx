@@ -8,11 +8,13 @@ const EXPANDED_HEIGHT = 'h-72'
 export default function LogViewer({
   lines,
   defaultExpanded = false,
-  expandedHeightClass
+  expandedHeightClass,
+  contentClassName
 }: {
   lines: string[]
   defaultExpanded?: boolean
   expandedHeightClass?: string
+  contentClassName?: string
 }): React.JSX.Element {
   const { t } = useTranslation('management')
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -98,7 +100,7 @@ export default function LogViewer({
 
       <div
         ref={scrollContainerRef}
-        className={`p-3 overflow-y-auto overflow-x-hidden font-mono text-[12px] leading-6 text-text-muted whitespace-pre-wrap break-words [overflow-wrap:anywhere] ${expanded ? expandedHeight : COLLAPSED_HEIGHT}`}
+        className={`p-3 overflow-y-auto overflow-x-hidden font-mono text-[12px] leading-6 text-text-muted whitespace-pre-wrap break-words [overflow-wrap:anywhere] ${expanded ? expandedHeight : COLLAPSED_HEIGHT} ${contentClassName ?? ''}`}
       >
         {displayLines.length === 0 && (
           <span className="opacity-40 italic">{t('logViewer.waiting')}</span>

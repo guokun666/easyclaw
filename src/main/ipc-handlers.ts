@@ -18,6 +18,7 @@ import {
   installOpenClawWsl
 } from './services/installer'
 import {
+  cancelActiveOnboard,
   runOnboard,
   readCurrentConfig,
   switchProvider,
@@ -185,6 +186,9 @@ export const registerIpcHandlers = (getWin: () => BrowserWindow | null): void =>
       return result
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
+      if (msg === 'ONBOARD_CANCELLED') {
+        return { success: false, error: msg }
+      }
       try {
         win().webContents.send('install:error', msg)
       } catch { /* window destroyed */ }
@@ -468,6 +472,9 @@ export const registerIpcHandlers = (getWin: () => BrowserWindow | null): void =>
         return { success: true, botUsername: result.botUsername }
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e)
+        if (msg === 'ONBOARD_CANCELLED') {
+          return { success: false, error: msg }
+        }
         try {
           win().webContents.send('install:error', msg)
         } catch {
@@ -477,6 +484,19 @@ export const registerIpcHandlers = (getWin: () => BrowserWindow | null): void =>
       }
     }
   )
+
+  ipcMain.handle('onboard:cancel', () => {
+    const cancelled = cancelActiveOnboard()
+    try {
+      win().webContents.send(
+        'install:error',
+        cancelled ? 'ONBOARD_CANCELLED' : '当前没有正在执行的渠道配置任务'
+      )
+    } catch {
+      /* window destroyed */
+    }
+    return { success: true, cancelled }
+  })
 
   ipcMain.handle('oauth:openai-codex', async () => {
     try {

@@ -327,6 +327,7 @@
     "continueBtn": "继续进入完成页",
     "progressTitle": "当前进度",
     "skipChannelBtn": "跳过渠道，仅完成基础配置",
+    "skippingBtn": "正在跳过渠道...",
     "startBtn": "开始执行配置",
     "runningBtn": "执行中...",
     "retryBtn": "重新执行",
