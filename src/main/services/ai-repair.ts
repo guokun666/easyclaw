@@ -33,6 +33,8 @@ interface RepairAction {
   runtime?: RepairRuntime
 }
 
+type ExecutableRepairAction = RepairAction & { type: Exclude<RepairActionType, 'none'> }
+
 interface RepairPlan {
   summary: string
   actions: RepairAction[]
@@ -43,7 +45,22 @@ interface PendingRepairPlan {
   summary: string
   actions: RepairAction[]
   source: 'ai' | 'fallback'
+  history: RepairHistoryEntry[]
   createdAt: number
+}
+
+interface RepairHistoryEntry {
+  round: number
+  type: Exclude<RepairActionType, 'none'>
+  label: string
+  reason: string
+  command?: string
+  runtime?: RepairRuntime
+  success: boolean
+  changedConfig: boolean
+  restarted: boolean
+  detail: string
+  outputLines: string[]
 }
 
 interface RawOpenClawConfig {
@@ -106,6 +123,7 @@ interface RepairContext {
   larkPluginTrusted: boolean
   larkSecretProviderConfigured: boolean
   larkSecretRefDetected: boolean
+  repairHistory: RepairHistoryEntry[]
 }
 
 export interface AiRepairResult {
@@ -124,6 +142,7 @@ export interface AiRepairResult {
 
 export interface AiRepairRequest {
   logs?: string[]
+  history?: RepairHistoryEntry[]
 }
 
 export interface AiRepairPlanAction {
@@ -154,6 +173,9 @@ const MAX_CONTEXT_LOG_LINES = 120
 const MAX_ACTIONS = 4
 const MAX_AUTO_REPAIR_ROUNDS = 3
 const PENDING_PLAN_TTL_MS = 10 * 60 * 1000
+const REPAIR_HISTORY_TTL_MS = 10 * 60 * 1000
+const MAX_HISTORY_ENTRIES = 12
+const MAX_HISTORY_OUTPUT_LINES = 8
 const REPAIR_ACTION_LABELS: Record<Exclude<RepairActionType, 'none'>, string> = {
   doctor_fix: '执行 doctor fix',
   disable_memory_search: '关闭语义记忆',
@@ -205,6 +227,8 @@ const REPAIR_ACTION_META: Record<
   }
 }
 const pendingRepairPlans = new Map<string, PendingRepairPlan>()
+let recentRepairHistory: RepairHistoryEntry[] = []
+let recentRepairHistoryUpdatedAt = 0
 const MAX_COMMAND_LENGTH = 420
 const LARK_PLUGIN_ID = 'openclaw-lark'
 const LARK_SECRET_PROVIDER = 'lark-secrets'
@@ -257,6 +281,53 @@ const cleanupPendingRepairPlans = (): void => {
 const getDefaultRuntime = (): RepairRuntime => (platform() === 'win32' ? 'wsl' : 'host')
 
 const trimCommand = (value?: string): string => value?.trim() ?? ''
+
+const cloneRepairHistory = (history: RepairHistoryEntry[]): RepairHistoryEntry[] =>
+  history.map((entry) => ({
+    ...entry,
+    outputLines: [...entry.outputLines]
+  }))
+
+const getRepairActionLabel = (action: ExecutableRepairAction): string =>
+  action.type === 'run_command' && action.command
+    ? `执行命令(${action.command})`
+    : REPAIR_ACTION_LABELS[action.type]
+
+const normalizeRepairHistory = (history?: RepairHistoryEntry[]): RepairHistoryEntry[] => {
+  if (!Array.isArray(history)) return []
+
+  return history
+    .filter(
+      (entry): entry is RepairHistoryEntry =>
+        !!entry &&
+        typeof entry === 'object' &&
+        typeof entry.label === 'string' &&
+        typeof entry.reason === 'string' &&
+        typeof entry.detail === 'string' &&
+        typeof entry.round === 'number'
+    )
+    .slice(-MAX_HISTORY_ENTRIES)
+    .map((entry) => ({
+      ...entry,
+      outputLines: Array.isArray(entry.outputLines)
+        ? entry.outputLines.filter((line) => typeof line === 'string').slice(-MAX_HISTORY_OUTPUT_LINES)
+        : []
+    }))
+}
+
+const getRecentRepairHistory = (): RepairHistoryEntry[] => {
+  if (Date.now() - recentRepairHistoryUpdatedAt > REPAIR_HISTORY_TTL_MS) {
+    recentRepairHistory = []
+    return []
+  }
+
+  return cloneRepairHistory(recentRepairHistory)
+}
+
+const storeRecentRepairHistory = (history: RepairHistoryEntry[]): void => {
+  recentRepairHistory = normalizeRepairHistory(history)
+  recentRepairHistoryUpdatedAt = Date.now()
+}
 
 const parseSemver = (value: string): [number, number, number] | null => {
   const match = value.match(/v?(\d+)\.(\d+)\.(\d+)/)
@@ -527,6 +598,7 @@ const readRepairContext = async (request: AiRepairRequest = {}): Promise<RepairC
   const larkPluginTrusted = config?.plugins?.allow?.includes(LARK_PLUGIN_ID) ?? false
   const larkSecretProviderConfigured = Boolean(config?.secrets?.providers?.[LARK_SECRET_PROVIDER])
   const larkSecretRefDetected = hasBrokenLarkSecretRefs(config)
+  const repairHistory = normalizeRepairHistory(request.history)
 
   return {
     provider,
@@ -547,7 +619,8 @@ const readRepairContext = async (request: AiRepairRequest = {}): Promise<RepairC
     feishuEnabled,
     larkPluginTrusted,
     larkSecretProviderConfigured,
-    larkSecretRefDetected
+    larkSecretRefDetected,
+    repairHistory: repairHistory.length > 0 ? repairHistory : getRecentRepairHistory()
   }
 }
 
@@ -727,6 +800,10 @@ const resolveRepairActions = (plan: RepairPlan, context: RepairContext): RepairA
     ).actions.filter((action) => action.type !== 'none')
   }
 
+  actionsToRun = actionsToRun.filter(
+    (action) => !shouldSkipActionFromHistory(action, context.repairHistory)
+  )
+
   return actionsToRun.slice(0, MAX_ACTIONS)
 }
 
@@ -736,6 +813,40 @@ const fingerprintRepairAction = (action: RepairAction): string => {
 
 const fingerprintRepairPlan = (actions: RepairAction[]): string => {
   return actions.map((action) => fingerprintRepairAction(action)).join('||')
+}
+
+const fingerprintRepairHistoryEntry = (entry: RepairHistoryEntry): string => {
+  return [entry.type, trimCommand(entry.command), entry.runtime ?? ''].join('|')
+}
+
+const shouldSkipActionFromHistory = (
+  action: RepairAction,
+  history: RepairHistoryEntry[]
+): boolean => {
+  const fingerprint = fingerprintRepairAction(action)
+
+  for (let i = history.length - 1; i >= 0; i -= 1) {
+    const entry = history[i]
+    if (fingerprintRepairHistoryEntry(entry) !== fingerprint) {
+      continue
+    }
+
+    const stateChangedAfterAttempt = history
+      .slice(i + 1)
+      .some((item) => item.changedConfig || item.restarted)
+
+    if (stateChangedAfterAttempt) {
+      return false
+    }
+
+    if (!entry.success) {
+      return true
+    }
+
+    return !entry.changedConfig && !entry.restarted
+  }
+
+  return false
 }
 
 const describeRepairAction = async (action: RepairAction): Promise<AiRepairPlanAction | null> => {
@@ -759,7 +870,8 @@ const describeRepairAction = async (action: RepairAction): Promise<AiRepairPlanA
 
 const registerPendingPlan = (
   plan: RepairPlan,
-  actions: RepairAction[]
+  actions: RepairAction[],
+  history: RepairHistoryEntry[] = []
 ): Promise<{ planId: string; requiresApproval: boolean; describedActions: AiRepairPlanAction[] }> => {
   cleanupPendingRepairPlans()
 
@@ -772,6 +884,7 @@ const registerPendingPlan = (
       summary: plan.summary,
       actions,
       source: plan.source,
+      history: cloneRepairHistory(history),
       createdAt: Date.now()
     })
 
@@ -920,6 +1033,25 @@ const buildRepairPrompt = (context: RepairContext): string => {
     larkSecretProviderConfigured: context.larkSecretProviderConfigured,
     larkSecretRefDetected: context.larkSecretRefDetected
   }
+  const recentRepairHistory =
+    context.repairHistory.length > 0
+      ? JSON.stringify(
+          context.repairHistory.slice(-MAX_HISTORY_ENTRIES).map((entry) => ({
+            round: entry.round,
+            action: entry.label,
+            reason: entry.reason,
+            command: entry.command,
+            runtime: entry.runtime,
+            success: entry.success,
+            changedConfig: entry.changedConfig,
+            restarted: entry.restarted,
+            detail: entry.detail,
+            outputLines: entry.outputLines
+          })),
+          null,
+          2
+        )
+      : '(none)'
 
   return [
     '你是 OpenClaw Windows 安装器内置的故障修复规划器。',
@@ -932,6 +1064,8 @@ const buildRepairPrompt = (context: RepairContext): string => {
     'run_command 的 command 必须是一条可复制执行的单行命令，不要包含 &&、||、; 或换行。',
     '不要输出删除系统文件、关机重启系统、磁盘格式化、git reset、强制杀进程等危险命令。',
     '如果 Gateway 实际已经在运行，不要误判成失败。',
+    '如果修复历史里某个动作刚刚失败，且没有带来任何配置变化或重启效果，在上下文明显变化前不要再次建议同一动作。',
+    '如果修复历史里某个配置动作已经成功执行，但结果显示本来就无需修改，也不要重复建议同一动作。',
     '如果日志里出现 memorySearch / embedding provider 未就绪，优先 disable_memory_search。',
     '如果 gateway.mode 不是 local，优先 set_gateway_mode_local。',
     '如果飞书插件版本落后于 OpenClaw，或日志显示飞书插件不兼容，优先 sync_feishu_plugin。',
@@ -943,6 +1077,9 @@ const buildRepairPrompt = (context: RepairContext): string => {
     '',
     '上下文摘要：',
     JSON.stringify(summary, null, 2),
+    '',
+    '最近修复历史：',
+    recentRepairHistory,
     '',
     '最近日志：',
     context.recentLogs.length > 0 ? context.recentLogs.join('\n') : '(no logs)'
@@ -1123,18 +1260,82 @@ const inferCommandSideEffects = (
   }
 }
 
+interface RepairActionExecutionResult {
+  changedConfig: boolean
+  restarted: boolean
+  detail: string
+  outputLines: string[]
+}
+
+class RepairActionExecutionError extends Error {
+  changedConfig: boolean
+  restarted: boolean
+  detail: string
+  outputLines: string[]
+
+  constructor(
+    message: string,
+    result: Partial<RepairActionExecutionResult> = {}
+  ) {
+    super(message)
+    this.name = 'RepairActionExecutionError'
+    this.changedConfig = result.changedConfig ?? false
+    this.restarted = result.restarted ?? false
+    this.detail = result.detail ?? message
+    this.outputLines = result.outputLines ?? []
+  }
+}
+
+const getActionExecutionResult = (error: unknown): RepairActionExecutionResult => {
+  if (error instanceof RepairActionExecutionError) {
+    return {
+      changedConfig: error.changedConfig,
+      restarted: error.restarted,
+      detail: error.detail,
+      outputLines: [...error.outputLines]
+    }
+  }
+
+  return {
+    changedConfig: false,
+    restarted: false,
+    detail: error instanceof Error ? error.message : String(error),
+    outputLines: []
+  }
+}
+
+const buildRepairHistoryEntry = (
+  round: number,
+  action: ExecutableRepairAction,
+  success: boolean,
+  result: RepairActionExecutionResult
+): RepairHistoryEntry => ({
+  round,
+  type: action.type,
+  label: getRepairActionLabel(action),
+  reason: action.reason,
+  command: trimCommand(action.command) || undefined,
+  runtime: action.runtime,
+  success,
+  changedConfig: result.changedConfig,
+  restarted: result.restarted,
+  detail: result.detail,
+  outputLines: result.outputLines.slice(-MAX_HISTORY_OUTPUT_LINES)
+})
+
 const executeCustomCommand = async (
   win: BrowserWindow,
   action: RepairAction
-): Promise<{ changedConfig: boolean; restarted: boolean }> => {
+): Promise<RepairActionExecutionResult> => {
   const command = trimCommand(action.command)
   const validation = validateCustomCommand(command)
   if (!validation.ok) {
-    throw new Error(validation.error)
+    throw new RepairActionExecutionError(validation.error)
   }
 
   const runtime = action.runtime ?? getDefaultRuntime()
   const isWindows = platform() === 'win32'
+  const sideEffects = inferCommandSideEffects(command)
   const cmd =
     runtime === 'wsl' && isWindows
       ? 'wsl'
@@ -1146,10 +1347,21 @@ const executeCustomCommand = async (
       ? await buildWslBashArgs(command)
       : isWindows
         ? ['-NoProfile', '-Command', command]
-        : ['-lc', command]
+      : ['-lc', command]
   const env = runtime === 'wsl' && isWindows ? process.env : getPathEnv()
-  const stdoutEmitter = await createTerminalLineEmitter((msg) => emitProgress(win, msg))
-  const stderrEmitter = await createTerminalLineEmitter((msg) => emitProgress(win, msg))
+  const outputLines: string[] = []
+  const captureLine = (msg: string): void => {
+    const line = msg.trim()
+    if (line) {
+      outputLines.push(line)
+      if (outputLines.length > MAX_HISTORY_OUTPUT_LINES) {
+        outputLines.shift()
+      }
+    }
+    emitProgress(win, msg)
+  }
+  const stdoutEmitter = await createTerminalLineEmitter(captureLine)
+  const stderrEmitter = await createTerminalLineEmitter(captureLine)
 
   emitProgress(win, `[AI修复] 正在执行命令：${command}`)
 
@@ -1168,66 +1380,98 @@ const executeCustomCommand = async (
         resolve()
         return
       }
-      reject(new Error(`命令执行失败（exit ${code}）`))
+      reject(
+        new RepairActionExecutionError(`命令执行失败（exit ${code}）`, {
+          ...sideEffects,
+          detail: `命令执行失败（exit ${code}）：${command}`,
+          outputLines
+        })
+      )
     })
     child.on('error', (error) => {
       stdoutEmitter.flush()
       stderrEmitter.flush()
-      reject(error)
+      reject(
+        new RepairActionExecutionError(error instanceof Error ? error.message : String(error), {
+          ...sideEffects,
+          detail: `命令执行异常：${command}`,
+          outputLines
+        })
+      )
     })
   })
 
-  const sideEffects = inferCommandSideEffects(command)
-  return sideEffects
+  return {
+    ...sideEffects,
+    detail: `命令执行完成：${command}`,
+    outputLines
+  }
 }
 
 const executeRepairAction = async (
   win: BrowserWindow,
   action: RepairAction
-): Promise<{ changedConfig: boolean; restarted: boolean }> => {
+): Promise<RepairActionExecutionResult> => {
   switch (action.type) {
     case 'none':
       emitProgress(win, `[AI修复] 跳过自动动作：${action.reason}`)
-      return { changedConfig: false, restarted: false }
+      return {
+        changedConfig: false,
+        restarted: false,
+        detail: action.reason,
+        outputLines: []
+      }
     case 'disable_memory_search': {
       emitProgress(win, `[AI修复] 正在关闭语义记忆：${action.reason}`)
       const changedConfig = await disableMemorySearch()
+      const detail = changedConfig
+        ? '已写入 memorySearch.enabled=false。'
+        : '语义记忆本来就是关闭状态。'
       emitProgress(
         win,
         changedConfig ? '[AI修复] 已写入 memorySearch.enabled=false。' : '[AI修复] 语义记忆本来就是关闭状态。'
       )
-      return { changedConfig, restarted: false }
+      return { changedConfig, restarted: false, detail, outputLines: [] }
     }
     case 'set_gateway_mode_local': {
       emitProgress(win, `[AI修复] 正在修正 Gateway 模式：${action.reason}`)
       const changedConfig = await setGatewayModeLocal()
+      const detail = changedConfig
+        ? '已写入 gateway.mode=local。'
+        : 'Gateway 模式已经是 local。'
       emitProgress(
         win,
         changedConfig ? '[AI修复] 已写入 gateway.mode=local。' : '[AI修复] Gateway 模式已经是 local。'
       )
-      return { changedConfig, restarted: false }
+      return { changedConfig, restarted: false, detail, outputLines: [] }
     }
     case 'sync_feishu_plugin': {
       emitProgress(win, `[AI修复] 正在同步飞书插件：${action.reason}`)
       const changedConfig = await ensureFeishuPluginCompatible((msg) => emitProgress(win, msg))
+      const detail = changedConfig
+        ? '飞书插件同步完成。'
+        : '飞书插件已经是兼容版本，未执行额外同步。'
       emitProgress(
         win,
         changedConfig
           ? '[AI修复] 飞书插件同步完成。'
           : '[AI修复] 飞书插件已经是兼容版本，未执行额外同步。'
       )
-      return { changedConfig, restarted: false }
+      return { changedConfig, restarted: false, detail, outputLines: [] }
     }
     case 'trust_lark_plugin': {
       emitProgress(win, `[AI修复] 正在补充飞书插件信任：${action.reason}`)
       const changedConfig = await trustLarkPlugin()
+      const detail = changedConfig
+        ? '已将 openclaw-lark 加入 plugins.allow。'
+        : 'openclaw-lark 已经在 plugins.allow 中。'
       emitProgress(
         win,
         changedConfig
           ? '[AI修复] 已将 openclaw-lark 加入 plugins.allow。'
           : '[AI修复] openclaw-lark 已经在 plugins.allow 中。'
       )
-      return { changedConfig, restarted: false }
+      return { changedConfig, restarted: false, detail, outputLines: [] }
     }
     case 'disable_feishu_channel': {
       emitProgress(win, `[AI修复] 正在停用异常飞书渠道：${action.reason}`)
@@ -1235,27 +1479,40 @@ const executeRepairAction = async (
         emitProgress(win, msg)
       )
       const changedConfig = autoDisabledByProvider || (await disableFeishuChannel())
+      const detail = changedConfig
+        ? '已停用当前异常的飞书渠道配置。'
+        : '飞书渠道已处于停用状态。'
       emitProgress(
         win,
         changedConfig
           ? '[AI修复] 已停用当前异常的飞书渠道配置。'
           : '[AI修复] 飞书渠道已处于停用状态。'
       )
-      return { changedConfig, restarted: false }
+      return { changedConfig, restarted: false, detail, outputLines: [] }
     }
     case 'doctor_fix':
       emitProgress(win, `[AI修复] 正在执行 doctor fix：${action.reason}`)
       if (!(await runDoctorFix(win)).success) {
-        throw new Error('doctor fix 执行失败')
+        throw new RepairActionExecutionError('doctor fix 执行失败')
       }
-      return { changedConfig: false, restarted: false }
+      return {
+        changedConfig: false,
+        restarted: false,
+        detail: 'doctor fix 执行完成。',
+        outputLines: []
+      }
     case 'restart_gateway': {
       emitProgress(win, `[AI修复] 正在重启 Gateway：${action.reason}`)
       const result = await restartGateway()
       if (result.status !== 'started') {
-        throw new Error(result.error || 'Gateway 重启失败')
+        throw new RepairActionExecutionError(result.error || 'Gateway 重启失败')
       }
-      return { changedConfig: false, restarted: true }
+      return {
+        changedConfig: false,
+        restarted: true,
+        detail: 'Gateway 重启完成。',
+        outputLines: []
+      }
     }
     case 'run_command':
       emitProgress(win, `[AI修复] 正在执行确认后的命令：${action.reason}`)
@@ -1300,7 +1557,11 @@ export const planAiRepair = async (
   )
 
   const actionsToRun = resolveRepairActions(plan, initialContext)
-  const { planId, requiresApproval, describedActions } = await registerPendingPlan(plan, actionsToRun)
+  const { planId, requiresApproval, describedActions } = await registerPendingPlan(
+    plan,
+    actionsToRun,
+    initialContext.repairHistory
+  )
 
   if (requiresApproval) {
     emitProgress(win, '[AI修复] 已生成高影响修复计划，等待你确认后再执行。')
@@ -1330,6 +1591,7 @@ export const executeAiRepairPlan = async (
   pendingRepairPlans.delete(request.planId)
   const executedLabels: string[] = []
   const seenPlanFingerprints = new Set<string>()
+  const repairHistory = cloneRepairHistory(pendingPlan.history)
   let currentPlan: RepairPlan = {
     summary: pendingPlan.summary,
     actions: pendingPlan.actions,
@@ -1379,30 +1641,69 @@ export const executeAiRepairPlan = async (
 
     let changedConfigInRound = false
     let restartedInRound = false
+    const roundNumber = roundsCompleted + 1
 
-    emitProgress(win, `[AI修复] 开始执行第 ${roundsCompleted + 1} 轮修复...`)
+    emitProgress(win, `[AI修复] 开始执行第 ${roundNumber} 轮修复...`)
 
     for (const action of actionsToRun) {
-      const result = await executeRepairAction(win, action)
-      if (action.type !== 'none') {
-        executedLabels.push(
-          action.type === 'run_command' && action.command
-            ? `执行命令(${action.command})`
-            : REPAIR_ACTION_LABELS[action.type]
-        )
+      try {
+        const result = await executeRepairAction(win, action)
+        if (action.type !== 'none') {
+          executedLabels.push(getRepairActionLabel(action as ExecutableRepairAction))
+          repairHistory.push(
+            buildRepairHistoryEntry(roundNumber, action as ExecutableRepairAction, true, result)
+          )
+          storeRecentRepairHistory(repairHistory)
+        }
+        changedConfigInRound = changedConfigInRound || result.changedConfig
+        restartedInRound = restartedInRound || result.restarted
+      } catch (error) {
+        if (action.type !== 'none') {
+          repairHistory.push(
+            buildRepairHistoryEntry(
+              roundNumber,
+              action as ExecutableRepairAction,
+              false,
+              getActionExecutionResult(error)
+            )
+          )
+          storeRecentRepairHistory(repairHistory)
+        }
+        throw error
       }
-      changedConfigInRound = changedConfigInRound || result.changedConfig
-      restartedInRound = restartedInRound || result.restarted
     }
 
     if (changedConfigInRound && !restartedInRound) {
       emitProgress(win, '[AI修复] 本轮配置已更新，补充执行一次 Gateway 重启...')
-      const restartResult = await restartGateway()
-      if (restartResult.status !== 'started') {
-        throw new Error(restartResult.error || '配置更新后重启 Gateway 失败')
+      const autoRestartAction: ExecutableRepairAction = {
+        type: 'restart_gateway',
+        reason: '本轮配置已更新，需要重启 Gateway 让修改生效。'
       }
-      executedLabels.push(REPAIR_ACTION_LABELS.restart_gateway)
-      restartedInRound = true
+
+      try {
+        const restartResult = await restartGateway()
+        if (restartResult.status !== 'started') {
+          throw new RepairActionExecutionError(restartResult.error || '配置更新后重启 Gateway 失败')
+        }
+        const restartExecutionResult: RepairActionExecutionResult = {
+          changedConfig: false,
+          restarted: true,
+          detail: '配置更新后已补充执行 Gateway 重启。',
+          outputLines: []
+        }
+        executedLabels.push(getRepairActionLabel(autoRestartAction))
+        repairHistory.push(
+          buildRepairHistoryEntry(roundNumber, autoRestartAction, true, restartExecutionResult)
+        )
+        storeRecentRepairHistory(repairHistory)
+        restartedInRound = true
+      } catch (error) {
+        repairHistory.push(
+          buildRepairHistoryEntry(roundNumber, autoRestartAction, false, getActionExecutionResult(error))
+        )
+        storeRecentRepairHistory(repairHistory)
+        throw error
+      }
     }
 
     roundsCompleted += 1
@@ -1412,7 +1713,7 @@ export const executeAiRepairPlan = async (
     }
 
     emitProgress(win, `[AI修复] 第 ${roundsCompleted} 轮执行完成，正在重新分析当前状态...`)
-    const nextContext = await readRepairContext()
+    const nextContext = await readRepairContext({ history: repairHistory })
     const { plan: nextPlan } = await buildPlanForContext(nextContext)
     const nextActions = resolveRepairActions(nextPlan, nextContext)
 
@@ -1442,7 +1743,11 @@ export const executeAiRepairPlan = async (
       }
     }
 
-    const { planId, requiresApproval, describedActions } = await registerPendingPlan(nextPlan, nextActions)
+    const { planId, requiresApproval, describedActions } = await registerPendingPlan(
+      nextPlan,
+      nextActions,
+      repairHistory
+    )
     if (requiresApproval) {
       emitProgress(win, `[AI修复] 第 ${roundsCompleted + 1} 轮包含高影响动作，等待你确认后继续。`)
       return {

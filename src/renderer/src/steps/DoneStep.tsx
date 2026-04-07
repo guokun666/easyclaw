@@ -63,6 +63,7 @@ export default function DoneStep({
   const [updateLogs, setUpdateLogs] = useState<string[]>([])
   const updateCheckedRef = useRef(false)
   const expectedStopRef = useRef(false)
+  const autoStartAttemptedRef = useRef(false)
   const shouldRenderLogs = status === 'starting' || logs.length > 0 || hasError
 
   const tRef = useRef<TFunction>(t)
@@ -79,6 +80,22 @@ export default function DoneStep({
       expectedStopRef.current = false
     }
     return nextStatus
+  }, [])
+
+  const waitForGatewayRunning = useCallback(async (): Promise<'running' | 'stopped'> => {
+    for (let i = 0; i < 15; i += 1) {
+      const nextStatus = await window.electronAPI.gateway.status()
+      if (nextStatus === 'running') {
+        setStatus('running')
+        setHasError(false)
+        expectedStopRef.current = false
+        return 'running'
+      }
+      await new Promise((resolve) => setTimeout(resolve, 2000))
+    }
+
+    setStatus('stopped')
+    return 'stopped'
   }, [])
 
   // Check for OpenClaw updates
@@ -239,30 +256,50 @@ export default function DoneStep({
 
     let cancelled = false
 
-    const poll = async (): Promise<void> => {
-      for (let i = 0; i < 15; i++) {
+    const ensureGateway = async (): Promise<void> => {
+      if (cancelled) return
+
+      const currentStatus = await window.electronAPI.gateway.status()
+      if (cancelled) return
+
+      if (currentStatus === 'running') {
+        setStatus('running')
+        setHasError(false)
+        return
+      }
+
+      if (!autoStartAttemptedRef.current) {
+        autoStartAttemptedRef.current = true
+        setStatus('starting')
+        setHasError(false)
+        appendLogOnce(tRef.current('done.autoStartAttemptLog'))
+
+        const result = await window.electronAPI.gateway.start()
         if (cancelled) return
-        const s = await window.electronAPI.gateway.status()
+
+        if (!result.success && result.error) {
+          setLogs((prev) => [...prev, tRef.current('done.errorPrefix', { msg: result.error })])
+        }
+
+        const nextStatus = await waitForGatewayRunning()
         if (cancelled) return
-        if (s === 'running') {
-          setStatus('running')
-          setHasError(false)
+        if (nextStatus === 'running') {
           return
         }
-        await new Promise((r) => setTimeout(r, 2000))
       }
+
       if (cancelled) return
       setStatus('stopped')
       setHasError(true)
       setShowLogs(true)
       appendLogOnce(tRef.current('done.startNotDetectedLog'))
     }
-    poll()
+    void ensureGateway()
 
     return () => {
       cancelled = true
     }
-  }, [appendLogOnce, configReady, syncGatewayStatus])
+  }, [appendLogOnce, configReady, waitForGatewayRunning])
 
   const handleStop = async (): Promise<void> => {
     expectedStopRef.current = true
