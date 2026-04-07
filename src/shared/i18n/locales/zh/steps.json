@@ -84,6 +84,12 @@
     "advancedTitle": "高级安装源",
     "advancedDesc": "可选：切换官方源、npmmirror 或腾讯云镜像。auto 会自动按可用性依次尝试。",
     "sourceModeLabel": "下载/更新策略",
+    "versionLabel": "OpenClaw 版本",
+    "versionHint": "可选择安装的 OpenClaw 版本。推荐版本会优先保证稳定性。",
+    "versionLoading": "正在从当前安装源拉取可用版本...",
+    "versionLoadError": "可用版本拉取失败，已保留当前已知版本列表。",
+    "versionLatestBadge": "最新",
+    "versionRecommendedBadge": "推荐",
     "sourceMode": {
       "auto": {
         "label": "自动选择",
@@ -320,6 +326,7 @@
     "pausedBody": "当前不会调用 openclaw、npx 或外部 Terminal。先确认点击“下一步”后页面能稳定跳转到这里，再继续恢复执行逻辑。",
     "continueBtn": "继续进入完成页",
     "progressTitle": "当前进度",
+    "skipChannelBtn": "跳过渠道，仅完成基础配置",
     "startBtn": "开始执行配置",
     "runningBtn": "执行中...",
     "retryBtn": "重新执行",

@@ -21,8 +21,10 @@ import {
   getNodeWslSetupCandidates,
   getInstallSourceSettingsFromEnv,
   getNpmCommandEnv,
+  normalizeOpenclawVersion,
   getOpenclawPackageCandidates
 } from './install-sources'
+import { ensureFeishuPluginCompatible } from './onboarder'
 
 type ProgressCallback = (msg: string) => void
 
@@ -591,16 +593,20 @@ export const installNodeWsl = async (win: BrowserWindow): Promise<void> => {
 }
 
 /** Install openclaw globally inside WSL Ubuntu */
-export const installOpenClawWsl = async (win: BrowserWindow): Promise<void> => {
+export const installOpenClawWsl = async (
+  win: BrowserWindow,
+  version?: string
+): Promise<void> => {
   const log = (msg: string): void => sendProgress(win, msg)
+  const targetVersion = normalizeOpenclawVersion(version)
   sendStatus(win, 10, t('installer.ocWslInstalling'))
-  log(t('installer.ocWslInstalling'))
+  log(t('installer.ocWslInstalling', { version: targetVersion }))
 
   await runStepsWithFallback(
-    getOpenclawPackageCandidates().map((candidate) => ({
+    getOpenclawPackageCandidates(targetVersion).map((candidate) => ({
       label: candidate.label,
       run: () => {
-        sendStatus(win, 55, t('installer.ocWslInstalling'), candidate.label)
+        sendStatus(win, 55, t('installer.ocWslInstalling', { version: targetVersion }), candidate.label)
         return runInWslForInstall(
           `npm_config_registry=${candidate.registry} npm install -g ${candidate.packageName}`,
           120000
@@ -610,6 +616,7 @@ export const installOpenClawWsl = async (win: BrowserWindow): Promise<void> => {
     log
   )
 
+  await ensureFeishuPluginCompatible(log)
   sendStatus(win, 100, t('installer.ocWslDone'))
   log(t('installer.ocWslDone'))
 }
@@ -727,20 +734,24 @@ const ensureXcodeCli = async (log: ProgressCallback): Promise<void> => {
   throw new Error(t('installer.xcodeTimeout'))
 }
 
-export const installOpenClaw = async (win: BrowserWindow): Promise<void> => {
+export const installOpenClaw = async (
+  win: BrowserWindow,
+  version?: string
+): Promise<void> => {
   const log = (msg: string): void => sendProgress(win, msg)
+  const targetVersion = normalizeOpenclawVersion(version)
   sendStatus(win, 5, t('installer.ocInstalling'))
-  log(t('installer.ocInstalling'))
+  log(t('installer.ocInstalling', { version: targetVersion }))
 
   await ensureXcodeCli(log)
   sendStatus(win, 20, t('installer.ocInstalling'))
   const npmEnv = getManagedNpmEnv(getPathEnv())
 
   await runStepsWithFallback(
-    getOpenclawPackageCandidates().map((candidate) => ({
+    getOpenclawPackageCandidates(targetVersion).map((candidate) => ({
       label: candidate.label,
       run: () => {
-        sendStatus(win, 55, t('installer.ocInstalling'), candidate.label)
+        sendStatus(win, 55, t('installer.ocInstalling', { version: targetVersion }), candidate.label)
         return runWithLog('npm', ['install', '-g', candidate.packageName], log, {
           env: getNpmCommandEnv(candidate.registry, npmEnv)
         })
@@ -768,6 +779,7 @@ export const installOpenClaw = async (win: BrowserWindow): Promise<void> => {
     }
   }
 
+  await ensureFeishuPluginCompatible(log)
   sendStatus(win, 100, t('installer.ocDone'))
   log(t('installer.ocDone'))
 }

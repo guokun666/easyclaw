@@ -29,15 +29,17 @@ const electronAPI = {
   settings: {
     getInstallSources: (): Promise<{
       sourceMode: 'auto' | 'official' | 'npmmirror' | 'tencent'
+      openclawVersion: string
     }> => ipcRenderer.invoke('settings:get-install-sources'),
     setInstallSources: (patch: {
       sourceMode?: 'auto' | 'official' | 'npmmirror' | 'tencent'
+      openclawVersion?: string
     }): Promise<{ success: boolean }> => ipcRenderer.invoke('settings:set-install-sources', patch)
   },
   install: {
     node: (): Promise<{ success: boolean; error?: string }> => ipcRenderer.invoke('install:node'),
-    openclaw: (): Promise<{ success: boolean; error?: string }> =>
-      ipcRenderer.invoke('install:openclaw'),
+    openclaw: (opts?: { version?: string }): Promise<{ success: boolean; error?: string }> =>
+      ipcRenderer.invoke('install:openclaw', opts),
     cancel: (): Promise<{ success: boolean; cancelled: boolean }> =>
       ipcRenderer.invoke('install:cancel'),
     onStatus: (
@@ -147,7 +149,12 @@ const electronAPI = {
           | 'doctor_fix'
           | 'disable_memory_search'
           | 'set_gateway_mode_local'
+          | 'sync_feishu_plugin'
+          | 'trust_lark_plugin'
+          | 'disable_feishu_channel'
           | 'restart_gateway'
+          | 'reinstall_openclaw_current'
+          | 'install_openclaw_recommended'
           | 'run_command'
         label: string
         reason: string
@@ -177,7 +184,12 @@ const electronAPI = {
             | 'doctor_fix'
             | 'disable_memory_search'
             | 'set_gateway_mode_local'
+            | 'sync_feishu_plugin'
+            | 'trust_lark_plugin'
+            | 'disable_feishu_channel'
             | 'restart_gateway'
+            | 'reinstall_openclaw_current'
+            | 'install_openclaw_recommended'
             | 'run_command'
           label: string
           reason: string
@@ -303,6 +315,14 @@ const electronAPI = {
   openclaw: {
     checkUpdate: (): Promise<{ currentVersion: string | null; latestVersion: string | null }> =>
       ipcRenderer.invoke('openclaw:check-update'),
+    listVersions: (opts?: {
+      sourceMode?: 'auto' | 'official' | 'npmmirror' | 'tencent'
+    }): Promise<{
+      success: boolean
+      versions: string[]
+      latestVersion: string | null
+      recommendedVersion: string
+    }> => ipcRenderer.invoke('openclaw:list-versions', opts),
     dashboard: (): Promise<{ success: boolean; error?: string }> =>
       ipcRenderer.invoke('openclaw:dashboard'),
     updateChannel: (

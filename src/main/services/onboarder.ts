@@ -8,6 +8,11 @@ import { runInWsl, readWslFile, writeWslFile, buildWslBashArgs } from './wsl-uti
 import { getManagedNpmEnv } from './npm-paths'
 import { createTerminalLineEmitter } from './terminal-output'
 import { t } from '../../shared/i18n/main'
+import {
+  getCompatibleLarkPluginPackageCandidates,
+  getCompatibleLarkPluginPackageSpec,
+  OPENCLAW_RECOMMENDED_VERSION
+} from './install-sources'
 import type {
   CurrentMemorySearchConfig,
   MemorySearchConfigPayload,
@@ -320,7 +325,6 @@ const getConfigPath = (): string => join(homedir(), '.openclaw', 'openclaw.json'
 
 const LARK_SECRET_PROVIDER = 'lark-secrets'
 const LARK_PLUGIN_ID = 'openclaw-lark'
-const LARK_PLUGIN_PACKAGE = '@larksuite/openclaw-lark-tools@latest'
 
 const readOpenClawConfig = async (): Promise<Record<string, unknown> | null> => {
   if (platform() === 'win32') {
@@ -446,25 +450,17 @@ const hasFeishuPluginConfig = (config: Record<string, unknown>): boolean => {
     channels?.feishu && typeof channels.feishu === 'object'
       ? (channels.feishu as Record<string, unknown>)
       : undefined
-  const pluginEntries =
-    typed.plugins && typeof typed.plugins === 'object'
-      ? ((typed.plugins as Record<string, unknown>).entries as Record<string, unknown> | undefined)
-      : undefined
-  const pluginInstalls =
-    typed.plugins && typeof typed.plugins === 'object'
-      ? ((typed.plugins as Record<string, unknown>).installs as Record<string, unknown> | undefined)
-      : undefined
+
+  if (!feishu) return false
 
   return Boolean(
-    pluginInstalls?.[LARK_PLUGIN_ID] ||
-      (pluginEntries?.feishu &&
-        typeof pluginEntries.feishu === 'object' &&
-        (pluginEntries.feishu as Record<string, unknown>).enabled === true) ||
-      (feishu &&
-        ((feishu.enabled === true) ||
-          typeof feishu.appId === 'string' ||
-          typeof feishu.appSecret === 'string' ||
-          (feishu.accounts && typeof feishu.accounts === 'object')))
+    feishu.enabled === true ||
+      typeof feishu.appId === 'string' ||
+      typeof feishu.appSecret === 'string' ||
+      typeof feishu.streaming === 'boolean' ||
+      (feishu.accounts &&
+        typeof feishu.accounts === 'object' &&
+        Object.keys(feishu.accounts as Record<string, unknown>).length > 0)
   )
 }
 
@@ -478,7 +474,10 @@ export const ensureFeishuPluginCompatible = async (
   if (!openclawVersion) return false
 
   const pluginVersion = await getInstalledLarkPluginVersion(config)
-  if (pluginVersion && compareSemanticVersions(pluginVersion, openclawVersion) >= 0) {
+  const compatiblePackageSpec = await getCompatibleLarkPluginPackageSpec(openclawVersion)
+  const compatibleVersion = compatiblePackageSpec.split('@').pop() ?? openclawVersion
+
+  if (pluginVersion && compareSemanticVersions(pluginVersion, compatibleVersion) === 0) {
     return false
   }
 
@@ -488,18 +487,13 @@ export const ensureFeishuPluginCompatible = async (
   onLog?.(
     t('onboarder.feishuPluginSyncing', {
       openclawVersion,
-      pluginVersion: pluginVersion ?? 'unknown'
+      pluginVersion: pluginVersion ?? 'unknown',
+      targetVersion: compatibleVersion
     })
   )
 
   try {
-    const runCmd = createRunCmd()
-    await runChannelCommand(
-      runCmd,
-      onLog ?? (() => {}),
-      platform() === 'win32' ? 'npx' : resolvePreferredBin('npx'),
-      ['-y', LARK_PLUGIN_PACKAGE, 'install']
-    )
+    await installCompatibleLarkPlugin(openclawVersion, onLog)
     onLog?.(t('onboarder.feishuPluginSynced', { openclawVersion }))
     return true
   } catch (error) {
@@ -507,6 +501,34 @@ export const ensureFeishuPluginCompatible = async (
     onLog?.(t('onboarder.feishuPluginSyncFailed', { message }))
     return false
   }
+}
+
+const installCompatibleLarkPlugin = async (
+  openclawVersion: string,
+  onLog: (msg: string) => void = () => {}
+): Promise<void> => {
+  const runCmd = createRunCmd()
+  let lastError: Error | null = null
+
+  for (const candidate of await getCompatibleLarkPluginPackageCandidates(openclawVersion)) {
+    try {
+      onLog(`Plugin source candidate: ${candidate.label}`)
+      await runChannelCommand(runCmd, onLog, 'env', [
+        `npm_config_registry=${candidate.registry}`,
+        platform() === 'win32' ? 'npx' : resolvePreferredBin('npx'),
+        '-y',
+        candidate.packageName,
+        'install'
+      ])
+      onLog(`Plugin source selected: ${candidate.label}`)
+      return
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error))
+      onLog(`Plugin source failed: ${candidate.label} (${lastError.message})`)
+    }
+  }
+
+  throw lastError ?? new Error('All compatible plugin sources failed')
 }
 
 const isLarkSecretRefString = (value: string): boolean =>
@@ -1099,9 +1121,12 @@ const runOneClickChannelSetup = async (
   await ensureCommandAvailable('npm')
   await ensureCommandAvailable('npx')
   onLog(t('onboarder.channelOneClick.feishu'))
+  const installedOpenclawVersion =
+    (await getInstalledOpenClawVersion()) ?? OPENCLAW_RECOMMENDED_VERSION
+  const compatibleLarkPluginPackage = await getCompatibleLarkPluginPackageSpec(installedOpenclawVersion)
   if (platform() === 'darwin') {
     const commands = [
-      `${shellEscape(resolvePreferredBin('npx'))} -y ${LARK_PLUGIN_PACKAGE} install`,
+      `${shellEscape(resolvePreferredBin('npx'))} -y ${compatibleLarkPluginPackage} install`,
       `test -f ${shellEscape(getConfigPath())}`,
       `${shellEscape(ocBin)} config set channels.feishu.streaming true`,
       `${shellEscape(ocBin)} gateway restart`,
@@ -1112,12 +1137,7 @@ const runOneClickChannelSetup = async (
     onLog(t('onboarder.channelDone.feishu'))
     return
   }
-  await runChannelCommand(
-    runCmd,
-    onLog,
-    platform() === 'win32' ? 'npx' : resolvePreferredBin('npx'),
-    ['-y', LARK_PLUGIN_PACKAGE, 'install']
-  )
+  await installCompatibleLarkPlugin(installedOpenclawVersion, onLog)
 
   if (!(await hasOpenClawConfig())) {
     throw new Error(t('onboarder.openclawNotInitialized'))

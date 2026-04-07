@@ -9,7 +9,13 @@ import { checkPort, runDoctorFix } from './troubleshooter'
 import { createTerminalLineEmitter } from './terminal-output'
 import { buildWslBashArgs, readWslFile, runInWsl, writeWslFile } from './wsl-utils'
 import { getPathEnv, resolvePreferredBin } from './path-utils'
+import { installOpenClaw, installOpenClawWsl } from './installer'
 import { ensureFeishuPluginCompatible, ensureFeishuSecretProviderReady } from './onboarder'
+import {
+  getCompatibleLarkPluginPackageSpec,
+  getLatestPackageVersion,
+  OPENCLAW_RECOMMENDED_VERSION
+} from './install-sources'
 
 type RepairActionType =
   | 'doctor_fix'
@@ -19,6 +25,8 @@ type RepairActionType =
   | 'trust_lark_plugin'
   | 'disable_feishu_channel'
   | 'restart_gateway'
+  | 'reinstall_openclaw_current'
+  | 'install_openclaw_recommended'
   | 'run_command'
   | 'none'
 
@@ -117,6 +125,8 @@ interface RepairContext {
   portInUse: boolean
   recentLogs: string[]
   openclawVersion?: string
+  latestOpenclawVersion?: string
+  recommendedOpenclawVersion: string
   feishuPluginVersion?: string
   feishuConfigured: boolean
   feishuEnabled: boolean
@@ -184,6 +194,8 @@ const REPAIR_ACTION_LABELS: Record<Exclude<RepairActionType, 'none'>, string> = 
   trust_lark_plugin: '信任飞书插件',
   disable_feishu_channel: '停用飞书渠道',
   restart_gateway: '重启 Gateway',
+  reinstall_openclaw_current: '重装当前 OpenClaw',
+  install_openclaw_recommended: '安装推荐稳定版 OpenClaw',
   run_command: '执行命令'
 }
 const REPAIR_ACTION_META: Record<
@@ -220,6 +232,14 @@ const REPAIR_ACTION_META: Record<
   restart_gateway: {
     effect: '重新拉起 Gateway，让刚修过的配置立即生效。',
     approval: 'auto'
+  },
+  reinstall_openclaw_current: {
+    effect: '重新安装当前版本的 OpenClaw，并同步兼容插件，修复半截安装或依赖缺失。',
+    approval: 'confirm'
+  },
+  install_openclaw_recommended: {
+    effect: '恢复安装器内置推荐的稳定版 OpenClaw，并同步兼容插件，适合当前安装已损坏时恢复。',
+    approval: 'confirm'
   },
   run_command: {
     effect: '按用户确认后的命令执行更细粒度的诊断或修复。',
@@ -401,14 +421,24 @@ const buildRuntimeHint = (runtime: RepairRuntime): string => {
 const buildCommandPreview = async (
   action: RepairAction
 ): Promise<{ commandPreview: string; commandRuntime: string }> => {
+  const currentOpenclawVersion = await getInstalledOpenClawVersion()
+  const compatibleLarkPluginPackage =
+    action.type === 'sync_feishu_plugin'
+      ? await getCompatibleLarkPluginPackageSpec(
+          currentOpenclawVersion ?? OPENCLAW_RECOMMENDED_VERSION
+        ).catch(() => '@larksuite/openclaw-lark-tools@<compatible-version>')
+      : null
+
   const scriptMap: Record<Exclude<RepairActionType, 'none'>, string> = {
     doctor_fix: 'openclaw doctor --fix',
     disable_memory_search: 'openclaw config set agents.defaults.memorySearch.enabled false',
     set_gateway_mode_local: 'openclaw config set gateway.mode local',
-    sync_feishu_plugin: 'npx -y @larksuite/openclaw-lark-tools@latest install',
+    sync_feishu_plugin: `npx -y ${compatibleLarkPluginPackage ?? '@larksuite/openclaw-lark-tools@<compatible-version>'} install`,
     trust_lark_plugin: 'openclaw config set plugins.allow ["openclaw-lark"]',
     disable_feishu_channel: 'openclaw config set channels.feishu.enabled false',
     restart_gateway: 'openclaw gateway restart',
+    reinstall_openclaw_current: `npm install -g openclaw@${currentOpenclawVersion ?? '<current-version>'}`,
+    install_openclaw_recommended: `npm install -g openclaw@${OPENCLAW_RECOMMENDED_VERSION}`,
     run_command: trimCommand(action.command)
   }
 
@@ -588,6 +618,7 @@ const readRepairContext = async (request: AiRepairRequest = {}): Promise<RepairC
   const modelId = config?.agents?.defaults?.model?.primary
   const provider = modelId?.split('/')[0]
   const openclawVersion = await getInstalledOpenClawVersion()
+  const latestOpenclawVersion = await getLatestPackageVersion('openclaw').catch(() => null)
   const feishuPluginVersion = await getInstalledLarkPluginVersion(config)
   const recentLogFileLines = await readRecentGatewayLogLines()
   const recentLogs = [...normalizeRecentLogs(request.logs), ...recentLogFileLines].slice(
@@ -614,6 +645,8 @@ const readRepairContext = async (request: AiRepairRequest = {}): Promise<RepairC
     portInUse: inUse,
     recentLogs,
     openclawVersion,
+    latestOpenclawVersion: latestOpenclawVersion ?? undefined,
+    recommendedOpenclawVersion: OPENCLAW_RECOMMENDED_VERSION,
     feishuPluginVersion,
     feishuConfigured,
     feishuEnabled,
@@ -655,6 +688,8 @@ const parsePlanFromText = (rawText: string): RepairPlan | null => {
         type !== 'trust_lark_plugin' &&
         type !== 'disable_feishu_channel' &&
         type !== 'restart_gateway' &&
+        type !== 'reinstall_openclaw_current' &&
+        type !== 'install_openclaw_recommended' &&
         type !== 'run_command' &&
         type !== 'none'
       ) {
@@ -703,6 +738,11 @@ const buildFallbackPlan = (context: RepairContext, reason: string): RepairPlan =
   const actions: RepairAction[] = []
   const recentLogText = getRepairLogText(context)
   const pluginVersionCompare = compareSemver(context.feishuPluginVersion, context.openclawVersion)
+  const brokenOpenClawInstallDetected =
+    /cannot find module|cannot find package|err_module_not_found|package subpath|module not found|missing dependency|openclaw: not found|command not found: openclaw|startup failed/i.test(
+      recentLogText
+    ) &&
+    /openclaw|imported from|require stack|dependency|module/i.test(recentLogText)
 
   if (
     context.feishuConfigured &&
@@ -759,8 +799,28 @@ const buildFallbackPlan = (context: RepairContext, reason: string): RepairPlan =
     })
   }
 
+  if (brokenOpenClawInstallDetected) {
+    actions.push(
+      context.openclawVersion
+        ? {
+            type: 'reinstall_openclaw_current',
+            reason: `日志显示 OpenClaw ${context.openclawVersion} 安装不完整或依赖缺失，先重装当前版本。`
+          }
+        : {
+            type: 'install_openclaw_recommended',
+            reason: `日志显示 OpenClaw 安装已损坏，且当前版本无法识别，先恢复到推荐稳定版 ${context.recommendedOpenclawVersion}。`
+          }
+    )
+  } else if (!context.openclawVersion && /openclaw/.test(recentLogText)) {
+    actions.push({
+      type: 'install_openclaw_recommended',
+      reason: `当前无法识别已安装的 OpenClaw 版本，先安装推荐稳定版 ${context.recommendedOpenclawVersion}。`
+    })
+  }
+
   if (context.gatewayStatus !== 'running') {
     if (
+      !brokenOpenClawInstallDetected &&
       !/lark-secrets|required secrets are unavailable|secretproviderresolutionerror/.test(
         recentLogText
       )
@@ -1026,6 +1086,8 @@ const buildRepairPrompt = (context: RepairContext): string => {
     gatewayStatus: context.gatewayStatus,
     portInUse: context.portInUse,
     openclawVersion: context.openclawVersion,
+    latestOpenclawVersion: context.latestOpenclawVersion,
+    recommendedOpenclawVersion: context.recommendedOpenclawVersion,
     feishuPluginVersion: context.feishuPluginVersion,
     feishuConfigured: context.feishuConfigured,
     feishuEnabled: context.feishuEnabled,
@@ -1057,7 +1119,7 @@ const buildRepairPrompt = (context: RepairContext): string => {
     '你是 OpenClaw Windows 安装器内置的故障修复规划器。',
     '请只根据给定上下文，返回一个 JSON 对象，不要输出 markdown，不要解释。',
     '你只能从以下动作里选择，且最多返回 4 个动作：',
-    'doctor_fix, disable_memory_search, set_gateway_mode_local, sync_feishu_plugin, trust_lark_plugin, disable_feishu_channel, restart_gateway, run_command, none。',
+    'doctor_fix, disable_memory_search, set_gateway_mode_local, sync_feishu_plugin, trust_lark_plugin, disable_feishu_channel, restart_gateway, reinstall_openclaw_current, install_openclaw_recommended, run_command, none。',
     '只有当现有动作不够表达修复方案时，才使用 run_command。',
     'run_command 必须包含 command、effect、runtime 字段，其中 runtime 只能是 wsl 或 host。',
     '在 Windows 上，只要命令和 OpenClaw、WSL 内配置、插件、日志相关，优先使用 runtime="wsl"。',
@@ -1071,6 +1133,8 @@ const buildRepairPrompt = (context: RepairContext): string => {
     '如果飞书插件版本落后于 OpenClaw，或日志显示飞书插件不兼容，优先 sync_feishu_plugin。',
     '如果日志显示 plugins.allow is empty 且 openclaw-lark 未受信任，可使用 trust_lark_plugin。',
     '如果日志显示 lark-secrets 未配置且当前飞书渠道阻塞启动，可使用 disable_feishu_channel。',
+    '如果日志显示 OpenClaw 缺少模块、依赖损坏、包不完整、ERR_MODULE_NOT_FOUND 或 Cannot find package，可优先 reinstall_openclaw_current。',
+    `如果当前 OpenClaw 版本无法识别、命令都跑不通，或你判断安装已经损坏，可以使用 install_openclaw_recommended，把版本恢复到推荐稳定版 ${OPENCLAW_RECOMMENDED_VERSION}。`,
     '如果无法确定，给出最保守的动作组合。',
     '返回格式：{"summary":"...","actions":[{"type":"restart_gateway","reason":"..."}]}',
     'run_command 示例：{"type":"run_command","reason":"需要补插件信任配置","command":"openclaw config set plugins.allow [\\"openclaw-lark\\"]","effect":"把插件加入显式信任列表","runtime":"wsl"}',
@@ -1512,6 +1576,46 @@ const executeRepairAction = async (
         restarted: true,
         detail: 'Gateway 重启完成。',
         outputLines: []
+      }
+    }
+    case 'reinstall_openclaw_current': {
+      const targetVersion = await getInstalledOpenClawVersion()
+      if (!targetVersion) {
+        throw new RepairActionExecutionError('当前无法识别已安装的 OpenClaw 版本，无法重装当前版本。')
+      }
+      emitProgress(win, `[AI修复] 正在重装 OpenClaw v${targetVersion}：${action.reason}`)
+      if (platform() === 'win32') {
+        await installOpenClawWsl(win, targetVersion)
+      } else {
+        await installOpenClaw(win, targetVersion)
+      }
+      emitProgress(win, `[AI修复] OpenClaw v${targetVersion} 重装完成。`)
+      return {
+        changedConfig: false,
+        restarted: false,
+        detail: `已重新安装 OpenClaw v${targetVersion}。`,
+        outputLines: [`openclaw@${targetVersion}`]
+      }
+    }
+    case 'install_openclaw_recommended': {
+      emitProgress(
+        win,
+        `[AI修复] 正在安装推荐稳定版 OpenClaw v${OPENCLAW_RECOMMENDED_VERSION}：${action.reason}`
+      )
+      if (platform() === 'win32') {
+        await installOpenClawWsl(win, OPENCLAW_RECOMMENDED_VERSION)
+      } else {
+        await installOpenClaw(win, OPENCLAW_RECOMMENDED_VERSION)
+      }
+      emitProgress(
+        win,
+        `[AI修复] 推荐稳定版 OpenClaw v${OPENCLAW_RECOMMENDED_VERSION} 安装完成。`
+      )
+      return {
+        changedConfig: false,
+        restarted: false,
+        detail: `已安装推荐稳定版 OpenClaw v${OPENCLAW_RECOMMENDED_VERSION}。`,
+        outputLines: [`openclaw@${OPENCLAW_RECOMMENDED_VERSION}`]
       }
     }
     case 'run_command':

@@ -129,6 +129,9 @@ export default function DoneStep({
 
   // Execute OpenClaw update
   const handleOpenclawUpdate = useCallback(async () => {
+    const targetVersion = openclawUpdate?.latest
+    if (!targetVersion) return
+
     setUpdating(true)
     setUpdateLogs([])
 
@@ -140,23 +143,29 @@ export default function DoneStep({
     })
 
     try {
-      const result = await window.electronAPI.install.openclaw()
-      if (result.success) {
-        setUpdateLogs((prev) => [...prev, tRef.current('done.restartingGw')])
-        await window.electronAPI.gateway.restart()
-        const nextStatus = await syncGatewayStatus()
-        if (nextStatus !== 'running') {
-          setHasError(true)
-          setShowLogs(true)
-        }
-        await checkOpenclawUpdate()
+      setUpdateLogs((prev) => [...prev, `[系统] 正在安装 OpenClaw v${targetVersion}...`])
+      const result = await window.electronAPI.install.openclaw({ version: targetVersion })
+      if (!result.success) {
+        throw new Error(result.error || `OpenClaw v${targetVersion} 更新失败`)
       }
+      await window.electronAPI.settings.setInstallSources({ openclawVersion: targetVersion })
+      setUpdateLogs((prev) => [...prev, tRef.current('done.restartingGw')])
+      await window.electronAPI.gateway.restart()
+      const nextStatus = await syncGatewayStatus()
+      if (nextStatus !== 'running') {
+        setHasError(true)
+        setShowLogs(true)
+      }
+      await checkOpenclawUpdate()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      setUpdateLogs((prev) => [...prev, tRef.current('done.errorPrefix', { msg: message })])
     } finally {
       unsubProgress()
       unsubError()
       setUpdating(false)
     }
-  }, [checkOpenclawUpdate, syncGatewayStatus])
+  }, [checkOpenclawUpdate, openclawUpdate, syncGatewayStatus])
 
   // Load auto launch settings
   useEffect(() => {

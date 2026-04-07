@@ -5,6 +5,7 @@ import Button from '../components/Button'
 import InstallProgressCard from '../components/InstallProgressCard'
 import LogViewer from '../components/LogViewer'
 import InstallSourceSelect from '../components/InstallSourceSelect'
+import OpenClawVersionSelect from '../components/OpenClawVersionSelect'
 import { useInstallLogs } from '../hooks/useIpc'
 import type { InstallSourceMode } from '../constants/install-sources'
 
@@ -31,6 +32,12 @@ export default function InstallStep({
   const [stopping, setStopping] = useState(false)
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [sourceMode, setSourceMode] = useState<InstallSourceMode>('auto')
+  const [openclawVersion, setOpenclawVersion] = useState('2026.4.1')
+  const [availableVersions, setAvailableVersions] = useState<string[]>(['2026.4.1'])
+  const [latestVersion, setLatestVersion] = useState<string | null>(null)
+  const [recommendedVersion, setRecommendedVersion] = useState('2026.4.1')
+  const [loadingVersions, setLoadingVersions] = useState(false)
+  const [versionError, setVersionError] = useState<string | null>(null)
   const [savingSources, setSavingSources] = useState(false)
   const [sourcesMessage, setSourcesMessage] = useState<string | null>(null)
   const [sourcesError, setSourcesError] = useState<string | null>(null)
@@ -47,8 +54,45 @@ export default function InstallStep({
   useEffect(() => {
     window.electronAPI.settings.getInstallSources().then((settings) => {
       setSourceMode(settings.sourceMode || 'auto')
+      setOpenclawVersion(settings.openclawVersion || '2026.4.1')
     })
   }, [])
+
+  useEffect(() => {
+    let cancelled = false
+
+    const loadVersions = async (): Promise<void> => {
+      setLoadingVersions(true)
+      setVersionError(null)
+      try {
+        const result = await window.electronAPI.openclaw.listVersions({ sourceMode })
+        if (!result.success || cancelled) return
+        const versions = Array.from(new Set([...(result.versions || []), openclawVersion])).sort((a, b) =>
+          b.localeCompare(a, undefined, { numeric: true, sensitivity: 'base' })
+        )
+        setAvailableVersions(versions)
+        setLatestVersion(result.latestVersion)
+        setRecommendedVersion(result.recommendedVersion)
+        if (!versions.includes(openclawVersion)) {
+          setOpenclawVersion(result.recommendedVersion)
+        }
+      } catch {
+        if (!cancelled) {
+          setVersionError(t('install.versionLoadError'))
+          setAvailableVersions((prev) => Array.from(new Set([...prev, openclawVersion])))
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingVersions(false)
+        }
+      }
+    }
+
+    void loadVersions()
+    return () => {
+      cancelled = true
+    }
+  }, [openclawVersion, sourceMode, t])
 
   const runInstall = useCallback(async () => {
     setInstalling(true)
@@ -57,6 +101,10 @@ export default function InstallStep({
     setCancelled(false)
     clearLogs()
     try {
+      await window.electronAPI.settings.setInstallSources({
+        sourceMode,
+        openclawVersion
+      })
       // Clean uninstall old OpenClaw if checked
       if (cleanInstall) {
         const cleanup = await window.electronAPI.openclaw.cleanUninstall()
@@ -69,7 +117,7 @@ export default function InstallStep({
         if (!r.success) throw new Error(r.error)
       }
       if (needs.needOpenclaw) {
-        const r = await window.electronAPI.install.openclaw()
+        const r = await window.electronAPI.install.openclaw({ version: openclawVersion })
         if (!r.success) throw new Error(r.error)
       }
       setDone(true)
@@ -85,7 +133,7 @@ export default function InstallStep({
       setInstalling(false)
       setStopping(false)
     }
-  }, [needs, clearLogs, cleanInstall])
+  }, [needs, clearLogs, cleanInstall, openclawVersion, sourceMode])
 
   const stopInstall = useCallback(async () => {
     setStopping(true)
@@ -98,7 +146,8 @@ export default function InstallStep({
     setSourcesError(null)
     try {
       const result = await window.electronAPI.settings.setInstallSources({
-        sourceMode
+        sourceMode,
+        openclawVersion
       })
       if (result.success) {
         setSourcesMessage(t('install.saveSourcesSuccess'))
@@ -110,7 +159,7 @@ export default function InstallStep({
     } finally {
       setSavingSources(false)
     }
-  }, [sourceMode, t])
+  }, [openclawVersion, sourceMode, t])
 
   const logoState = installing ? 'loading' : failed ? 'error' : done ? 'success' : 'idle'
 
@@ -204,6 +253,23 @@ export default function InstallStep({
                   onChange={setSourceMode}
                   disabled={savingSources || installing}
                 />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-semibold">{t('install.versionLabel')}</label>
+                <OpenClawVersionSelect
+                  value={openclawVersion}
+                  options={availableVersions}
+                  latestVersion={latestVersion}
+                  recommendedVersion={recommendedVersion}
+                  onChange={setOpenclawVersion}
+                  disabled={savingSources || installing || loadingVersions}
+                />
+                {loadingVersions && (
+                  <p className="text-[11px] text-text-muted">{t('install.versionLoading')}</p>
+                )}
+                {versionError && (
+                  <p className="text-[11px] text-warning font-medium">{versionError}</p>
+                )}
               </div>
               {sourcesMessage && (
                 <p className="text-xs text-success font-medium">{sourcesMessage}</p>

@@ -39,7 +39,12 @@ import { uninstallOpenClaw } from './services/uninstaller'
 import { exportBackup, importBackup } from './services/backup'
 import { loginOpenAICodex } from './services/oauth'
 import { executeAiRepairPlan, planAiRepair, runAiRepair } from './services/ai-repair'
-import { normalizeInstallSourceMode, type InstallSourceMode } from './services/install-sources'
+import {
+  getOpenclawVersionCatalog,
+  normalizeInstallSourceMode,
+  normalizeOpenclawVersion,
+  type InstallSourceMode
+} from './services/install-sources'
 
 interface WizardPersistedState {
   step: string
@@ -68,11 +73,15 @@ const writeSettings = (patch: Record<string, unknown>): void => {
 
 const getInstallSourceSettings = (): {
   sourceMode: InstallSourceMode
+  openclawVersion: string
 } => {
   const settings = readSettings()
   return {
     sourceMode: normalizeInstallSourceMode(
       typeof settings.sourceMode === 'string' ? settings.sourceMode : undefined
+    ),
+    openclawVersion: normalizeOpenclawVersion(
+      typeof settings.openclawVersion === 'string' ? settings.openclawVersion : undefined
     )
   }
 }
@@ -106,13 +115,33 @@ export const registerIpcHandlers = (getWin: () => BrowserWindow | null): void =>
       _e,
       patch: {
         sourceMode?: InstallSourceMode
+        openclawVersion?: string
       }
     ) => {
       writeSettings({
-        sourceMode: normalizeInstallSourceMode(patch.sourceMode)
+        sourceMode: normalizeInstallSourceMode(patch.sourceMode),
+        ...(patch.openclawVersion
+          ? { openclawVersion: normalizeOpenclawVersion(patch.openclawVersion) }
+          : {})
       })
       applyInstallSourceSettings()
       return { success: true }
+    }
+  )
+  ipcMain.handle(
+    'openclaw:list-versions',
+    async (
+      _e,
+      opts?: {
+        sourceMode?: InstallSourceMode
+      }
+    ) => {
+      const sourceMode = normalizeInstallSourceMode(opts?.sourceMode)
+      const catalog = await getOpenclawVersionCatalog(sourceMode)
+      return {
+        success: true,
+        ...catalog
+      }
     }
   )
 
@@ -358,14 +387,24 @@ export const registerIpcHandlers = (getWin: () => BrowserWindow | null): void =>
     }
   })
 
-  ipcMain.handle('install:openclaw', async () => {
+  ipcMain.handle(
+    'install:openclaw',
+    async (
+      _e,
+      opts?: {
+        version?: string
+      }
+    ) => {
     beginInstallTask()
     try {
       applyInstallSourceSettings()
+      const configuredVersion = opts?.version
+        ? normalizeOpenclawVersion(opts.version)
+        : getInstallSourceSettings().openclawVersion
       if (platform() === 'win32') {
-        await installOpenClawWsl(win())
+        await installOpenClawWsl(win(), configuredVersion)
       } else {
-        await installOpenClaw(win())
+        await installOpenClaw(win(), configuredVersion)
       }
       return { success: true }
     } catch (e) {
@@ -379,7 +418,8 @@ export const registerIpcHandlers = (getWin: () => BrowserWindow | null): void =>
     } finally {
       endInstallTask()
     }
-  })
+    }
+  )
 
   ipcMain.handle('install:cancel', () => {
     const cancelled = cancelActiveInstall()

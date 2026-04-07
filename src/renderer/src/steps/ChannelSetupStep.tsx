@@ -50,20 +50,34 @@ export default function ChannelSetupStep({
     clearLogs()
   }, [clearLogs])
 
-  const handleRun = (): void => {
+  const buildRunPayload = (skipChannel: boolean): SetupPayload =>
+    skipChannel
+      ? {
+          ...payload,
+          skipChannelConfig: true,
+          channelType: undefined,
+          channelSetupMode: undefined,
+          telegramBotToken: undefined,
+          feishuAppId: undefined,
+          feishuAppSecret: undefined
+        }
+      : payload
+
+  const handleRun = (skipChannel = false): void => {
     clearLogs()
     setError(null)
     setRunning(true)
+    const effectivePayload = buildRunPayload(skipChannel)
 
     const apiCall = channelOnly
       ? window.electronAPI.onboard.channelOnly({
-          channelType: payload.channelType,
-          channelSetupMode: payload.channelSetupMode,
-          telegramBotToken: payload.telegramBotToken,
-          feishuAppId: payload.feishuAppId,
-          feishuAppSecret: payload.feishuAppSecret
+          channelType: effectivePayload.channelType,
+          channelSetupMode: effectivePayload.channelSetupMode,
+          telegramBotToken: effectivePayload.telegramBotToken,
+          feishuAppId: effectivePayload.feishuAppId,
+          feishuAppSecret: effectivePayload.feishuAppSecret
         })
-      : window.electronAPI.onboard.run(payload)
+      : window.electronAPI.onboard.run(effectivePayload)
 
     void apiCall
       .then((result) => {
@@ -176,9 +190,16 @@ export default function ChannelSetupStep({
               {t('setup.runningBtn')}
             </div>
           ) : (
-            <Button variant="primary" size="lg" onClick={handleRun}>
-              {error ? t('setup.retryBtn') : t('setup.startBtn')}
-            </Button>
+            <div className="flex gap-3">
+              {!channelOnly && !skippedChannelConfig && (
+                <Button variant="secondary" size="lg" onClick={() => handleRun(true)}>
+                  {t('setup.skipChannelBtn')}
+                </Button>
+              )}
+              <Button variant="primary" size="lg" onClick={() => handleRun()}>
+                {error ? t('setup.retryBtn') : t('setup.startBtn')}
+              </Button>
+            </div>
           )}
         </div>
       </div>

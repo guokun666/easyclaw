@@ -1,8 +1,7 @@
 import { spawn } from 'child_process'
 import { platform } from 'os'
-import https from 'https'
 import { checkWslState, runInWsl, getWslProxyRuntimeInfo, type WslState } from './wsl-utils'
-import { getOpenclawMetaCandidates } from './install-sources'
+import { getLatestPackageVersion } from './install-sources'
 import { getPathEnv, resolvePreferredBin } from './path-utils'
 import { getManagedNpmEnv } from './npm-paths'
 
@@ -62,49 +61,8 @@ const semverGte = (version: string, min: string): boolean => {
   return a3 >= b3
 }
 
-const fetchLatestVersion = (url: string): Promise<string> =>
-  new Promise((resolve, reject) => {
-    const req = https.get(url, (res) => {
-      if (res.statusCode !== 200) {
-        clearTimeout(timer)
-        res.resume()
-        reject(new Error(`HTTP ${res.statusCode}`))
-        return
-      }
-      let data = ''
-      res.on('data', (chunk) => (data += chunk))
-      res.on('end', () => {
-        clearTimeout(timer)
-        try {
-          resolve(JSON.parse(data).version)
-        } catch {
-          reject(new Error('parse error'))
-        }
-      })
-    })
-
-    req.on('error', (err) => {
-      clearTimeout(timer)
-      reject(err)
-    })
-
-    const timer = setTimeout(() => {
-      req.destroy()
-      reject(new Error('timeout after 5000ms'))
-    }, 5000)
-  })
-
 const fetchOpenclawLatestVersion = async (): Promise<string | null> => {
-  for (const candidate of getOpenclawMetaCandidates()) {
-    try {
-      const version = await fetchLatestVersion(candidate.url)
-      if (version) return version
-    } catch {
-      /* try next candidate */
-    }
-  }
-
-  return null
+  return getLatestPackageVersion('openclaw')
 }
 
 const getOpenclawVersion = async (

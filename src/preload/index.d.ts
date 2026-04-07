@@ -35,14 +35,16 @@ interface ElectronAPI {
   settings: {
     getInstallSources: () => Promise<{
       sourceMode: 'auto' | 'official' | 'npmmirror' | 'tencent'
+      openclawVersion: string
     }>
     setInstallSources: (patch: {
       sourceMode?: 'auto' | 'official' | 'npmmirror' | 'tencent'
+      openclawVersion?: string
     }) => Promise<{ success: boolean }>
   }
   install: {
     node: () => Promise<{ success: boolean; error?: string }>
-    openclaw: () => Promise<{ success: boolean; error?: string }>
+    openclaw: (opts?: { version?: string }) => Promise<{ success: boolean; error?: string }>
     cancel: () => Promise<{ success: boolean; cancelled: boolean }>
     onStatus: (
       cb: (status: { percent: number; stage: string; detail?: string }) => void
@@ -113,7 +115,12 @@ interface ElectronAPI {
           | 'doctor_fix'
           | 'disable_memory_search'
           | 'set_gateway_mode_local'
+          | 'sync_feishu_plugin'
+          | 'trust_lark_plugin'
+          | 'disable_feishu_channel'
           | 'restart_gateway'
+          | 'reinstall_openclaw_current'
+          | 'install_openclaw_recommended'
           | 'run_command'
         label: string
         reason: string
@@ -143,7 +150,12 @@ interface ElectronAPI {
             | 'doctor_fix'
             | 'disable_memory_search'
             | 'set_gateway_mode_local'
+            | 'sync_feishu_plugin'
+            | 'trust_lark_plugin'
+            | 'disable_feishu_channel'
             | 'restart_gateway'
+            | 'reinstall_openclaw_current'
+            | 'install_openclaw_recommended'
             | 'run_command'
           label: string
           reason: string
@@ -237,6 +249,14 @@ interface ElectronAPI {
   }
   openclaw: {
     checkUpdate: () => Promise<{ currentVersion: string | null; latestVersion: string | null }>
+    listVersions: (opts?: {
+      sourceMode?: 'auto' | 'official' | 'npmmirror' | 'tencent'
+    }) => Promise<{
+      success: boolean
+      versions: string[]
+      latestVersion: string | null
+      recommendedVersion: string
+    }>
     dashboard: () => Promise<{ success: boolean; error?: string }>
     updateChannel: (
       channelType: 'telegram',
