@@ -82,6 +82,7 @@ function App({ debugMode }: { debugMode?: string }): React.JSX.Element {
   const [wslState, setWslState] = useState<WslState>('ready')
   const [version, setVersion] = useState('')
   const [channelOnly, setChannelOnly] = useState(false)
+  const [skipChannelConfig, setSkipChannelConfig] = useState(false)
   const [forceCleanInstall, setForceCleanInstall] = useState(false)
   const isDebugWelcomeOnly = debugMode === 'welcome-only'
   const isDebugNoEffects = debugMode === 'no-effects'
@@ -256,7 +257,20 @@ function App({ debugMode }: { debugMode?: string }): React.JSX.Element {
               <TelegramGuideStep
                 channelType={channelType}
                 onSelectChannel={setChannelType}
-                onNext={next}
+                onSkip={() => {
+                  if (channelOnly) {
+                    setChannelOnly(false)
+                    goTo('done')
+                    return
+                  }
+                  setSetupPayload(null)
+                  setSkipChannelConfig(true)
+                  goTo('config')
+                }}
+                onNext={() => {
+                  setSkipChannelConfig(false)
+                  next()
+                }}
               />
             )}
             {currentStep === 'config' && (
@@ -274,6 +288,7 @@ function App({ debugMode }: { debugMode?: string }): React.JSX.Element {
                   }))
                 }}
                 channelType={channelType}
+                skipChannelConfig={skipChannelConfig}
                 draft={configDraft}
                 onDraftChange={setConfigDraft}
                 onNext={(payload) => {
@@ -296,6 +311,7 @@ function App({ debugMode }: { debugMode?: string }): React.JSX.Element {
               <DoneStep
                 botUsername={botUsername}
                 channelType={channelType}
+                isWindows={isWindows}
                 onTroubleshoot={() => goTo('troubleshoot')}
                 onUninstallDone={() => {
                   window.electronAPI.wizard.clearState()
@@ -303,6 +319,7 @@ function App({ debugMode }: { debugMode?: string }): React.JSX.Element {
                 }}
                 onConfigureChannel={() => {
                   setChannelOnly(true)
+                  setSkipChannelConfig(false)
                   goTo('telegramGuide')
                 }}
               />

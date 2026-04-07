@@ -1,11 +1,12 @@
-import { spawn } from 'child_process'
+import { spawn, type ChildProcess } from 'child_process'
 import { StringDecoder } from 'string_decoder'
-import { createWriteStream, readFileSync, appendFileSync, existsSync } from 'fs'
+import { createWriteStream, readFileSync, appendFileSync, existsSync, type WriteStream } from 'fs'
 import { tmpdir, homedir } from 'os'
 import { join } from 'path'
 import https from 'https'
+import type { ClientRequest } from 'http'
 import { BrowserWindow } from 'electron'
-import { checkWslState, runInWsl, WSL_STATE_ORDER, type WslState } from './wsl-utils'
+import { buildWslBashArgs, checkWslState, WSL_STATE_ORDER, type WslState } from './wsl-utils'
 import { getPathEnv } from './path-utils'
 import { getManagedNpmEnv, getManagedBinPath, hasManagedBin } from './npm-paths'
 import { t } from '../../shared/i18n/main'
@@ -28,6 +29,16 @@ interface InstallStatusPayload {
   detail?: string
 }
 
+interface ActiveInstallTask {
+  cancelled: boolean
+  children: Set<ChildProcess>
+  requests: Set<ClientRequest>
+  streams: Set<WriteStream>
+}
+
+const INSTALL_CANCELLED_MESSAGE = 'INSTALL_CANCELLED'
+let activeInstallTask: ActiveInstallTask | null = null
+
 const sendProgress = (win: BrowserWindow, msg: string): void => {
   win.webContents.send('install:progress', msg)
 }
@@ -41,6 +52,114 @@ const sendStatus = (win: BrowserWindow, percent: number, stage: string, detail?:
   win.webContents.send('install:status', payload)
 }
 
+const createInstallCancelledError = (): Error => new Error(INSTALL_CANCELLED_MESSAGE)
+
+const isInstallCancelledError = (error: unknown): boolean =>
+  error instanceof Error && error.message === INSTALL_CANCELLED_MESSAGE
+
+const getActiveInstallTask = (): ActiveInstallTask | null => activeInstallTask
+
+export const beginInstallTask = (): void => {
+  activeInstallTask = {
+    cancelled: false,
+    children: new Set<ChildProcess>(),
+    requests: new Set<ClientRequest>(),
+    streams: new Set<WriteStream>()
+  }
+}
+
+export const endInstallTask = (): void => {
+  activeInstallTask = null
+}
+
+export const cancelActiveInstall = (): boolean => {
+  const task = activeInstallTask
+  if (!task) return false
+
+  task.cancelled = true
+  for (const child of task.children) {
+    try {
+      child.kill()
+    } catch {
+      /* ignore */
+    }
+  }
+  for (const request of task.requests) {
+    try {
+      request.destroy(createInstallCancelledError())
+    } catch {
+      /* ignore */
+    }
+  }
+  for (const stream of task.streams) {
+    try {
+      stream.destroy(createInstallCancelledError())
+    } catch {
+      /* ignore */
+    }
+  }
+
+  return true
+}
+
+const assertInstallNotCancelled = (): void => {
+  if (getActiveInstallTask()?.cancelled) {
+    throw createInstallCancelledError()
+  }
+}
+
+const registerInstallChild = (child: ChildProcess): void => {
+  const task = getActiveInstallTask()
+  if (!task) return
+
+  task.children.add(child)
+  const cleanup = (): void => {
+    task.children.delete(child)
+  }
+  child.once('close', cleanup)
+  child.once('error', cleanup)
+
+  if (task.cancelled) {
+    try {
+      child.kill()
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+const registerInstallRequest = (request: ClientRequest): void => {
+  const task = getActiveInstallTask()
+  if (!task) return
+
+  task.requests.add(request)
+  const cleanup = (): void => {
+    task.requests.delete(request)
+  }
+  request.once('close', cleanup)
+  request.once('error', cleanup)
+
+  if (task.cancelled) {
+    request.destroy(createInstallCancelledError())
+  }
+}
+
+const registerInstallStream = (stream: WriteStream): void => {
+  const task = getActiveInstallTask()
+  if (!task) return
+
+  task.streams.add(stream)
+  const cleanup = (): void => {
+    task.streams.delete(stream)
+  }
+  stream.once('close', cleanup)
+  stream.once('error', cleanup)
+
+  if (task.cancelled) {
+    stream.destroy(createInstallCancelledError())
+  }
+}
+
 const downloadFile = (
   url: string,
   dest: string,
@@ -50,8 +169,8 @@ const downloadFile = (
   new Promise((resolve, reject) => {
     let redirectCount = 0
     const follow = (u: string): void => {
-      https
-        .get(u, (res) => {
+      assertInstallNotCancelled()
+      const request = https.get(u, (res) => {
           if (
             res.statusCode &&
             res.statusCode >= 300 &&
@@ -74,18 +193,28 @@ const downloadFile = (
           const totalBytes = Number(res.headers['content-length'] ?? 0) || null
           let downloadedBytes = 0
           res.on('data', (chunk) => {
+            if (getActiveInstallTask()?.cancelled) {
+              request.destroy(createInstallCancelledError())
+              return
+            }
             downloadedBytes += chunk.length
             onProgress?.(downloadedBytes, totalBytes)
           })
           const file = createWriteStream(dest)
+          registerInstallStream(file)
           res.pipe(file)
           file.on('finish', () => {
             file.close()
+            if (getActiveInstallTask()?.cancelled) {
+              reject(createInstallCancelledError())
+              return
+            }
             resolve()
           })
           file.on('error', reject)
         })
-        .on('error', reject)
+      registerInstallRequest(request)
+      request.on('error', reject)
     }
     follow(url)
   })
@@ -100,6 +229,7 @@ const tryDownloadWithFallback = async (
   let lastError: Error | null = null
 
   for (const candidate of candidates) {
+    assertInstallNotCancelled()
     try {
       onCandidate?.(candidate)
       log(`Download source: ${candidate.label}`)
@@ -107,6 +237,9 @@ const tryDownloadWithFallback = async (
       log(`Download source selected: ${candidate.label}`)
       return
     } catch (error) {
+      if (isInstallCancelledError(error)) {
+        throw error
+      }
       lastError = error instanceof Error ? error : new Error(String(error))
       log(`Download source failed: ${candidate.label} (${lastError.message})`)
     }
@@ -122,11 +255,13 @@ const runWithLog = (
   options?: { shell?: boolean; env?: NodeJS.ProcessEnv; cwd?: string }
 ): Promise<string[]> =>
   new Promise((resolve, reject) => {
+    assertInstallNotCancelled()
     const child = spawn(cmd, args, {
       shell: options?.shell ?? false,
       env: options?.env ?? process.env,
       cwd: options?.cwd
     })
+    registerInstallChild(child)
 
     const lines: string[] = []
     const outDecoder = new StringDecoder('utf8')
@@ -152,6 +287,10 @@ const runWithLog = (
         })
     })
     child.on('close', (code) => {
+      if (getActiveInstallTask()?.cancelled) {
+        reject(createInstallCancelledError())
+        return
+      }
       if (code === 0) resolve(lines)
       else {
         const err: RunError = new Error(`Command failed: ${cmd} ${args.join(' ')} (exit ${code})`)
@@ -159,7 +298,13 @@ const runWithLog = (
         reject(err)
       }
     })
-    child.on('error', reject)
+    child.on('error', (error) => {
+      if (getActiveInstallTask()?.cancelled) {
+        reject(createInstallCancelledError())
+        return
+      }
+      reject(error)
+    })
   })
 
 const runStepsWithFallback = async (
@@ -169,18 +314,66 @@ const runStepsWithFallback = async (
   let lastError: Error | null = null
 
   for (const candidate of candidates) {
+    assertInstallNotCancelled()
     try {
       log(`Source candidate: ${candidate.label}`)
       await candidate.run()
       log(`Source selected: ${candidate.label}`)
       return
     } catch (error) {
+      if (isInstallCancelledError(error)) {
+        throw error
+      }
       lastError = error instanceof Error ? error : new Error(String(error))
       log(`Source failed: ${candidate.label} (${lastError.message})`)
     }
   }
 
   throw lastError ?? new Error('All source candidates failed')
+}
+
+const runInWslForInstall = async (script: string, timeout = 30000): Promise<string> => {
+  const args = await buildWslBashArgs(script)
+  assertInstallNotCancelled()
+
+  return new Promise((resolve, reject) => {
+    const child = spawn('wsl', args)
+    registerInstallChild(child)
+
+    const timer = setTimeout(() => {
+      try {
+        child.kill()
+      } catch {
+        /* ignore */
+      }
+      reject(new Error('timeout'))
+    }, timeout)
+
+    let stdout = ''
+    let stderr = ''
+    child.stdout.on('data', (d) => (stdout += d.toString()))
+    child.stderr.on('data', (d) => (stderr += d.toString()))
+    child.on('close', (code) => {
+      clearTimeout(timer)
+      if (getActiveInstallTask()?.cancelled) {
+        reject(createInstallCancelledError())
+        return
+      }
+      if (code === 0) {
+        resolve(stdout.replace(/\0/g, '').trim())
+        return
+      }
+      reject(new Error(stderr.replace(/\0/g, '').trim() || `exit ${code}`))
+    })
+    child.on('error', (error) => {
+      clearTimeout(timer)
+      if (getActiveInstallTask()?.cancelled) {
+        reject(createInstallCancelledError())
+        return
+      }
+      reject(error)
+    })
+  })
 }
 
 // ─── WSL installation functions (Windows) ───
@@ -267,8 +460,11 @@ export const installNodeWsl = async (win: BrowserWindow): Promise<void> => {
   sendStatus(win, 10, t('installer.wslPackages'))
   log(t('installer.wslPackages'))
   try {
-    await runInWsl('apt-get update && apt-get install -y curl ca-certificates gnupg', 60000)
-  } catch {
+    await runInWslForInstall('apt-get update && apt-get install -y curl ca-certificates gnupg', 60000)
+  } catch (error) {
+    if (isInstallCancelledError(error)) {
+      throw error
+    }
     log(t('installer.aptFailed'))
   }
 
@@ -281,7 +477,7 @@ export const installNodeWsl = async (win: BrowserWindow): Promise<void> => {
     try {
       sendStatus(win, 55, t('installer.nodeWslInstalling'), candidate.label)
       log(`Source candidate: ${candidate.label}`)
-      await runInWsl(
+      await runInWslForInstall(
         `curl -fsSL ${candidate.scriptUrl} | bash - && apt-get install -y nodejs`,
         120000
       )
@@ -290,6 +486,9 @@ export const installNodeWsl = async (win: BrowserWindow): Promise<void> => {
       log(t('installer.nodeWslDone'))
       return
     } catch (error) {
+      if (isInstallCancelledError(error)) {
+        throw error
+      }
       lastError = error instanceof Error ? error : new Error(String(error))
       log(`Source failed: ${candidate.label} (${lastError.message})`)
     }
@@ -309,7 +508,7 @@ export const installOpenClawWsl = async (win: BrowserWindow): Promise<void> => {
       label: candidate.label,
       run: () => {
         sendStatus(win, 55, t('installer.ocWslInstalling'), candidate.label)
-        return runInWsl(
+        return runInWslForInstall(
           `npm_config_registry=${candidate.registry} npm install -g ${candidate.packageName}`,
           120000
         )

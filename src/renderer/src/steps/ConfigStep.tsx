@@ -84,6 +84,7 @@ export interface SetupPayload {
   provider: Provider
   apiKey?: string
   authMethod?: 'api-key' | 'oauth'
+  skipChannelConfig?: boolean
   channelType?: 'feishu' | 'wechat' | 'telegram'
   channelSetupMode?: 'one-click' | 'manual'
   telegramBotToken?: string
@@ -99,6 +100,7 @@ interface Props {
   modelId?: string
   onModelChange: (modelId: string) => void
   channelType: ChannelType
+  skipChannelConfig?: boolean
   draft: ConfigDraft
   onDraftChange: Dispatch<SetStateAction<ConfigDraft>>
   onNext: (payload: SetupPayload) => void
@@ -110,6 +112,7 @@ export default function ConfigStep({
   modelId,
   onModelChange,
   channelType,
+  skipChannelConfig = false,
   draft,
   onDraftChange,
   onNext
@@ -164,7 +167,9 @@ export default function ConfigStep({
   const memorySearchOption = memorySearchProviderMap[memorySearchProvider]
   const memorySearchApiKeyValid = memorySearchOption.pattern.test(memorySearchApiKey)
   const channelValid =
-    channelType === 'telegram'
+    skipChannelConfig
+      ? true
+      : channelType === 'telegram'
       ? telegramBotTokenValid
       : channelType === 'feishu'
         ? feishuSetupMode === 'one-click' || (feishuAppIdValid && feishuAppSecretValid)
@@ -298,16 +303,21 @@ export default function ConfigStep({
       provider,
       ...(isOAuth || isOllama ? {} : { apiKey }),
       authMethod: authMethod ?? 'api-key',
-      channelType,
-      channelSetupMode:
-        channelType === 'feishu'
-          ? feishuSetupMode
-          : channelType === 'wechat'
-            ? 'one-click'
-            : 'manual',
-      telegramBotToken: telegramBotToken || undefined,
-      feishuAppId: feishuAppId || undefined,
-      feishuAppSecret: feishuAppSecret || undefined,
+      skipChannelConfig,
+      ...(skipChannelConfig
+        ? {}
+        : {
+            channelType,
+            channelSetupMode:
+              channelType === 'feishu'
+                ? feishuSetupMode
+                : channelType === 'wechat'
+                  ? 'one-click'
+                  : 'manual',
+            telegramBotToken: telegramBotToken || undefined,
+            feishuAppId: feishuAppId || undefined,
+            feishuAppSecret: feishuAppSecret || undefined
+          }),
       modelId: resolvedModelId,
       memorySearch: normalizedMemorySearch
     })
@@ -589,29 +599,30 @@ export default function ConfigStep({
           )}
         </div>
 
-        <div className="space-y-3">
-          <div>
-            <label className="text-sm font-bold">
-              {t('config.channelLabel')}{' '}
-              <span className="text-error text-xs">{t('config.required')}</span>
-            </label>
-            <p className="text-xs text-text-muted mt-1">
-              {t(`config.channelTypeDesc.${channelType}`)}
-            </p>
-          </div>
+        {!skipChannelConfig && (
+          <div className="space-y-3">
+            <div>
+              <label className="text-sm font-bold">
+                {t('config.channelLabel')}{' '}
+                <span className="text-error text-xs">{t('config.required')}</span>
+              </label>
+              <p className="text-xs text-text-muted mt-1">
+                {t(`config.channelTypeDesc.${channelType}`)}
+              </p>
+            </div>
 
-          <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-primary/20 bg-primary/8 px-4 py-2 text-xs">
-            <span className="inline-flex h-2 w-2 rounded-full bg-primary shadow-[0_0_14px_rgba(255,122,26,0.9)]" />
-            <span className="font-semibold text-text-muted">{t('channelGuide.currentSelection')}</span>
-            <span className="font-bold text-primary">{selectedChannelTitle}</span>
-            {selectedSetupModeTitle && (
-              <span className="rounded-full border border-primary/35 bg-primary/14 px-2 py-0.5 text-[10px] font-bold text-primary">
-                {selectedSetupModeTitle}
-              </span>
-            )}
-          </div>
+            <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-primary/20 bg-primary/8 px-4 py-2 text-xs">
+              <span className="inline-flex h-2 w-2 rounded-full bg-primary shadow-[0_0_14px_rgba(255,122,26,0.9)]" />
+              <span className="font-semibold text-text-muted">{t('channelGuide.currentSelection')}</span>
+              <span className="font-bold text-primary">{selectedChannelTitle}</span>
+              {selectedSetupModeTitle && (
+                <span className="rounded-full border border-primary/35 bg-primary/14 px-2 py-0.5 text-[10px] font-bold text-primary">
+                  {selectedSetupModeTitle}
+                </span>
+              )}
+            </div>
 
-          {channelType === 'telegram' && (
+            {channelType === 'telegram' && (
             <div className="space-y-1.5">
               <label className="text-sm font-bold">
                 {t('config.telegramToken')}{' '}
@@ -632,9 +643,9 @@ export default function ConfigStep({
                 <p className="text-error text-[11px] font-medium">{t('config.telegramHint')}</p>
               )}
             </div>
-          )}
+            )}
 
-          {channelType === 'feishu' && (
+            {channelType === 'feishu' && (
             <div className="space-y-3">
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between gap-3">
@@ -720,17 +731,18 @@ export default function ConfigStep({
                 </>
               )}
             </div>
-          )}
+            )}
 
-          {channelType === 'wechat' && (
+            {channelType === 'wechat' && (
             <div className="glass-card px-4 py-3 space-y-1.5">
               <p className="text-sm font-bold">{t('config.wechatOneClickTitle')}</p>
               <p className="text-xs text-text-muted leading-relaxed">
                 {t('config.wechatOneClickDesc')}
               </p>
             </div>
-          )}
-        </div>
+            )}
+          </div>
+        )}
 
       </div>
 

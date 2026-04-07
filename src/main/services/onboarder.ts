@@ -1526,12 +1526,19 @@ export const runOnboard = async (
     }
   }
 
+  const requiresOneClickChannelSetup =
+    config.channelType === 'wechat' ||
+    (config.channelType === 'feishu' && config.channelSetupMode === 'one-click')
+
   if (config.channelType === 'feishu' && config.channelSetupMode === 'one-click') {
     status(68, t('onboarder.status.launchingFeishu'))
   } else if (config.channelType === 'wechat') {
     status(68, t('onboarder.status.launchingWechat'))
   }
-  await runOneClickChannelSetup(win, config, runCmd, log, ocBin, status)
+
+  if (requiresOneClickChannelSetup) {
+    await runOneClickChannelSetup(win, config, runCmd, log, ocBin, status)
+  }
 
   if (config.channelType === 'feishu') {
     status(78, t('onboarder.feishuStreaming'))

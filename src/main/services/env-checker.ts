@@ -54,15 +54,6 @@ const parseVersion = (raw: string): string | null => {
   return match ? match[1] : null
 }
 
-const parseOpenclawVersionFromNpmList = (raw: string): string | null => {
-  try {
-    const json = JSON.parse(raw)
-    return json.dependencies?.openclaw?.version ?? null
-  } catch {
-    return null
-  }
-}
-
 const semverGte = (version: string, min: string): boolean => {
   const [a1, a2, a3] = version.split('.').map(Number)
   const [b1, b2, b3] = min.split('.').map(Number)
@@ -121,7 +112,6 @@ const getOpenclawVersion = async (
   envCandidates?: Array<NodeJS.ProcessEnv | undefined>
 ): Promise<string | null> => {
   const openclawBin = resolvePreferredBin('openclaw')
-  const npmBin = resolvePreferredBin('npm')
   const candidates =
     envCandidates && envCandidates.length > 0
       ? envCandidates
@@ -129,18 +119,16 @@ const getOpenclawVersion = async (
 
   for (const env of candidates) {
     try {
+      // A broken npm install can still appear in `npm list -g`, so require the CLI
+      // to execute a harmless help command before treating OpenClaw as installed.
+      await run(openclawBin, ['doctor', '--help'], env)
+    } catch {
+      continue
+    }
+
+    try {
       const raw = await run(openclawBin, ['--version'], env)
       const version = parseVersion(raw)
-      if (version) return version
-    } catch {
-      /* try next candidate */
-    }
-  }
-
-  for (const env of candidates) {
-    try {
-      const raw = await run(npmBin, ['list', '-g', 'openclaw', '--json'], env)
-      const version = parseOpenclawVersionFromNpmList(raw)
       if (version) return version
     } catch {
       /* try next candidate */

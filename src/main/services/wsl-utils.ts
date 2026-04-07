@@ -20,7 +20,7 @@ export const WSL_STATE_ORDER: readonly WslState[] = [
   'ready'
 ] as const
 
-const WSL_DISTRO = 'Ubuntu'
+export const WSL_DISTRO = 'Ubuntu'
 const WSL_USER = 'root'
 const INTERNET_SETTINGS_REG_PATH = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings'
 
@@ -291,6 +291,50 @@ export const runInWsl = async (script: string, timeout = 30000): Promise<string>
       reject(err)
     })
   })
+}
+
+const isMissingDistroError = (message: string): boolean => {
+  const normalized = message.toLowerCase()
+  return (
+    normalized.includes('there is no distribution') ||
+    normalized.includes('was not found') ||
+    normalized.includes('could not be found') ||
+    normalized.includes('distribution name was not found') ||
+    normalized.includes('找不到') ||
+    normalized.includes('没有已安装的发行版')
+  )
+}
+
+export const unregisterWslDistro = async (): Promise<'removed' | 'missing'> => {
+  if (platform() !== 'win32') {
+    throw new Error('WSL 注销仅支持 Windows。')
+  }
+
+  const currentState = await checkWslState()
+  if (
+    currentState === 'not_available' ||
+    currentState === 'not_installed' ||
+    currentState === 'no_distro'
+  ) {
+    return 'missing'
+  }
+
+  try {
+    await runCmd('wsl', ['--terminate', WSL_DISTRO], 10000)
+  } catch {
+    /* ignore */
+  }
+
+  try {
+    await runCmd('wsl', ['--unregister', WSL_DISTRO], 30000)
+    return 'removed'
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    if (isMissingDistroError(message)) {
+      return 'missing'
+    }
+    throw error
+  }
 }
 
 /** Read file inside WSL */

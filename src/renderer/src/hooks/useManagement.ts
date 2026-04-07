@@ -5,6 +5,7 @@ import type { ModalPhase } from '../components/ManagementModal'
 interface UninstallState {
   modal: ModalPhase | null
   removeConfig: boolean
+  unregisterWsl: boolean
   progress: string
   error: string
 }
@@ -21,6 +22,7 @@ interface ManagementActions {
     open: () => void
     close: () => void
     setRemoveConfig: (v: boolean) => void
+    setUnregisterWsl: (v: boolean) => void
     execute: () => Promise<void>
   }
   backup: BackupRestoreState & {
@@ -33,12 +35,14 @@ interface ManagementActions {
 }
 
 export const useManagement = (
-  onStatusChange: (status: 'starting' | 'running' | 'stopped') => void
+  onStatusChange: (status: 'starting' | 'running' | 'stopped') => void,
+  isWindows: boolean
 ): ManagementActions => {
   const { t } = useTranslation('management')
   const [uninstall, setUninstall] = useState<UninstallState>({
     modal: null,
     removeConfig: false,
+    unregisterWsl: false,
     progress: '',
     error: ''
   })
@@ -59,7 +63,10 @@ export const useManagement = (
 
   const executeUninstall = async (): Promise<void> => {
     setUninstall((prev) => ({ ...prev, modal: 'progress', progress: t('uninstall.preparing') }))
-    const r = await window.electronAPI.uninstall.openclaw({ removeConfig: uninstall.removeConfig })
+    const r = await window.electronAPI.uninstall.openclaw({
+      removeConfig: uninstall.removeConfig || uninstall.unregisterWsl,
+      unregisterWsl: uninstall.unregisterWsl
+    })
     if (r.success) {
       setUninstall((prev) => ({ ...prev, modal: 'done', progress: t('uninstall.completed') }))
     } else {
@@ -122,9 +129,23 @@ export const useManagement = (
   return {
     uninstall: {
       ...uninstall,
-      open: () => setUninstall((prev) => ({ ...prev, modal: 'confirm', removeConfig: false })),
+      open: () =>
+        setUninstall((prev) => ({
+          ...prev,
+          modal: 'confirm',
+          removeConfig: false,
+          unregisterWsl: false,
+          progress: '',
+          error: ''
+        })),
       close: () => setUninstall((prev) => ({ ...prev, modal: null })),
       setRemoveConfig: (v) => setUninstall((prev) => ({ ...prev, removeConfig: v })),
+      setUnregisterWsl: (v: boolean) =>
+        setUninstall((prev) => ({
+          ...prev,
+          unregisterWsl: isWindows ? v : false,
+          removeConfig: v ? true : prev.removeConfig
+        })),
       execute: executeUninstall
     },
     backup: {

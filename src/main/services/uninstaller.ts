@@ -6,7 +6,7 @@ import { BrowserWindow } from 'electron'
 import { stopGateway } from './gateway'
 import { getPathEnv, resolvePreferredBin } from './path-utils'
 import { getManagedNpmEnv } from './npm-paths'
-import { runInWsl } from './wsl-utils'
+import { runInWsl, unregisterWslDistro } from './wsl-utils'
 import { t } from '../../shared/i18n/main'
 
 const sendProgress = (win: BrowserWindow, msg: string): void => {
@@ -34,7 +34,7 @@ const npmUninstallMac = (): Promise<void> =>
 
 export const uninstallOpenClaw = async (
   win: BrowserWindow,
-  opts: { removeConfig: boolean }
+  opts: { removeConfig: boolean; unregisterWsl?: boolean }
 ): Promise<void> => {
   const isWin = platform() === 'win32'
   const log = (msg: string): void => sendProgress(win, msg)
@@ -45,6 +45,14 @@ export const uninstallOpenClaw = async (
     await stopGateway()
   } catch {
     /* already stopped */
+  }
+
+  if (isWin && opts.unregisterWsl) {
+    log(t('uninstaller.unregisteringWsl'))
+    const result = await unregisterWslDistro()
+    log(result === 'removed' ? t('uninstaller.unregisterWslDone') : t('uninstaller.unregisterWslMissing'))
+    log(t('uninstaller.done'))
+    return
   }
 
   // 2. npm uninstall -g openclaw

@@ -54,6 +54,8 @@
     "title": "删除 OpenClaw",
     "desc": "将删除 OpenClaw 软件包。此操作不可撤销。",
     "removeConfig": "同时删除配置文件（~/.openclaw）",
+    "unregisterWsl": "同时注销 WSL Ubuntu 环境",
+    "unregisterWslDesc": "高影响操作。会直接删除整个 Ubuntu 发行版中的所有数据和已安装软件，不只是 OpenClaw。执行前请先关闭其他 Ubuntu / WSL 窗口。",
     "preparing": "准备删除中...",
     "completed": "删除已完成。",
     "errorFallback": "删除过程中发生错误"

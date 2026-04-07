@@ -29,12 +29,14 @@ const UPDATE_CHECK_INTERVAL = 30 * 60 * 1000 // 30 min
 export default function DoneStep({
   botUsername: _botUsername,
   channelType: _channelType,
+  isWindows = false,
   onTroubleshoot,
   onUninstallDone,
   onConfigureChannel
 }: {
   botUsername?: string
   channelType: ChannelType
+  isWindows?: boolean
   onTroubleshoot?: () => void
   onUninstallDone?: () => void
   onConfigureChannel?: () => void
@@ -69,7 +71,7 @@ export default function DoneStep({
   const tRef = useRef<TFunction>(t)
   tRef.current = t
 
-  const { uninstall, backup } = useManagement(setStatus)
+  const { uninstall, backup } = useManagement(setStatus, isWindows)
 
   const syncGatewayStatus = useCallback(async (): Promise<'running' | 'stopped'> => {
     const nextStatus = await window.electronAPI.gateway.status()
@@ -662,12 +664,31 @@ export default function DoneStep({
             <label className="flex items-center gap-2 cursor-pointer">
               <input
                 type="checkbox"
-                checked={uninstall.removeConfig}
+                checked={uninstall.removeConfig || uninstall.unregisterWsl}
                 onChange={(e) => uninstall.setRemoveConfig(e.target.checked)}
+                disabled={uninstall.unregisterWsl}
                 className="w-4 h-4 rounded border-glass-border accent-primary"
               />
-              <span className="text-sm">{t('uninstall.removeConfig')}</span>
+              <span
+                className={`text-sm ${uninstall.unregisterWsl ? 'text-text-muted' : ''}`}
+              >
+                {t('uninstall.removeConfig')}
+              </span>
             </label>
+            {isWindows && (
+              <>
+                <label className="flex items-start gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={uninstall.unregisterWsl}
+                    onChange={(e) => uninstall.setUnregisterWsl(e.target.checked)}
+                    className="mt-0.5 w-4 h-4 rounded border-glass-border accent-error"
+                  />
+                  <span className="text-sm leading-relaxed">{t('uninstall.unregisterWsl')}</span>
+                </label>
+                <p className="text-xs leading-relaxed text-error/80">{t('uninstall.unregisterWslDesc')}</p>
+              </>
+            )}
             <div className="flex gap-2 pt-1">
               <Button variant="secondary" size="sm" onClick={uninstall.close}>
                 {t('common:button.cancel')}

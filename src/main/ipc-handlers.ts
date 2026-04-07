@@ -7,6 +7,9 @@ import { checkEnvironment, checkOpenclawUpdate } from './services/env-checker'
 import { getPathEnv, resolvePreferredBin } from './services/path-utils'
 import { checkPort, runDoctorFix } from './services/troubleshooter'
 import {
+  beginInstallTask,
+  cancelActiveInstall,
+  endInstallTask,
   installNodeMac,
   installOpenClaw,
   installWsl,
@@ -333,6 +336,7 @@ export const registerIpcHandlers = (getWin: () => BrowserWindow | null): void =>
   })
 
   ipcMain.handle('install:node', async () => {
+    beginInstallTask()
     try {
       applyInstallSourceSettings()
       if (platform() === 'win32') {
@@ -349,10 +353,13 @@ export const registerIpcHandlers = (getWin: () => BrowserWindow | null): void =>
         /* window destroyed */
       }
       return { success: false, error: msg }
+    } finally {
+      endInstallTask()
     }
   })
 
   ipcMain.handle('install:openclaw', async () => {
+    beginInstallTask()
     try {
       applyInstallSourceSettings()
       if (platform() === 'win32') {
@@ -369,7 +376,22 @@ export const registerIpcHandlers = (getWin: () => BrowserWindow | null): void =>
         /* window destroyed */
       }
       return { success: false, error: msg }
+    } finally {
+      endInstallTask()
     }
+  })
+
+  ipcMain.handle('install:cancel', () => {
+    const cancelled = cancelActiveInstall()
+    try {
+      win().webContents.send(
+        'install:error',
+        cancelled ? 'INSTALL_CANCELLED' : '当前没有正在执行的安装任务'
+      )
+    } catch {
+      /* window destroyed */
+    }
+    return { success: true, cancelled }
   })
 
   ipcMain.handle(
@@ -688,14 +710,17 @@ export const registerIpcHandlers = (getWin: () => BrowserWindow | null): void =>
   })
 
   // Uninstall OpenClaw
-  ipcMain.handle('uninstall:openclaw', async (_e, opts: { removeConfig: boolean }) => {
+  ipcMain.handle(
+    'uninstall:openclaw',
+    async (_e, opts: { removeConfig: boolean; unregisterWsl?: boolean }) => {
     try {
       await uninstallOpenClaw(win(), opts)
       return { success: true }
     } catch (e) {
       return { success: false, error: e instanceof Error ? e.message : String(e) }
     }
-  })
+    }
+  )
 
   // Backup / restore
   ipcMain.handle('backup:export', () => exportBackup(win()))

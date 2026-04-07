@@ -43,6 +43,7 @@ interface ElectronAPI {
   install: {
     node: () => Promise<{ success: boolean; error?: string }>
     openclaw: () => Promise<{ success: boolean; error?: string }>
+    cancel: () => Promise<{ success: boolean; cancelled: boolean }>
     onStatus: (
       cb: (status: { percent: number; stage: string; detail?: string }) => void
     ) => () => void
@@ -248,7 +249,10 @@ interface ElectronAPI {
     set: (enabled: boolean) => Promise<{ success: boolean }>
   }
   uninstall: {
-    openclaw: (opts: { removeConfig: boolean }) => Promise<{ success: boolean; error?: string }>
+    openclaw: (opts: {
+      removeConfig: boolean
+      unregisterWsl?: boolean
+    }) => Promise<{ success: boolean; error?: string }>
     onProgress: (cb: (msg: string) => void) => () => void
   }
   backup: {

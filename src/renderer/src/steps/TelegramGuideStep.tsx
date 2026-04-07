@@ -12,10 +12,12 @@ const channelEmojis: Record<ChannelType, string[]> = {
 export default function TelegramGuideStep({
   channelType,
   onSelectChannel,
+  onSkip,
   onNext
 }: {
   channelType: ChannelType
   onSelectChannel: (channel: ChannelType) => void
+  onSkip?: () => void
   onNext: () => void
 }): React.JSX.Element {
   const { t } = useTranslation('steps')
@@ -107,7 +109,14 @@ export default function TelegramGuideStep({
           </div>
         </div>
 
-        <div className="shrink-0 flex justify-end py-4">
+        <div className="shrink-0 flex justify-between py-4 gap-3">
+          {onSkip ? (
+            <Button variant="secondary" size="lg" onClick={onSkip}>
+              {t('channelGuide.skipBtn')}
+            </Button>
+          ) : (
+            <div />
+          )}
           <Button variant="primary" size="lg" onClick={onNext}>
             {`${t('channelGuide.continueBtnPrefix')} ${selectedChannel.title}`}
           </Button>

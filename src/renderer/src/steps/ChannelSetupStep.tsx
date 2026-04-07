@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import Button from '../components/Button'
 import InstallProgressCard from '../components/InstallProgressCard'
@@ -20,17 +20,22 @@ export default function ChannelSetupStep({
   const { logs, clearLogs, status } = useInstallLogs()
   const [running, setRunning] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const channelType = payload.channelType ?? 'telegram'
-  const channelTitle = t(`channelGuide.channels.${channelType}.title`)
+  const skippedChannelConfig = payload.skipChannelConfig === true || !payload.channelType
+  const channelType = skippedChannelConfig ? null : payload.channelType
+  const channelTitle = channelType ? t(`channelGuide.channels.${channelType}.title`) : t('setup.noChannelTitle')
   const hasExecutionOutput = running || !!status || logs.length > 0 || !!error
   const modeLabel =
-    channelType === 'telegram'
+    skippedChannelConfig
+      ? t('setup.mode.modelOnly')
+      : channelType === 'telegram'
       ? t('setup.mode.direct')
       : channelOnly
         ? t('setup.mode.channelOnly')
         : t('setup.mode.external')
   const nextHint =
-    channelType === 'telegram'
+    skippedChannelConfig
+      ? t('setup.hint.noChannel')
+      : channelType === 'telegram'
       ? t('setup.hint.telegram')
       : channelType === 'wechat'
         ? t('setup.hint.wechat')
@@ -40,6 +45,10 @@ export default function ChannelSetupStep({
     { label: t('setup.info.mode'), value: modeLabel },
     { label: t('setup.info.afterStart'), value: t('setup.info.afterStartValue') }
   ]
+
+  useEffect(() => {
+    clearLogs()
+  }, [clearLogs])
 
   const handleRun = (): void => {
     clearLogs()
@@ -86,7 +95,9 @@ export default function ChannelSetupStep({
                     ? t('setup.runningDesc')
                     : error
                       ? t('setup.failedDesc')
-                      : t(`setup.summaryChannel.${channelType}`)}
+                      : skippedChannelConfig
+                        ? t('setup.summaryNoChannel')
+                        : t(`setup.summaryChannel.${channelType}`)}
                 </p>
               </div>
             </div>
@@ -109,10 +120,14 @@ export default function ChannelSetupStep({
 
                     <div className="space-y-2">
                       <h3 className="text-xl font-extrabold tracking-tight">
-                        {t('setup.readyHeadline', { channel: channelTitle })}
+                        {skippedChannelConfig
+                          ? t('setup.readyHeadlineNoChannel')
+                          : t('setup.readyHeadline', { channel: channelTitle })}
                       </h3>
                       <p className="max-w-2xl text-sm leading-7 text-text-muted">
-                        {t(`setup.summaryChannel.${channelType}`)}
+                        {skippedChannelConfig
+                          ? t('setup.summaryNoChannel')
+                          : t(`setup.summaryChannel.${channelType}`)}
                       </p>
                     </div>
 

@@ -130,6 +130,9 @@
     "stoppingGw": "正在停止 Gateway...",
     "removing": "正在删除 OpenClaw 软件包...",
     "removingConfig": "正在删除配置文件...",
+    "unregisteringWsl": "正在注销 WSL Ubuntu 环境...",
+    "unregisterWslDone": "WSL Ubuntu 环境已注销。",
+    "unregisterWslMissing": "未检测到可注销的 WSL Ubuntu 环境。",
     "done": "删除完成！"
   },
   "backup": {

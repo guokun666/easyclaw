@@ -27,6 +27,8 @@ export default function InstallStep({
   const [installing, setInstalling] = useState(false)
   const [done, setDone] = useState(false)
   const [failed, setFailed] = useState(false)
+  const [cancelled, setCancelled] = useState(false)
+  const [stopping, setStopping] = useState(false)
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [sourceMode, setSourceMode] = useState<InstallSourceMode>('auto')
   const [savingSources, setSavingSources] = useState(false)
@@ -39,6 +41,10 @@ export default function InstallStep({
   }, [forceCleanInstall])
 
   useEffect(() => {
+    clearLogs()
+  }, [clearLogs])
+
+  useEffect(() => {
     window.electronAPI.settings.getInstallSources().then((settings) => {
       setSourceMode(settings.sourceMode || 'auto')
     })
@@ -46,7 +52,9 @@ export default function InstallStep({
 
   const runInstall = useCallback(async () => {
     setInstalling(true)
+    setStopping(false)
     setFailed(false)
+    setCancelled(false)
     clearLogs()
     try {
       // Clean uninstall old OpenClaw if checked
@@ -65,12 +73,24 @@ export default function InstallStep({
         if (!r.success) throw new Error(r.error)
       }
       setDone(true)
-    } catch {
-      setFailed(true)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      if (message === 'INSTALL_CANCELLED') {
+        setCancelled(true)
+        setFailed(false)
+      } else {
+        setFailed(true)
+      }
     } finally {
       setInstalling(false)
+      setStopping(false)
     }
   }, [needs, clearLogs, cleanInstall])
+
+  const stopInstall = useCallback(async () => {
+    setStopping(true)
+    await window.electronAPI.install.cancel()
+  }, [])
 
   const saveInstallSources = useCallback(async () => {
     setSavingSources(true)
@@ -105,9 +125,11 @@ export default function InstallStep({
                 ? t('install.done')
                 : failed
                   ? t('install.failed')
-                  : installing
-                    ? t('install.progress')
-                    : t('install.ready')}
+                  : cancelled
+                    ? t('install.cancelled')
+                    : installing
+                      ? t('install.progress')
+                      : t('install.ready')}
             </h2>
             <p className="text-text-muted text-xs font-medium">
               {installing
@@ -116,6 +138,8 @@ export default function InstallStep({
                   ? t('install.allReady')
                   : failed
                     ? t('install.checkLog')
+                    : cancelled
+                      ? t('install.cancelledDesc')
                     : t('install.desc')}
             </p>
           </div>
@@ -136,6 +160,29 @@ export default function InstallStep({
         </div>
 
         <div className="glass-card p-4 space-y-3">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={cleanInstall}
+              onChange={(e) => setCleanInstall(e.target.checked)}
+              disabled={installing || forceCleanInstall}
+              className="w-4 h-4 rounded border-glass-border accent-primary"
+            />
+            <div>
+              <span className="text-xs font-semibold">
+                {forceCleanInstall
+                  ? t('install.cleanInstallForcedLabel')
+                  : t('install.cleanInstallLabel')}
+              </span>
+              <p className="text-[11px] text-text-muted/60">{t('install.cleanInstallDesc')}</p>
+            </div>
+          </label>
+          {forceCleanInstall && (
+            <p className="text-[11px] leading-5 text-warning font-medium">
+              {t('install.cleanInstallForcedDesc')}
+            </p>
+          )}
+
           <button
             type="button"
             onClick={() => setShowAdvanced((prev) => !prev)}
@@ -150,28 +197,6 @@ export default function InstallStep({
 
           {showAdvanced && (
             <div className="space-y-3">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={cleanInstall}
-                  onChange={(e) => setCleanInstall(e.target.checked)}
-                  disabled={installing || forceCleanInstall}
-                  className="w-4 h-4 rounded border-glass-border accent-primary"
-                />
-                <div>
-                  <span className="text-xs font-semibold">
-                    {forceCleanInstall
-                      ? t('install.cleanInstallForcedLabel')
-                      : t('install.cleanInstallLabel')}
-                  </span>
-                  <p className="text-[11px] text-text-muted/60">{t('install.cleanInstallDesc')}</p>
-                </div>
-              </label>
-              {forceCleanInstall && (
-                <p className="text-[11px] leading-5 text-warning font-medium">
-                  {t('install.cleanInstallForcedDesc')}
-                </p>
-              )}
               <div className="space-y-1">
                 <label className="text-xs font-semibold">{t('install.sourceModeLabel')}</label>
                 <select
@@ -204,15 +229,27 @@ export default function InstallStep({
 
         {(installing || status || logs.length > 0) && <InstallProgressCard status={status} />}
         {(installing || logs.length > 0) && <LogViewer lines={logs} />}
-        {error && <p className="text-error text-xs font-medium">{error}</p>}
+        {error && error !== 'INSTALL_CANCELLED' && (
+          <p className="text-error text-xs font-medium">{error}</p>
+        )}
 
         <div className="flex gap-3 justify-end mt-1">
+          {installing && (
+            <Button variant="secondary" size="sm" onClick={stopInstall} disabled={stopping}>
+              {stopping ? t('install.stoppingBtn') : t('install.stopBtn')}
+            </Button>
+          )}
           {failed && (
             <Button variant="secondary" size="sm" onClick={runInstall}>
               {t('install.retryBtn')}
             </Button>
           )}
-          {!done && !installing && !failed && (
+          {cancelled && !installing && (
+            <Button variant="secondary" size="sm" onClick={runInstall}>
+              {t('install.retryBtn')}
+            </Button>
+          )}
+          {!done && !installing && !failed && !cancelled && (
             <Button variant="primary" size="lg" onClick={runInstall}>
               {t('install.startBtn')}
             </Button>

@@ -66,11 +66,13 @@
   "install": {
     "done": "安装完成！",
     "failed": "安装失败",
+    "cancelled": "安装已停止",
     "progress": "安装中...",
     "ready": "准备安装",
     "wait": "请稍候",
     "allReady": "所有组件已就绪",
     "checkLog": "请查看日志",
+    "cancelledDesc": "安装已被中断。你可以调整选项后重新开始安装。",
     "desc": "将安装以下组件",
     "nodejs": "Node.js 22 LTS",
     "openclaw": "OpenClaw",
@@ -92,6 +94,8 @@
     "saveSourcesSuccess": "安装源已保存",
     "saveSourcesError": "保存安装源失败",
     "retryBtn": "重试",
+    "stopBtn": "停止安装",
+    "stoppingBtn": "停止中...",
     "startBtn": "开始安装",
     "nextBtn": "下一步"
   },
@@ -118,6 +122,7 @@
   "channelGuide": {
     "title": "选择消息渠道",
     "desc": "选择要接入的消息渠道，默认推荐飞书",
+    "skipBtn": "跳过，稍后配置",
     "currentSelection": "当前已选：",
     "clickHint": "点击上方卡片可切换",
     "selectedBadge": "已选",
@@ -265,6 +270,8 @@
     "readyDesc": "页面已经稳定切换完成，现在改为手动开始执行。",
     "readyBadge": "准备执行",
     "readyHeadline": "{{channel}} 配置已经就绪",
+    "readyHeadlineNoChannel": "OpenClaw 基础配置已经就绪",
+    "noChannelTitle": "暂不配置消息渠道",
     "pausedDesc": "这一页暂时只验证页面跳转，先不触发真实配置执行。",
     "summaryTitle": "当前执行内容",
     "summaryChannel": {
@@ -272,10 +279,12 @@
       "wechat": "微信渠道配置会在外部 Terminal 中完成，应用内只保留状态与结果展示。",
       "telegram": "Telegram 渠道配置会写入 Bot Token，并完成 OpenClaw 基础配置。"
     },
+    "summaryNoChannel": "本次只会写入 OpenClaw 主模型与密钥配置，不会执行任何消息渠道安装或一键命令。",
     "mode": {
       "external": "外部 Terminal 执行",
       "channelOnly": "仅更新消息渠道",
-      "direct": "直接写入 OpenClaw 配置"
+      "direct": "直接写入 OpenClaw 配置",
+      "modelOnly": "仅写入模型与密钥"
     },
     "info": {
       "channel": "消息渠道",
@@ -287,7 +296,8 @@
     "hint": {
       "feishu": "会拉起飞书安装与授权流程，执行日志会在当前页面持续更新。",
       "wechat": "会执行微信一键安装命令，如有二维码或确认提示，请按终端输出完成操作。",
-      "telegram": "会校验并写入 Telegram Bot Token，然后继续完成 OpenClaw 基础配置。"
+      "telegram": "会校验并写入 Telegram Bot Token，然后继续完成 OpenClaw 基础配置。",
+      "noChannel": "这一步不会执行飞书、微信或 Telegram 安装，只会完成主模型与密钥配置。"
     },
     "externalTitle": "外部终端执行",
     "externalDesc": "我们会自动打开系统 Terminal 并在里面执行扫码与授权。这个页面只负责等待结果，避免最后一步再次白屏。",

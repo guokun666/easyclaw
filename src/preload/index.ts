@@ -38,6 +38,8 @@ const electronAPI = {
     node: (): Promise<{ success: boolean; error?: string }> => ipcRenderer.invoke('install:node'),
     openclaw: (): Promise<{ success: boolean; error?: string }> =>
       ipcRenderer.invoke('install:openclaw'),
+    cancel: (): Promise<{ success: boolean; cancelled: boolean }> =>
+      ipcRenderer.invoke('install:cancel'),
     onStatus: (
       cb: (status: { percent: number; stage: string; detail?: string }) => void
     ): (() => void) => {
@@ -317,7 +319,10 @@ const electronAPI = {
       ipcRenderer.invoke('autolaunch:set', enabled)
   },
   uninstall: {
-    openclaw: (opts: { removeConfig: boolean }): Promise<{ success: boolean; error?: string }> =>
+    openclaw: (opts: {
+      removeConfig: boolean
+      unregisterWsl?: boolean
+    }): Promise<{ success: boolean; error?: string }> =>
       ipcRenderer.invoke('uninstall:openclaw', opts),
     onProgress: (cb: (msg: string) => void): (() => void) => {
       const handler = (_: unknown, msg: string): void => cb(msg)
