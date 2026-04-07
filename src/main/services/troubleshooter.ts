@@ -1,7 +1,9 @@
 import { spawn } from 'child_process'
 import { platform } from 'os'
 import { BrowserWindow } from 'electron'
-import { getPathEnv, findBin } from './path-utils'
+import { getPathEnv, resolvePreferredBin } from './path-utils'
+import { createTerminalLineEmitter } from './terminal-output'
+import { buildWslBashArgs } from './wsl-utils'
 
 const exec = (
   cmd: string,
@@ -38,16 +40,23 @@ export const checkPort = async (port = 18789): Promise<{ inUse: boolean; pid?: s
 
 export const runDoctorFix = async (win: BrowserWindow): Promise<{ success: boolean }> => {
   const isWin = platform() === 'win32'
-  let cmd: string
-  let args: string[]
+  const cmd = isWin ? 'wsl' : resolvePreferredBin('openclaw')
+  const args = isWin ? await buildWslBashArgs('openclaw doctor --fix') : ['doctor', '--fix']
 
-  if (isWin) {
-    cmd = 'wsl'
-    args = ['-d', 'Ubuntu', '-u', 'root', '--', 'bash', '-lc', 'openclaw doctor --fix']
-  } else {
-    cmd = findBin('npm')
-    args = ['exec', '--', 'openclaw', 'doctor', '--fix']
-  }
+  const stdoutEmitter = await createTerminalLineEmitter((msg) => {
+    try {
+      win.webContents.send('install:progress', msg)
+    } catch {
+      /* window destroyed */
+    }
+  })
+  const stderrEmitter = await createTerminalLineEmitter((msg) => {
+    try {
+      win.webContents.send('install:progress', msg)
+    } catch {
+      /* window destroyed */
+    }
+  })
 
   return new Promise((resolve) => {
     const child = spawn(cmd, args, {
@@ -55,27 +64,17 @@ export const runDoctorFix = async (win: BrowserWindow): Promise<{ success: boole
       shell: isWin
     })
 
-    child.stdout.on('data', (d) => {
-      const msg = d.toString().trim()
-      if (msg) {
-        try {
-          win.webContents.send('install:progress', msg)
-        } catch {
-          /* window destroyed */
-        }
-      }
+    child.stdout.on('data', (d: Buffer) => stdoutEmitter.push(d))
+    child.stderr.on('data', (d: Buffer) => stderrEmitter.push(d))
+    child.on('close', (code) => {
+      stdoutEmitter.flush()
+      stderrEmitter.flush()
+      resolve({ success: code === 0 })
     })
-    child.stderr.on('data', (d) => {
-      const msg = d.toString().trim()
-      if (msg) {
-        try {
-          win.webContents.send('install:progress', msg)
-        } catch {
-          /* window destroyed */
-        }
-      }
+    child.on('error', () => {
+      stdoutEmitter.flush()
+      stderrEmitter.flush()
+      resolve({ success: false })
     })
-    child.on('close', (code) => resolve({ success: code === 0 }))
-    child.on('error', () => resolve({ success: false }))
   })
 }

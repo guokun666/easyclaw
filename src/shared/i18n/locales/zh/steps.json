@@ -1,11 +1,11 @@
 {
   "indicator": {
-    "default": ["开始", "环境", "安装", "API密钥", "Telegram", "配置", "完成"],
-    "windows": ["开始", "环境", "WSL", "安装", "API密钥", "Telegram", "配置", "完成"]
+    "default": ["开始", "环境", "安装", "API密钥", "渠道", "配置", "执行", "完成"],
+    "windows": ["开始", "环境", "WSL", "安装", "API密钥", "渠道", "配置", "执行", "完成"]
   },
   "welcome": {
     "title": "专属 AI 智能体，一键搞定",
-    "desc": "轻松快速安装 OpenClaw\n通过 Telegram 与 AI 对话",
+    "desc": "轻松快速安装 OpenClaw\n通过飞书、微信或 Telegram 与 AI 对话",
     "start": "开始",
     "language": "语言"
   },
@@ -18,6 +18,10 @@
       "windows": "Windows",
       "linux": "Linux"
     },
+    "proxy": "Windows 代理",
+    "proxyDetected": "已检测到",
+    "proxyAutoBridge": "检测到 localhost 系统代理。后续 WSL 安装、配置和 Gateway 启动时，会自动改写成 WSL 可访问的宿主机地址。",
+    "proxyDirect": "已检测到系统代理。当前无需额外改写，WSL 将直接沿用该代理设置。",
     "wsl": "WSL",
     "wslState": {
       "ready": "就绪",
@@ -30,6 +34,7 @@
     },
     "nodejs": "Node.js",
     "openclaw": "OpenClaw",
+    "reinstallRequired": "检测到重装，需重新安装",
     "updateAvailable": "可更新",
     "checkBtn": "检查中",
     "nextBtn": "下一步",
@@ -44,7 +49,7 @@
     "wslInstalling": "正在安装 WSL...",
     "wslInstall": "安装 WSL",
     "rebootRequired": "需要重启",
-    "rebootDesc": "要完成 WSL 安装，需要重启计算机。重启后请重新运行 EasyClaw。",
+    "rebootDesc": "要完成 WSL 安装，需要重启计算机。重启后请重新运行 familyClaw。",
     "rebootNow": "立即重启",
     "ubuntuInstallDesc": "安装 Ubuntu 发行版。",
     "ubuntuInstalling": "正在安装 Ubuntu...",
@@ -61,15 +66,55 @@
   "install": {
     "done": "安装完成！",
     "failed": "安装失败",
+    "cancelled": "安装已停止",
     "progress": "安装中...",
     "ready": "准备安装",
     "wait": "请稍候",
     "allReady": "所有组件已就绪",
     "checkLog": "请查看日志",
+    "cancelledDesc": "安装已被中断。你可以调整选项后重新开始安装。",
     "desc": "将安装以下组件",
     "nodejs": "Node.js 22 LTS",
     "openclaw": "OpenClaw",
+    "cleanInstallLabel": "清除旧版本后安装",
+    "cleanInstallForcedLabel": "本次将执行干净安装",
+    "cleanInstallDesc": "删除本机上已安装的 OpenClaw 包和旧配置，避免残留密钥与文件继续被复用",
+    "cleanInstallForcedDesc": "检测到这是重装后的首次启动。为了避免继续使用之前的 API Key 和配置，本次会强制清除旧 OpenClaw 数据后重新安装。",
+    "cleanInstallFailed": "清除旧 OpenClaw 数据失败，请查看日志后重试",
+    "advancedTitle": "高级安装源",
+    "advancedDesc": "可选：切换官方源、npmmirror 或腾讯云镜像。auto 会自动按可用性依次尝试。",
+    "sourceModeLabel": "下载/更新策略",
+    "versionLabel": "OpenClaw 版本",
+    "versionHint": "可选择安装的 OpenClaw 版本。推荐版本会优先保证稳定性。",
+    "versionLoading": "正在从当前安装源拉取可用版本...",
+    "versionLoadError": "可用版本拉取失败，已保留当前已知版本列表。",
+    "versionLatestBadge": "最新",
+    "versionRecommendedBadge": "推荐",
+    "sourceMode": {
+      "auto": {
+        "label": "自动选择",
+        "desc": "优先尝试 npmmirror，其次腾讯云，最后回退官方源。"
+      },
+      "official": {
+        "label": "官方源",
+        "desc": "仅使用官方 npm / Node 下载源，适合镜像异常时回退。"
+      },
+      "npmmirror": {
+        "label": "npmmirror",
+        "desc": "优先使用 npmmirror，加速 OpenClaw 下载；失败时自动回退官方。"
+      },
+      "tencent": {
+        "label": "腾讯云镜像",
+        "desc": "优先使用腾讯云镜像；适合部分国内网络，失败时自动回退官方。"
+      }
+    },
+    "savingSources": "保存中...",
+    "saveSources": "保存安装源",
+    "saveSourcesSuccess": "安装源已保存",
+    "saveSourcesError": "保存安装源失败",
     "retryBtn": "重试",
+    "stopBtn": "停止安装",
+    "stoppingBtn": "停止中...",
     "startBtn": "开始安装",
     "nextBtn": "下一步"
   },
@@ -93,37 +138,73 @@
     },
     "oauthDesc": "使用 ChatGPT Plus/Pro 订阅登录"
   },
-  "telegramGuide": {
-    "title": "创建 Telegram 机器人",
-    "desc": "让我们创建一个用于与 AI 智能体对话的 Telegram 机器人",
-    "steps": [
-      {
-        "title": "搜索 BotFather",
-        "desc": "在 Telegram 应用中搜索 @BotFather，选择带有蓝色认证标志的官方机器人。"
+  "channelGuide": {
+    "title": "选择消息渠道",
+    "desc": "选择要接入的消息渠道，默认推荐飞书",
+    "skipBtn": "跳过，稍后配置",
+    "currentSelection": "当前已选：",
+    "clickHint": "点击上方卡片可切换",
+    "selectedBadge": "已选",
+    "continueBtnPrefix": "继续配置",
+    "readyBtn": "渠道已准备好！",
+    "channels": {
+      "feishu": {
+        "title": "飞书",
+        "desc": "默认推荐，支持一键安装，也可手动填写凭证",
+        "cta": "前往飞书开放平台 ->",
+        "url": "https://open.feishu.cn/"
       },
-      {
-        "title": "输入 /newbot 命令",
-        "desc": "在 BotFather 对话中输入 /newbot，它会询问机器人名称。"
+      "wechat": {
+        "title": "微信",
+        "desc": "通过一键安装向导接入微信渠道",
+        "note": "微信仅支持一键式安装，执行后请按命令输出完成扫码或确认。"
       },
-      {
-        "title": "输入机器人显示名称",
-        "desc": "输入机器人的显示名称。例如：EASYCLAW"
-      },
-      {
-        "title": "设置机器人用户名",
-        "desc": "输入以 _bot 结尾的唯一 ID。例如：my_easyclaw_bot"
-      },
-      {
-        "title": "复制机器人令牌",
-        "desc": "创建完成！请务必复制 123456:ABCDEF... 格式的令牌。"
+      "telegram": {
+        "title": "Telegram",
+        "desc": "适合机器人私聊和群组接入",
+        "cta": "前往 BotFather ->",
+        "url": "https://t.me/BotFather"
       }
-    ],
-    "botfatherLink": "前往 BotFather ->",
-    "tokenReady": "令牌已准备好！"
+    },
+    "guides": {
+      "feishu": {
+        "steps": [
+          { "title": "默认推荐一键安装", "desc": "下一步可直接执行飞书官方工具，自动创建并配置渠道。" },
+          { "title": "自动开启流式响应", "desc": "安装完成后会自动写入 streaming 配置并重启网关。" },
+          { "title": "扫码完成授权", "desc": "脚本会继续触发飞书 Oauth 授权，请扫描输出中的二维码。" },
+          { "title": "也支持手动模式", "desc": "如果你已准备好飞书应用凭证，也可以切换为手动填写 App ID 和 Secret。" },
+          { "title": "保留实时日志", "desc": "二维码和命令输出会实时显示在日志区域，方便复制和排查。" }
+        ]
+      },
+      "wechat": {
+        "steps": [
+          { "title": "执行一键安装命令", "desc": "下一步会运行微信官方 CLI 安装流程。" },
+          { "title": "保持窗口开启", "desc": "日志会实时输出，请保持安装器窗口处于前台以便查看二维码。" },
+          { "title": "扫码或确认", "desc": "如果命令输出二维码或确认提示，请按终端说明完成。" },
+          { "title": "等待命令结束", "desc": "安装器会等待命令退出，再确认渠道安装结果。" },
+          { "title": "当前仅支持一键式", "desc": "微信没有手动凭证模式入口，统一通过 CLI 安装。" }
+        ]
+      },
+      "telegram": {
+        "steps": [
+          {
+            "title": "搜索 BotFather",
+            "desc": "在 Telegram 中搜索 @BotFather，并确认是官方账号。"
+          },
+          { "title": "输入 /newbot", "desc": "执行 /newbot，按提示创建机器人。" },
+          { "title": "设置显示名称", "desc": "输入机器人的显示名称，例如 EASYCLAW。" },
+          { "title": "设置用户名", "desc": "输入以 _bot 结尾的唯一用户名。" },
+          { "title": "复制 Bot Token", "desc": "创建完成后复制 123456:ABCDEF... 形式的 token。" }
+        ]
+      }
+    }
   },
   "config": {
     "title": "API 密钥配置",
     "desc": "请输入您获取的密钥",
+    "modelLabel": "模型",
+    "modelPlaceholder": "claude-opus-4-6",
+    "modelHint": "可从下拉建议里选，也可以直接手动输入模型 ID。安装器会自动补齐 provider 前缀。",
     "apiKeyLabel": {
       "anthropic": "Anthropic API 密钥",
       "google": "Gemini API 密钥",
@@ -134,10 +215,64 @@
       "ollama": "Ollama"
     },
     "ollamaInfo": "Ollama 必须已安装并正在运行",
+    "channelLabel": "消息渠道",
+    "channelTypeDesc": {
+      "feishu": "默认推荐一键安装，也支持切换到手动填写飞书应用凭证。",
+      "wechat": "将执行微信一键安装命令，并实时显示扫码或确认输出。",
+      "telegram": "填写 Telegram Bot Token，安装器会写入 Telegram 渠道配置。"
+    },
+    "channelSetupModeLabel": "飞书配置方式",
+    "channelSetupMode": {
+      "one-click": {
+        "title": "一键安装",
+        "desc": "推荐，自动执行安装、开启流式响应并拉起授权"
+      },
+      "manual": {
+        "title": "手动填写",
+        "desc": "适合已创建飞书应用并持有 App ID / Secret 的场景"
+      }
+    },
     "required": "必填",
     "telegramToken": "Telegram Bot Token",
     "telegramHint": "正确格式：123456:ABCDEF...",
+    "feishuOneClickTitle": "飞书一键安装",
+    "feishuOneClickDesc": "会自动执行飞书安装工具、开启 channels.feishu.streaming、重启 Gateway，并继续触发 Oauth 授权二维码。",
+    "feishuAppId": "飞书 App ID",
+    "feishuAppSecret": "飞书 App Secret",
+    "feishuSecretHint": "请输入飞书应用密钥",
+    "wechatOneClickTitle": "微信一键安装",
+    "wechatOneClickDesc": "会直接执行 npx 安装命令，并实时显示二维码或交互提示。微信当前不提供手动填写模式。",
+    "memorySearch": {
+      "title": "语义记忆",
+      "optional": "可选",
+      "desc": "为 OpenClaw 额外配置 embeddings。未填写或后续校验失败时，会自动关闭，不影响主流程。",
+      "enabledHint": "已启用可选语义记忆，只在填写有效 embedding key 时生效。",
+      "provider": "Embedding 提供方",
+      "apiKeyLabel": "Embedding API Key",
+      "hint": "只有想启用语义记忆时才需要填写。留空、格式不正确或后续校验失败时，安装器会自动关闭这项功能。",
+      "disabledHint": "当前不启用语义记忆。这样不会因为 embeddings 未配置而影响 Gateway 启动。",
+      "autoDisabledInvalid": "语义记忆输入不完整或格式不正确，已自动关闭。主流程会继续执行。",
+      "noticeTitleSuccess": "语义记忆已启用",
+      "noticeTitleWarning": "语义记忆已自动关闭",
+      "providers": {
+        "openai": "使用 OpenAI embeddings，默认模型为 text-embedding-3-small。",
+        "gemini": "使用 Gemini embeddings，默认模型为 gemini-embedding-001。"
+      }
+    },
+    "testBtn": "测试连接",
+    "testingBtn": "测试中...",
+    "apiKeyTestSuccess": "小龙虾已经可以通过这个 API Key 访问提供商。",
+    "apiKeyTestInvalidFormat": "API Key 格式不正确，先检查输入后再测试。",
+    "testResult": {
+      "successTitle": "连接测试通过",
+      "warningTitle": "连接测试未完成",
+      "errorTitle": "连接测试失败"
+    },
+    "keyValidating": "校验密钥中...",
+    "keyValidated": "API Key 已校验通过",
+    "keyValidationFailed": "API Key 校验失败",
     "errorOccurred": "配置过程中发生错误",
+    "nextBtn": "下一步",
     "savingBtn": "保存中...",
     "saveBtn": "保存配置",
     "oauthLogin": "使用 OpenAI 登录",
@@ -145,6 +280,58 @@
     "oauthSuccess": "登录成功",
     "oauthError": "登录失败，请重试。",
     "oauthCancelled": "登录已取消。"
+  },
+  "setup": {
+    "title": "正在执行配置",
+    "runningDesc": "我们正在为你应用 OpenClaw 与消息渠道配置，请稍候。",
+    "failedDesc": "执行过程中出现问题，你可以直接重试。",
+    "doneDesc": "配置完成，正在进入下一步。",
+    "readyDesc": "页面已经稳定切换完成，现在改为手动开始执行。",
+    "readyBadge": "准备执行",
+    "readyHeadline": "{{channel}} 配置已经就绪",
+    "readyHeadlineNoChannel": "OpenClaw 基础配置已经就绪",
+    "noChannelTitle": "暂不配置消息渠道",
+    "pausedDesc": "这一页暂时只验证页面跳转，先不触发真实配置执行。",
+    "summaryTitle": "当前执行内容",
+    "summaryChannel": {
+      "feishu": "飞书渠道配置会在外部 Terminal 中完成，应用内只保留状态与结果展示。",
+      "wechat": "微信渠道配置会在外部 Terminal 中完成，应用内只保留状态与结果展示。",
+      "telegram": "Telegram 渠道配置会写入 Bot Token，并完成 OpenClaw 基础配置。"
+    },
+    "summaryNoChannel": "本次只会写入 OpenClaw 主模型与密钥配置，不会执行任何消息渠道安装或一键命令。",
+    "mode": {
+      "external": "外部 Terminal 执行",
+      "channelOnly": "仅更新消息渠道",
+      "direct": "直接写入 OpenClaw 配置",
+      "modelOnly": "仅写入模型与密钥"
+    },
+    "info": {
+      "channel": "消息渠道",
+      "mode": "执行方式",
+      "afterStart": "开始后",
+      "afterStartValue": "这里会实时显示进度和日志"
+    },
+    "nextTitle": "开始后会发生什么",
+    "hint": {
+      "feishu": "会拉起飞书安装与授权流程，执行日志会在当前页面持续更新。",
+      "wechat": "会执行微信一键安装命令，如有二维码或确认提示，请按终端输出完成操作。",
+      "telegram": "会校验并写入 Telegram Bot Token，然后继续完成 OpenClaw 基础配置。",
+      "noChannel": "这一步不会执行飞书、微信或 Telegram 安装，只会完成主模型与密钥配置。"
+    },
+    "externalTitle": "外部终端执行",
+    "externalDesc": "我们会自动打开系统 Terminal 并在里面执行扫码与授权。这个页面只负责等待结果，避免最后一步再次白屏。",
+    "manualTitle": "手动触发执行",
+    "manualBody": "进入页面后不会立刻自动执行。请点击下方按钮手动开始，安装器会先校验模型令牌，再继续执行渠道配置。",
+    "pausedTitle": "已暂停真实执行",
+    "pausedBody": "当前不会调用 openclaw、npx 或外部 Terminal。先确认点击“下一步”后页面能稳定跳转到这里，再继续恢复执行逻辑。",
+    "continueBtn": "继续进入完成页",
+    "progressTitle": "当前进度",
+    "skipChannelBtn": "跳过渠道，仅完成基础配置",
+    "skippingBtn": "正在跳过渠道...",
+    "startBtn": "开始执行配置",
+    "runningBtn": "执行中...",
+    "retryBtn": "重新执行",
+    "errorOccurred": "执行过程中发生错误"
   },
   "troubleshoot": {
     "title": "问题排查",
@@ -154,6 +341,16 @@
     "reinstall": "重新安装",
     "restartGw": "重启",
     "doctorFix": "Doctor Fix",
+    "aiRepair": "AI 自动修复",
+    "aiRepairing": "AI 修复中...",
+    "aiRepairReviewTitle": "确认 AI 修复",
+    "aiRepairReviewDesc": "以下计划包含高影响动作。执行前会先明确说明发现的问题、准备执行的操作，以及每一步会产生的作用。",
+    "aiRepairProblemLabel": "发现的问题",
+    "aiRepairActionLabel": "准备执行",
+    "aiRepairCommandLabel": "对应命令",
+    "aiRepairRuntimeLabel": "执行环境：",
+    "aiRepairEffectLabel": "作用说明",
+    "aiRepairApprove": "确认执行",
     "rediagnose": "重新诊断",
     "showLog": "▶ 查看日志",
     "hideLog": "▼ 隐藏日志",

@@ -2,6 +2,12 @@ import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import LobsterLogo from '../components/LobsterLogo'
 import Button from '../components/Button'
+import InstallProgressCard from '../components/InstallProgressCard'
+import LogViewer from '../components/LogViewer'
+import InstallSourceSelect from '../components/InstallSourceSelect'
+import OpenClawVersionSelect from '../components/OpenClawVersionSelect'
+import { useInstallLogs } from '../hooks/useIpc'
+import type { InstallSourceMode } from '../constants/install-sources'
 
 type WslState =
   | 'not_available'
@@ -19,7 +25,13 @@ interface EnvResult {
   openclawInstalled: boolean
   openclawVersion: string | null
   openclawLatestVersion: string | null
+  freshInstallerLaunch?: boolean
   wslState?: WslState
+  wslProxyInfo?: {
+    enabled: boolean
+    displayValue?: string
+    needsAutoBridge: boolean
+  }
 }
 
 const CheckRow = ({
@@ -54,6 +66,19 @@ export default function EnvCheckStep({
   const [checking, setChecking] = useState(true)
   const [env, setEnv] = useState<EnvResult | null>(null)
   const [updating, setUpdating] = useState(false)
+  const [updateError, setUpdateError] = useState<string | null>(null)
+  const [showSourceSettings, setShowSourceSettings] = useState(false)
+  const [sourceMode, setSourceMode] = useState<InstallSourceMode>('auto')
+  const [openclawVersion, setOpenclawVersion] = useState('2026.4.1')
+  const [availableVersions, setAvailableVersions] = useState<string[]>(['2026.4.1'])
+  const [latestVersion, setLatestVersion] = useState<string | null>(null)
+  const [recommendedVersion, setRecommendedVersion] = useState('2026.4.1')
+  const [loadingVersions, setLoadingVersions] = useState(false)
+  const [versionError, setVersionError] = useState<string | null>(null)
+  const [savingSources, setSavingSources] = useState(false)
+  const [sourcesMessage, setSourcesMessage] = useState<string | null>(null)
+  const [sourcesError, setSourcesError] = useState<string | null>(null)
+  const { logs, error, status, clearLogs } = useInstallLogs()
 
   const wslStateLabel = (state?: WslState): string => {
     switch (state) {
@@ -85,94 +110,270 @@ export default function EnvCheckStep({
 
   useEffect(() => {
     runCheck()
+    window.electronAPI.settings.getInstallSources().then((settings) => {
+      setSourceMode(settings.sourceMode || 'auto')
+      setOpenclawVersion(settings.openclawVersion || '2026.4.1')
+    })
   }, [])
+
+  useEffect(() => {
+    let cancelled = false
+
+    const loadVersions = async (): Promise<void> => {
+      setLoadingVersions(true)
+      setVersionError(null)
+      try {
+        const result = await window.electronAPI.openclaw.listVersions({ sourceMode })
+        if (!result.success || cancelled) return
+        const versions = Array.from(new Set([...(result.versions || []), openclawVersion])).sort((a, b) =>
+          b.localeCompare(a, undefined, { numeric: true, sensitivity: 'base' })
+        )
+        setAvailableVersions(versions)
+        setLatestVersion(result.latestVersion)
+        setRecommendedVersion(result.recommendedVersion)
+        if (!versions.includes(openclawVersion)) {
+          setOpenclawVersion(result.recommendedVersion)
+        }
+      } catch {
+        if (!cancelled) {
+          setVersionError(t('install.versionLoadError'))
+          setAvailableVersions((prev) => Array.from(new Set([...prev, openclawVersion])))
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingVersions(false)
+        }
+      }
+    }
+
+    void loadVersions()
+    return () => {
+      cancelled = true
+    }
+  }, [openclawVersion, sourceMode, t])
 
   const hasUpdate =
     env?.openclawInstalled &&
     env.openclawVersion &&
     env.openclawLatestVersion &&
     env.openclawVersion !== env.openclawLatestVersion
+  const needsFreshReinstall = !!env?.freshInstallerLaunch && env.openclawInstalled
 
   const handleUpdate = async (): Promise<void> => {
+    const targetVersion = env?.openclawLatestVersion
+    if (!targetVersion) return
+
     setUpdating(true)
+    setUpdateError(null)
+    clearLogs()
     try {
-      await window.electronAPI.install.openclaw()
+      await window.electronAPI.settings.setInstallSources({ sourceMode, openclawVersion: targetVersion })
+      const result = await window.electronAPI.install.openclaw({ version: targetVersion })
+      if (!result.success) {
+        throw new Error(result.error || t('common:error.occurred'))
+      }
+      setOpenclawVersion(targetVersion)
       runCheck()
-    } catch {
-      /* install error is reported via IPC event */
+    } catch (e) {
+      setUpdateError(e instanceof Error ? e.message : t('common:error.unknown'))
     } finally {
       setUpdating(false)
     }
   }
 
-  const allReady = env ? env.nodeInstalled && env.nodeVersionOk && env.openclawInstalled : false
+  const allReady = env
+    ? env.nodeInstalled && env.nodeVersionOk && env.openclawInstalled && !needsFreshReinstall
+    : false
 
-  const handleContinue = (): void => {
+  const handleContinue = async (): Promise<void> => {
     if (!env) return
+    await window.electronAPI.settings.setInstallSources({ sourceMode, openclawVersion })
     allReady ? onNext() : onNeedInstall(env)
   }
 
+  const saveInstallSources = async (): Promise<void> => {
+    setSavingSources(true)
+    setSourcesMessage(null)
+    setSourcesError(null)
+    try {
+      const result = await window.electronAPI.settings.setInstallSources({
+        sourceMode,
+        openclawVersion
+      })
+      if (result.success) {
+        setSourcesMessage(t('install.saveSourcesSuccess'))
+      } else {
+        setSourcesError(t('install.saveSourcesError'))
+      }
+    } catch {
+      setSourcesError(t('install.saveSourcesError'))
+    } finally {
+      setSavingSources(false)
+    }
+  }
+
   return (
-    <div className="flex-1 flex flex-col items-center pt-16 px-8 gap-5">
-      <LobsterLogo state={checking ? 'loading' : allReady ? 'success' : 'idle'} size={72} />
+    <div className="flex-1 w-full overflow-y-auto">
+      <div className="flex flex-col items-center pt-16 px-8 pb-28 gap-5 min-h-full">
+        <LobsterLogo state={checking ? 'loading' : allReady ? 'success' : 'idle'} size={72} />
 
-      <h2 className="text-lg font-extrabold">{t('envCheck.title')}</h2>
+        <h2 className="text-lg font-extrabold">{t('envCheck.title')}</h2>
 
-      {checking ? (
-        <p className="text-text-muted text-sm animate-pulse">{t('envCheck.scanning')}</p>
-      ) : env ? (
-        <div className="w-full max-w-xs space-y-2.5">
-          <CheckRow
-            label={t('envCheck.os')}
-            ok={true}
-            detail={env.os === 'macos' ? 'macOS' : env.os === 'windows' ? 'Windows' : 'Linux'}
-          />
-          {env.os === 'windows' && (
+        {checking ? (
+          <p className="text-text-muted text-sm animate-pulse">{t('envCheck.scanning')}</p>
+        ) : env ? (
+          <div className="w-full max-w-xs space-y-2.5">
             <CheckRow
-              label={t('envCheck.wsl')}
-              ok={env.wslState === 'ready'}
-              detail={wslStateLabel(env.wslState)}
+              label={t('envCheck.os')}
+              ok={true}
+              detail={env.os === 'macos' ? 'macOS' : env.os === 'windows' ? 'Windows' : 'Linux'}
             />
-          )}
-          <CheckRow
-            label={t('envCheck.nodejs')}
-            ok={env.nodeVersionOk}
-            detail={env.nodeInstalled ? `v${env.nodeVersion}` : t('common:status.notInstalled')}
-          />
-          <CheckRow
-            label={t('envCheck.openclaw')}
-            ok={env.openclawInstalled}
-            detail={
-              env.openclawInstalled ? `v${env.openclawVersion}` : t('common:status.notInstalled')
-            }
-          />
-          {hasUpdate && (
-            <button
-              onClick={handleUpdate}
-              disabled={updating}
-              className="w-full text-xs text-center py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-accent transition-colors disabled:opacity-50"
-            >
-              {updating
-                ? t('common:status.updating')
-                : `v${env.openclawLatestVersion} ${t('envCheck.updateAvailable')}`}
-            </button>
-          )}
-        </div>
-      ) : null}
+            {env.os === 'windows' && (
+              <CheckRow
+                label={t('envCheck.wsl')}
+                ok={env.wslState === 'ready'}
+                detail={wslStateLabel(env.wslState)}
+              />
+            )}
+            {env.os === 'windows' && env.wslProxyInfo?.enabled && (
+              <div className="glass-card px-4 py-3 space-y-1.5">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-sm font-semibold">{t('envCheck.proxy')}</span>
+                  <span className="text-xs font-mono text-text-muted">
+                    {env.wslProxyInfo.displayValue || t('envCheck.proxyDetected')}
+                  </span>
+                </div>
+                <p className="text-xs leading-5 text-text-muted">
+                  {env.wslProxyInfo.needsAutoBridge
+                    ? t('envCheck.proxyAutoBridge')
+                    : t('envCheck.proxyDirect')}
+                </p>
+              </div>
+            )}
+            <CheckRow
+              label={t('envCheck.nodejs')}
+              ok={env.nodeVersionOk}
+              detail={env.nodeInstalled ? `v${env.nodeVersion}` : t('common:status.notInstalled')}
+            />
+            <CheckRow
+              label={t('envCheck.openclaw')}
+              ok={env.openclawInstalled && !needsFreshReinstall}
+              detail={
+                needsFreshReinstall
+                  ? t('envCheck.reinstallRequired')
+                  : env.openclawInstalled
+                    ? `v${env.openclawVersion}`
+                    : t('common:status.notInstalled')
+              }
+            />
+            {hasUpdate && (
+              <button
+                onClick={handleUpdate}
+                disabled={updating}
+                className="w-full text-xs text-center py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-accent transition-colors disabled:opacity-50"
+              >
+                {updating
+                  ? t('common:status.updating')
+                  : `v${env.openclawLatestVersion} ${t('envCheck.updateAvailable')}`}
+              </button>
+            )}
+          </div>
+        ) : null}
 
-      <Button
-        variant="primary"
-        size="lg"
-        onClick={handleContinue}
-        disabled={checking}
-        loading={checking}
-      >
-        {checking
-          ? t('envCheck.checkBtn')
-          : allReady
-            ? t('envCheck.nextBtn')
-            : t('envCheck.installBtn')}
-      </Button>
+        <Button
+          variant="primary"
+          size="lg"
+          onClick={() => void handleContinue()}
+          disabled={checking || updating}
+          loading={checking || updating}
+        >
+          {checking
+            ? t('envCheck.checkBtn')
+            : updating
+              ? t('common:status.updating')
+              : allReady
+                ? t('envCheck.nextBtn')
+                : t('envCheck.installBtn')}
+        </Button>
+
+        {!checking && (
+          <div className="w-full max-w-xs glass-card p-4 space-y-3">
+            <button
+              type="button"
+              onClick={() => setShowSourceSettings((prev) => !prev)}
+              className="w-full flex items-center justify-between text-left"
+            >
+              <div>
+                <div className="text-sm font-bold">{t('install.advancedTitle')}</div>
+                <div className="text-xs text-text-muted">{t('install.advancedDesc')}</div>
+              </div>
+              <span className="text-text-muted text-xs">{showSourceSettings ? '▲' : '▼'}</span>
+            </button>
+
+            {showSourceSettings && (
+              <div className="space-y-3">
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold">{t('install.sourceModeLabel')}</label>
+                  <InstallSourceSelect
+                    value={sourceMode}
+                    onChange={setSourceMode}
+                    disabled={savingSources || updating}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold">{t('install.versionLabel')}</label>
+                <OpenClawVersionSelect
+                  value={openclawVersion}
+                  options={availableVersions}
+                  latestVersion={latestVersion}
+                  recommendedVersion={recommendedVersion}
+                  onChange={setOpenclawVersion}
+                  disabled={savingSources || updating || loadingVersions}
+                />
+                  {loadingVersions && (
+                    <p className="text-[11px] text-text-muted">{t('install.versionLoading')}</p>
+                  )}
+                  {versionError && (
+                    <p className="text-[11px] text-warning font-medium">{versionError}</p>
+                  )}
+                </div>
+
+                {sourcesMessage && (
+                  <p className="text-xs text-success font-medium">{sourcesMessage}</p>
+                )}
+                {sourcesError && <p className="text-xs text-error font-medium">{sourcesError}</p>}
+
+                <div className="flex justify-end">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={saveInstallSources}
+                    disabled={savingSources || updating}
+                  >
+                    {savingSources ? t('install.savingSources') : t('install.saveSources')}
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {(updating || status || logs.length > 0) && (
+          <div className="w-full max-w-xs">
+            <InstallProgressCard status={status} />
+          </div>
+        )}
+        {(updating || logs.length > 0) && (
+          <div className="w-full max-w-xs">
+            <LogViewer lines={logs} />
+          </div>
+        )}
+        {(updateError || error) && (
+          <p className="w-full max-w-xs whitespace-pre-wrap text-error text-xs font-medium">
+            {updateError || error}
+          </p>
+        )}
+      </div>
     </div>
   )
 }

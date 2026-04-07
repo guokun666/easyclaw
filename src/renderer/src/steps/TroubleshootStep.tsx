@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import DiagnosticCard from '../components/DiagnosticCard'
 import Button from '../components/Button'
 import LogViewer from '../components/LogViewer'
+import AiRepairApprovalModal from '../components/AiRepairApprovalModal'
 import { useInstallLogs } from '../hooks/useIpc'
 
 type DiagStatus = 'ok' | 'warn' | 'error' | 'checking'
@@ -23,10 +24,26 @@ interface TroubleshootStepProps {
   onBack: () => void
 }
 
+interface PendingAiRepairPlan {
+  planId: string
+  summary: string
+  actions: Array<{
+    label: string
+    reason: string
+    effect: string
+    commandPreview: string
+    commandRuntime: string
+    approval: 'auto' | 'confirm'
+  }>
+}
+
 export default function TroubleshootStep({ onBack }: TroubleshootStepProps): React.JSX.Element {
   const { t } = useTranslation('steps')
-  const { logs, clearLogs } = useInstallLogs()
+  const { logs, error, clearLogs } = useInstallLogs()
   const [showLogs, setShowLogs] = useState(false)
+  const [aiFixing, setAiFixing] = useState(false)
+  const [aiRepairConfirming, setAiRepairConfirming] = useState(false)
+  const [pendingAiRepairPlan, setPendingAiRepairPlan] = useState<PendingAiRepairPlan | null>(null)
 
   const CHECKING: I18nText = { key: 'common:status.checking' }
 
@@ -153,6 +170,70 @@ export default function TroubleshootStep({ onBack }: TroubleshootStepProps): Rea
     diagnose()
   }
 
+  const fixWithAi = async (): Promise<void> => {
+    setAiFixing(true)
+    clearLogs()
+    setShowLogs(true)
+    try {
+      const plan = await window.electronAPI.troubleshoot.aiRepairPlan({ logs })
+      if (!plan.success || !plan.planId) {
+        return
+      }
+
+      if (plan.requiresApproval) {
+        setPendingAiRepairPlan({
+          planId: plan.planId,
+          summary: plan.summary,
+          actions: plan.actions
+        })
+        return
+      }
+
+      const result = await window.electronAPI.troubleshoot.aiRepairExecute({ planId: plan.planId })
+      if (result.awaitingApproval) {
+        setPendingAiRepairPlan({
+          planId: result.awaitingApproval.planId,
+          summary: result.awaitingApproval.summary,
+          actions: result.awaitingApproval.actions
+        })
+        return
+      }
+
+      diagnose()
+    } finally {
+      setAiFixing(false)
+    }
+  }
+
+  const confirmAiRepair = async (): Promise<void> => {
+    if (!pendingAiRepairPlan) return
+
+    setAiRepairConfirming(true)
+    setShowLogs(true)
+    try {
+      const result = await window.electronAPI.troubleshoot.aiRepairExecute({
+        planId: pendingAiRepairPlan.planId
+      })
+      if (result.awaitingApproval) {
+        setPendingAiRepairPlan({
+          planId: result.awaitingApproval.planId,
+          summary: result.awaitingApproval.summary,
+          actions: result.awaitingApproval.actions
+        })
+        return
+      }
+
+      setPendingAiRepairPlan(null)
+      diagnose()
+    } finally {
+      setAiRepairConfirming(false)
+    }
+  }
+
+  const cancelAiRepair = (): void => {
+    setPendingAiRepairPlan(null)
+  }
+
   const items: DiagItem[] = [
     {
       label: t('troubleshoot.env'),
@@ -205,7 +286,12 @@ export default function TroubleshootStep({ onBack }: TroubleshootStepProps): Rea
         </div>
       )}
 
+      {error && <p className="w-full max-w-md text-xs text-error">{error}</p>}
+
       <div className="flex gap-3 mt-2">
+        <Button variant="secondary" size="sm" onClick={fixWithAi} loading={aiFixing}>
+          {aiFixing ? t('troubleshoot.aiRepairing') : t('troubleshoot.aiRepair')}
+        </Button>
         <Button
           variant="primary"
           size="sm"
@@ -220,6 +306,25 @@ export default function TroubleshootStep({ onBack }: TroubleshootStepProps): Rea
           {t('common:button.back')}
         </Button>
       </div>
+
+      {pendingAiRepairPlan && (
+        <AiRepairApprovalModal
+          title={t('troubleshoot.aiRepairReviewTitle')}
+          description={t('troubleshoot.aiRepairReviewDesc')}
+          summaryLabel={t('troubleshoot.aiRepairProblemLabel')}
+          actionLabel={t('troubleshoot.aiRepairActionLabel')}
+          commandLabel={t('troubleshoot.aiRepairCommandLabel')}
+          runtimeLabel={t('troubleshoot.aiRepairRuntimeLabel')}
+          effectLabel={t('troubleshoot.aiRepairEffectLabel')}
+          cancelLabel={t('common:button.cancel')}
+          confirmLabel={t('troubleshoot.aiRepairApprove')}
+          summary={pendingAiRepairPlan.summary}
+          actions={pendingAiRepairPlan.actions}
+          onClose={cancelAiRepair}
+          onConfirm={confirmAiRepair}
+          confirming={aiRepairConfirming}
+        />
+      )}
     </div>
   )
 }

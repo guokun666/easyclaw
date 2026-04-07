@@ -10,9 +10,15 @@ import InstallStep from './steps/InstallStep'
 import ApiKeyGuideStep from './steps/ApiKeyGuideStep'
 import type { Provider } from './constants/providers'
 import TelegramGuideStep from './steps/TelegramGuideStep'
-import ConfigStep from './steps/ConfigStep'
+import ConfigStep, {
+  EMPTY_CONFIG_DRAFT,
+  type ConfigDraft,
+  type SetupPayload
+} from './steps/ConfigStep'
+import ChannelSetupStep from './steps/ChannelSetupStep'
 import DoneStep from './steps/DoneStep'
 import TroubleshootStep from './steps/TroubleshootStep'
+import type { ChannelType } from './steps/TelegramGuideStep'
 
 type WslState =
   | 'not_available'
@@ -27,77 +33,118 @@ interface InstallNeeds {
   needOpenclaw: boolean
 }
 
-const BUBBLES = Array.from({ length: 8 }, (_, i) => ({
-  id: i,
-  size: 6 + Math.random() * 18,
-  left: Math.random() * 100,
-  delay: Math.random() * 10,
-  duration: 14 + Math.random() * 12
-}))
-
-const Bubbles = (): React.JSX.Element => {
-  const bubbles = BUBBLES
-
-  return (
-    <>
-      {bubbles.map((b) => (
-        <div
-          key={b.id}
-          className="bubble"
-          style={{
-            width: b.size,
-            height: b.size,
-            left: `${b.left}%`,
-            animationDelay: `${b.delay}s`,
-            animationDuration: `${b.duration}s`
-          }}
-        />
-      ))}
-    </>
-  )
+interface EnvResult {
+  os: 'macos' | 'windows' | 'linux'
+  nodeInstalled: boolean
+  nodeVersion: string | null
+  nodeVersionOk: boolean
+  openclawInstalled: boolean
+  openclawVersion: string | null
+  openclawLatestVersion: string | null
+  freshInstallerLaunch?: boolean
+  wslState?: WslState
 }
 
-function App(): React.JSX.Element {
+const KNOWN_PROVIDERS: Provider[] = [
+  'modelfamily',
+  'anthropic',
+  'google',
+  'openai',
+  'minimax',
+  'glm',
+  'deepseek',
+  'ollama'
+]
+
+const KNOWN_CHANNEL_TYPES: ChannelType[] = ['feishu', 'wechat', 'telegram']
+
+const isKnownProvider = (value?: string): value is Provider =>
+  value !== undefined && KNOWN_PROVIDERS.includes(value as Provider)
+
+const isKnownChannelType = (value?: string): value is ChannelType =>
+  value !== undefined && KNOWN_CHANNEL_TYPES.includes(value as ChannelType)
+
+function App({ debugMode }: { debugMode?: string }): React.JSX.Element {
   const { t } = useTranslation('common')
   const { currentStep, next, prev, canGoBack, goTo } = useWizard()
   const [installNeeds, setInstallNeeds] = useState<InstallNeeds>({
     needNode: false,
     needOpenclaw: false
   })
-  const [provider, setProvider] = useState<Provider>('anthropic')
+  const [provider, setProvider] = useState<Provider>('modelfamily')
   const [modelId, setModelId] = useState<string | undefined>()
   const [authMethod, setAuthMethod] = useState<'api-key' | 'oauth'>('api-key')
+  const [channelType, setChannelType] = useState<ChannelType>('feishu')
   const [botUsername, setBotUsername] = useState<string | undefined>()
+  const [setupPayload, setSetupPayload] = useState<SetupPayload | null>(null)
+  const [configDraft, setConfigDraft] = useState<ConfigDraft>(EMPTY_CONFIG_DRAFT)
   const [isWindows, setIsWindows] = useState(false)
   const [wslState, setWslState] = useState<WslState>('ready')
   const [version, setVersion] = useState('')
+  const [channelOnly, setChannelOnly] = useState(false)
+  const [skipChannelConfig, setSkipChannelConfig] = useState(false)
+  const [forceCleanInstall, setForceCleanInstall] = useState(false)
+  const isDebugWelcomeOnly = debugMode === 'welcome-only'
+  const isDebugNoEffects = debugMode === 'no-effects'
+  const isDebugNoBanner = debugMode === 'no-banner'
+  const isDebugBareShell = debugMode === 'bare-shell'
 
   // Load version + OS check + reboot restoration on app start
   useEffect(() => {
+    if (isDebugNoEffects || isDebugWelcomeOnly || isDebugBareShell) return
+
     window.electronAPI.version().then(setVersion)
 
     // Run loadState() after env.check() completes (prevent race condition)
     window.electronAPI.env.check().then(async (env) => {
       setIsWindows(env.os === 'windows')
       if (env.wslState) setWslState(env.wslState)
+      const needsFreshReinstall = env.freshInstallerLaunch === true && env.openclawInstalled
+      setForceCleanInstall(needsFreshReinstall)
+      if (needsFreshReinstall) {
+        setInstallNeeds({
+          needNode: !env.nodeVersionOk,
+          needOpenclaw: true
+        })
+      }
 
       // Restore state after reboot — run after wslState is correctly set
       const state = await window.electronAPI.wizard.loadState()
       if (state) {
         goTo(state.step as 'wslSetup' | 'envCheck')
+        return
+      }
+
+      if (needsFreshReinstall) {
+        return
+      }
+
+      if (env.nodeVersionOk && env.openclawInstalled) {
+        const configResult = await window.electronAPI.config.read()
+        const currentConfig = configResult.success ? configResult.config : null
+
+        if (isKnownProvider(currentConfig?.provider)) setProvider(currentConfig.provider)
+        if (currentConfig?.model) setModelId(currentConfig.model)
+        if (isKnownChannelType(currentConfig?.channelType)) setChannelType(currentConfig.channelType)
+
+        if (currentConfig?.isConfigured) {
+          // Installed and configured → skip wizard, go directly to dashboard
+          goTo('done')
+          return
+        }
+
+        // Installed but not configured yet → continue with provider/model setup
+        goTo('apiKeyGuide')
       }
     })
-  }, [goTo])
+  }, [goTo, isDebugBareShell, isDebugNoEffects, isDebugWelcomeOnly])
 
-  const handleEnvCheckDone = (env: {
-    os: string
-    nodeVersionOk: boolean
-    openclawInstalled: boolean
-    wslState?: WslState
-  }): void => {
+  const handleEnvCheckDone = (env: EnvResult): void => {
+    const needsFreshReinstall = env.freshInstallerLaunch === true && env.openclawInstalled
+    setForceCleanInstall(needsFreshReinstall)
     setInstallNeeds({
       needNode: !env.nodeVersionOk,
-      needOpenclaw: !env.openclawInstalled
+      needOpenclaw: needsFreshReinstall || !env.openclawInstalled
     })
 
     // Windows + WSL not ready → navigate to wslSetup
@@ -125,65 +172,162 @@ function App(): React.JSX.Element {
     [goTo]
   )
 
+  if (isDebugBareShell) {
+    return <div className="h-screen bg-bg" />
+  }
+
+  if (isDebugWelcomeOnly) {
+    return (
+      <>
+        <div className="aurora-bg" />
+        <div className="flex flex-col h-full relative z-10">
+          <div className="flex-1 flex flex-col min-h-0 pb-10 step-enter">
+            <WelcomeStep onNext={() => undefined} />
+          </div>
+        </div>
+      </>
+    )
+  }
+
   return (
     <>
       <div className="aurora-bg" />
-      <div className="grain-overlay" />
-      <Bubbles />
 
       <div className="flex flex-col h-full relative z-10">
         {currentStep !== 'welcome' && currentStep !== 'troubleshoot' && (
           <StepIndicator currentStep={currentStep} isWindows={isWindows} />
         )}
 
-        <div className="flex-1 flex flex-col min-h-0 pb-10 step-enter" key={currentStep}>
-          {currentStep === 'welcome' && <WelcomeStep onNext={next} />}
-          {currentStep === 'envCheck' && (
-            <EnvCheckStep onNext={() => goTo('apiKeyGuide')} onNeedInstall={handleEnvCheckDone} />
-          )}
-          {currentStep === 'wslSetup' && (
-            <WslSetupStep wslState={wslState} onReady={handleWslReady} />
-          )}
-          {currentStep === 'install' && (
-            <InstallStep needs={installNeeds} onDone={() => goTo('apiKeyGuide')} />
-          )}
-          {currentStep === 'apiKeyGuide' && (
-            <ApiKeyGuideStep
-              provider={provider}
-              onSelectProvider={(p) => {
-                setProvider(p)
-                setModelId(undefined)
-                setAuthMethod('api-key')
-              }}
-              authMethod={authMethod}
-              onSelectAuthMethod={setAuthMethod}
-              modelId={modelId}
-              onSelectModel={setModelId}
-              onNext={next}
-            />
-          )}
-          {currentStep === 'telegramGuide' && <TelegramGuideStep onNext={next} />}
-          {currentStep === 'config' && (
-            <ConfigStep
-              provider={provider}
-              authMethod={authMethod}
-              modelId={modelId}
-              onDone={handleDone}
-            />
-          )}
-          {currentStep === 'done' && (
-            <DoneStep
-              botUsername={botUsername}
-              onTroubleshoot={() => goTo('troubleshoot')}
-              onUninstallDone={() => {
-                window.electronAPI.wizard.clearState()
-                goTo('welcome')
-              }}
-            />
-          )}
-          {currentStep === 'troubleshoot' && (
-            <TroubleshootStep isWindows={isWindows} onBack={prev} />
-          )}
+        <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
+          <div className="flex flex-col min-h-full pb-10 step-enter" key={currentStep}>
+            {currentStep === 'welcome' && <WelcomeStep onNext={next} />}
+            {currentStep === 'envCheck' && (
+              <EnvCheckStep onNext={() => goTo('apiKeyGuide')} onNeedInstall={handleEnvCheckDone} />
+            )}
+            {currentStep === 'wslSetup' && (
+              <WslSetupStep wslState={wslState} onReady={handleWslReady} />
+            )}
+            {currentStep === 'install' && (
+              <InstallStep
+                needs={installNeeds}
+                forceCleanInstall={forceCleanInstall}
+                onDone={() => goTo('apiKeyGuide')}
+              />
+            )}
+            {currentStep === 'apiKeyGuide' && (
+              <ApiKeyGuideStep
+                provider={provider}
+                onSelectProvider={(p) => {
+                  setProvider(p)
+                  setModelId(undefined)
+                  setAuthMethod('api-key')
+                  setConfigDraft((current) => ({
+                    ...current,
+                    validatedApiKey: null,
+                    apiKeyTestState: 'idle',
+                    apiKeyTestMessage: null,
+                    oauthDone: false
+                  }))
+                }}
+                authMethod={authMethod}
+                onSelectAuthMethod={(method) => {
+                  setAuthMethod(method)
+                  setConfigDraft((current) => ({
+                    ...current,
+                    validatedApiKey: null,
+                    apiKeyTestState: 'idle',
+                    apiKeyTestMessage: null,
+                    oauthDone: method === 'oauth' ? current.oauthDone : false
+                  }))
+                }}
+                modelId={modelId}
+                onSelectModel={(model) => {
+                  setModelId(model)
+                  setConfigDraft((current) => ({
+                    ...current,
+                    validatedApiKey: null,
+                    apiKeyTestState: 'idle',
+                    apiKeyTestMessage: null
+                  }))
+                }}
+                onNext={next}
+              />
+            )}
+            {currentStep === 'telegramGuide' && (
+              <TelegramGuideStep
+                channelType={channelType}
+                onSelectChannel={setChannelType}
+                onSkip={() => {
+                  if (channelOnly) {
+                    setChannelOnly(false)
+                    goTo('done')
+                    return
+                  }
+                  setSetupPayload(null)
+                  setSkipChannelConfig(true)
+                  goTo('config')
+                }}
+                onNext={() => {
+                  setSkipChannelConfig(false)
+                  next()
+                }}
+              />
+            )}
+            {currentStep === 'config' && (
+              <ConfigStep
+                provider={provider}
+                authMethod={authMethod}
+                modelId={modelId}
+                onModelChange={(model) => {
+                  setModelId(model)
+                  setConfigDraft((current) => ({
+                    ...current,
+                    validatedApiKey: null,
+                    apiKeyTestState: 'idle',
+                    apiKeyTestMessage: null
+                  }))
+                }}
+                channelType={channelType}
+                skipChannelConfig={skipChannelConfig}
+                draft={configDraft}
+                onDraftChange={setConfigDraft}
+                onNext={(payload) => {
+                  setSetupPayload(payload)
+                  goTo('setup')
+                }}
+              />
+            )}
+            {currentStep === 'setup' && setupPayload && (
+              <ChannelSetupStep
+                payload={setupPayload}
+                channelOnly={channelOnly}
+                onDone={(username) => {
+                  setChannelOnly(false)
+                  handleDone(username)
+                }}
+              />
+            )}
+            {currentStep === 'done' && (
+              <DoneStep
+                botUsername={botUsername}
+                channelType={channelType}
+                isWindows={isWindows}
+                onTroubleshoot={() => goTo('troubleshoot')}
+                onUninstallDone={() => {
+                  window.electronAPI.wizard.clearState()
+                  goTo('welcome')
+                }}
+                onConfigureChannel={() => {
+                  setChannelOnly(true)
+                  setSkipChannelConfig(false)
+                  goTo('telegramGuide')
+                }}
+              />
+            )}
+            {currentStep === 'troubleshoot' && (
+              <TroubleshootStep isWindows={isWindows} onBack={prev} />
+            )}
+          </div>
         </div>
 
         <div className="absolute bottom-3 right-4 flex items-center gap-2">
@@ -202,7 +346,7 @@ function App(): React.JSX.Element {
           )}
         </div>
 
-        <UpdateBanner />
+        {!isDebugNoBanner && <UpdateBanner />}
 
         {canGoBack && currentStep !== 'troubleshoot' && (
           <button

@@ -1,8 +1,17 @@
 import { useTranslation } from 'react-i18next'
 import Button from '../components/Button'
-import { providerConfigs, type Provider, type AuthMethod } from '../constants/providers'
+import {
+  providerConfigs,
+  visibleProviderIds,
+  type Provider,
+  type AuthMethod
+} from '../constants/providers'
 
 const providerMeta: Record<Provider, { name: string; consoleUrl: string }> = {
+  modelfamily: {
+    name: 'Model Family',
+    consoleUrl: 'https://www.model-family.com'
+  },
   google: {
     name: 'Google Gemini',
     consoleUrl: 'https://aistudio.google.com/apikey'
@@ -32,16 +41,6 @@ const providerMeta: Record<Provider, { name: string; consoleUrl: string }> = {
     consoleUrl: 'https://ollama.com/download'
   }
 }
-
-const providerOrder: Provider[] = [
-  'google',
-  'openai',
-  'anthropic',
-  'deepseek',
-  'minimax',
-  'glm',
-  'ollama'
-]
 
 interface Props {
   provider: Provider
@@ -80,7 +79,7 @@ export default function ApiKeyGuideStep({
       </div>
 
       <div className="shrink-0 flex rounded-xl border border-glass-border overflow-hidden bg-bg-card">
-        {providerOrder.map((p, i) => (
+        {visibleProviderIds.map((p, i) => (
           <button
             key={p}
             onClick={() => onSelectProvider(p)}
@@ -165,7 +164,10 @@ export default function ApiKeyGuideStep({
               rel="noreferrer"
               className="block text-center text-primary text-xs font-semibold hover:text-primary-light transition-colors py-2"
             >
-              {t(`apiKeyGuide.getApiKey.${provider}`)} &rarr;
+              {provider === 'modelfamily'
+                ? 'Get Model Family API Key'
+                : t(`apiKeyGuide.getApiKey.${provider}`)}{' '}
+              &rarr;
             </a>
           )}
           {provider === 'ollama' && (

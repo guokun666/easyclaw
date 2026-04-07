@@ -4,8 +4,9 @@ import { homedir, platform } from 'os'
 import { join } from 'path'
 import { BrowserWindow } from 'electron'
 import { stopGateway } from './gateway'
-import { getPathEnv, findBin } from './path-utils'
-import { runInWsl } from './wsl-utils'
+import { getPathEnv, resolvePreferredBin } from './path-utils'
+import { getManagedNpmEnv } from './npm-paths'
+import { runInWsl, unregisterWslDistro } from './wsl-utils'
 import { t } from '../../shared/i18n/main'
 
 const sendProgress = (win: BrowserWindow, msg: string): void => {
@@ -18,8 +19,10 @@ const sendProgress = (win: BrowserWindow, msg: string): void => {
 
 const npmUninstallMac = (): Promise<void> =>
   new Promise((resolve, reject) => {
-    const npm = findBin('npm')
-    const child = spawn(npm, ['uninstall', '-g', 'openclaw'], { env: getPathEnv() })
+    const npm = resolvePreferredBin('npm')
+    const child = spawn(npm, ['uninstall', '-g', 'openclaw'], {
+      env: getManagedNpmEnv(getPathEnv())
+    })
     child.stdout.resume()
     child.stderr.resume()
     child.on('close', (code) => {
@@ -31,7 +34,7 @@ const npmUninstallMac = (): Promise<void> =>
 
 export const uninstallOpenClaw = async (
   win: BrowserWindow,
-  opts: { removeConfig: boolean }
+  opts: { removeConfig: boolean; unregisterWsl?: boolean }
 ): Promise<void> => {
   const isWin = platform() === 'win32'
   const log = (msg: string): void => sendProgress(win, msg)
@@ -42,6 +45,14 @@ export const uninstallOpenClaw = async (
     await stopGateway()
   } catch {
     /* already stopped */
+  }
+
+  if (isWin && opts.unregisterWsl) {
+    log(t('uninstaller.unregisteringWsl'))
+    const result = await unregisterWslDistro()
+    log(result === 'removed' ? t('uninstaller.unregisterWslDone') : t('uninstaller.unregisterWslMissing'))
+    log(t('uninstaller.done'))
+    return
   }
 
   // 2. npm uninstall -g openclaw

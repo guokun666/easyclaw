@@ -7,7 +7,12 @@
     "changeModel": "更改",
     "ocUpdateAvailable": "OpenClaw v{{latest}} 可更新",
     "ocCurrentVersion": "当前 v{{current}}",
-    "openTelegram": "打开 Telegram",
+    "openChannel": {
+      "feishu": "打开飞书",
+      "wechat": "微信需在命令中完成",
+      "telegram": "打开 Telegram"
+    },
+    "openDashboard": "打开控制台",
     "restartBtn": "重启",
     "stopBtn": "停止",
     "startBtn": "重新启动",
@@ -21,15 +26,36 @@
     "troubleshoot": "问题排查",
     "backup": "备份",
     "restore": "恢复",
+    "configKey": "配置密钥",
+    "configChannel": "配置渠道",
     "delete": "删除",
     "restartingGw": "正在重启 Gateway...",
     "errorPrefix": "[错误] {{msg}}",
-    "settingsBackup": "配置备份"
+    "configRequiredLog": "[错误] 检测到 OpenClaw 尚未完成配置。请先点击“配置密钥”选择模型并填写密钥，完成后 Gateway 才会启动。",
+    "autoStartAttemptLog": "[系统] 检测到 OpenClaw 已完成配置，但 Gateway 尚未运行。正在自动启动一次...",
+    "startNotDetectedLog": "[错误] 在启动等待时间内未检测到 Gateway 进入运行状态。安装器不会自动重启，请手动点击“重新启动”。",
+    "stoppedUnexpectedlyLog": "[错误] Gateway 进程已退出，请查看上方日志并重试。",
+    "settingsBackup": "配置备份",
+    "aiRepair": "AI 自动修复",
+    "aiRepairing": "AI 修复中...",
+    "aiRepairStarted": "[AI修复] 正在分析当前日志并生成修复计划...",
+    "aiRepairAwaitingApproval": "[AI修复] 已生成需要确认的修复计划，请确认后再继续。",
+    "aiRepairCancelled": "[AI修复] 已取消执行高影响修复计划。",
+    "aiRepairReviewTitle": "确认 AI 修复",
+    "aiRepairReviewDesc": "以下计划包含高影响动作。执行前会先明确告诉你发现了什么问题、准备怎么处理，以及每一步的作用。",
+    "aiRepairProblemLabel": "发现的问题",
+    "aiRepairActionLabel": "准备执行",
+    "aiRepairCommandLabel": "对应命令",
+    "aiRepairRuntimeLabel": "执行环境：",
+    "aiRepairEffectLabel": "作用说明",
+    "aiRepairApprove": "确认执行"
   },
   "uninstall": {
     "title": "删除 OpenClaw",
     "desc": "将删除 OpenClaw 软件包。此操作不可撤销。",
     "removeConfig": "同时删除配置文件（~/.openclaw）",
+    "unregisterWsl": "同时注销 WSL Ubuntu 环境",
+    "unregisterWslDesc": "高影响操作。会直接删除整个 Ubuntu 发行版中的所有数据和已安装软件，不只是 OpenClaw。执行前请先关闭其他 Ubuntu / WSL 窗口。",
     "preparing": "准备删除中...",
     "completed": "删除已完成。",
     "errorFallback": "删除过程中发生错误"
@@ -54,6 +80,8 @@
   "providerSwitch": {
     "title": "更改 AI 模型",
     "modelSelect": "选择模型",
+    "modelPlaceholder": "claude-opus-4-6",
+    "modelHint": "可直接手动输入模型 ID，也可以点击下方推荐项。",
     "apiKey": "API 密钥",
     "cancel": "取消",
     "change": "更改",
@@ -65,7 +93,22 @@
     "oauthLoggingIn": "登录中...",
     "oauthSuccess": "登录成功",
     "oauthApiKey": "API 密钥",
-    "ollamaInfo": "Ollama 必须已安装并正在运行"
+    "ollamaInfo": "Ollama 必须已安装并正在运行",
+    "memory": {
+      "title": "语义记忆",
+      "optional": "可选",
+      "desc": "为语义记忆单独配置 embeddings。未填写或校验失败时，会自动关闭，不影响模型切换。",
+      "enabledHint": "已启用可选语义记忆，只在填写有效 embedding key 时生效。",
+      "selected": "已选",
+      "apiKey": "Embedding API Key",
+      "hint": "只在想启用语义记忆时填写。留空或无效时，这项功能会被自动关闭。",
+      "autoDisabled": "语义记忆未填写完整或格式不正确，已自动关闭。",
+      "disabledHint": "当前不启用语义记忆。",
+      "providers": {
+        "openai": "OpenAI embeddings",
+        "gemini": "Gemini embeddings"
+      }
+    }
   },
   "updateBanner": {
     "available": "新版本 v{{version}} 可用",
@@ -74,7 +117,19 @@
     "ready": "更新准备就绪",
     "restartNow": "立即重启"
   },
+  "channelConfig": {
+    "title": "配置渠道",
+    "botToken": "Telegram Bot Token",
+    "hint": "从 @BotFather 获取 Bot Token",
+    "save": "保存",
+    "saving": "正在验证并保存...",
+    "success": "渠道配置成功！Gateway 正在重启。"
+  },
   "logViewer": {
-    "waiting": "等待中..."
+    "waiting": "等待中...",
+    "expand": "展开",
+    "collapse": "收起",
+    "copy": "复制",
+    "copied": "已复制"
   }
 }

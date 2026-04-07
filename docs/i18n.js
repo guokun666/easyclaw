@@ -20,16 +20,18 @@ const translations = {
     'features.oneclick.desc':
       'WSL, Node.js, OpenClaw까지 필요한 모든 환경을 자동으로 감지하고 설치합니다.',
     'features.agent.title': 'AI 에이전트',
-    'features.agent.desc': 'Google, OpenAI, Anthropic, DeepSeek, Ollama 등 7개 제공사를 지원합니다.',
+    'features.agent.desc': 'Model Family, OpenAI, Anthropic 3개 제공사를 우선 지원합니다.',
     'features.telegram.title': '텔레그램 연동',
     'features.telegram.desc': '텔레그램 봇을 통해 언제 어디서든 AI 에이전트와 대화할 수 있습니다.',
     'providers.label': 'AI Providers',
     'providers.title': '어떤 AI를 선택할까?',
-    'providers.sub': '용도와 예산에 맞는 AI 제공사를 골라보세요. 가격은 100만 토큰 기준 입력/출력입니다.',
+    'providers.sub':
+      '용도와 예산에 맞는 AI 제공사를 골라보세요. 가격은 100만 토큰 기준 입력/출력입니다.',
     'providers.recommended': '추천',
     'providers.signup': '가입하기',
     'providers.download': '다운로드',
-    'providers.note': '* 가격은 변동될 수 있습니다. 각 제공사 공식 페이지에서 최신 가격을 확인하세요.',
+    'providers.note':
+      '* 가격은 변동될 수 있습니다. 각 제공사 공식 페이지에서 최신 가격을 확인하세요.',
     'steps.label': 'How it works',
     'steps.title': '3단계면 끝',
     'steps.sub': '설치 파일을 받고, 실행하고, 대화하세요.',
@@ -110,16 +112,18 @@ const translations = {
     'features.oneclick.desc':
       'Automatically detects and installs everything you need — WSL, Node.js, and OpenClaw.',
     'features.agent.title': 'AI Agent',
-    'features.agent.desc': 'Supports 7 providers including Google, OpenAI, Anthropic, DeepSeek, and Ollama.',
+    'features.agent.desc': 'Currently highlights 3 providers: Model Family, OpenAI, and Anthropic.',
     'features.telegram.title': 'Telegram Integration',
     'features.telegram.desc': 'Chat with your AI agent anytime, anywhere through a Telegram bot.',
     'providers.label': 'AI Providers',
     'providers.title': 'Which AI should you choose?',
-    'providers.sub': 'Pick the provider that fits your needs and budget. Prices are per 1M tokens (input/output).',
+    'providers.sub':
+      'Pick the provider that fits your needs and budget. Prices are per 1M tokens (input/output).',
     'providers.recommended': 'Recommended',
     'providers.signup': 'Sign up',
     'providers.download': 'Download',
-    'providers.note': '* Prices may change. Check each provider\'s official page for the latest pricing.',
+    'providers.note':
+      "* Prices may change. Check each provider's official page for the latest pricing.",
     'steps.label': 'How it works',
     'steps.title': 'Done in 3 Steps',
     'steps.sub': 'Download, install, and start chatting.',
@@ -202,17 +206,20 @@ const translations = {
     'features.oneclick.desc':
       'WSL、Node.js、OpenClawまで必要なすべての環境を自動で検出してインストールします。',
     'features.agent.title': 'AIエージェント',
-    'features.agent.desc': 'Google、OpenAI、Anthropic、DeepSeek、Ollamaなど7つのプロバイダーに対応。',
+    'features.agent.desc':
+      '現在はModel Family、OpenAI、Anthropicの3つのプロバイダーを中心に案内しています。',
     'features.telegram.title': 'Telegram連携',
     'features.telegram.desc':
       'Telegramボットを通じていつでもどこでもAIエージェントと会話できます。',
     'providers.label': 'AI Providers',
     'providers.title': 'どのAIを選びますか？',
-    'providers.sub': '用途と予算に合ったAIプロバイダーを選びましょう。価格は100万トークンあたり（入力/出力）です。',
+    'providers.sub':
+      '用途と予算に合ったAIプロバイダーを選びましょう。価格は100万トークンあたり（入力/出力）です。',
     'providers.recommended': 'おすすめ',
     'providers.signup': '登録する',
     'providers.download': 'ダウンロード',
-    'providers.note': '* 価格は変動する場合があります。最新の価格は各プロバイダーの公式ページでご確認ください。',
+    'providers.note':
+      '* 価格は変動する場合があります。最新の価格は各プロバイダーの公式ページでご確認ください。',
     'steps.label': 'How it works',
     'steps.title': '3ステップで完了',
     'steps.sub': 'インストーラーをダウンロードして、実行して、会話を始めましょう。',
@@ -291,7 +298,7 @@ const translations = {
     'features.oneclick.title': '一键安装',
     'features.oneclick.desc': '自动检测并安装所需的所有环境——WSL、Node.js和OpenClaw。',
     'features.agent.title': 'AI代理',
-    'features.agent.desc': '支持Google、OpenAI、Anthropic、DeepSeek、Ollama等7家供应商。',
+    'features.agent.desc': '当前主要展示 3 家供应商：Model Family、OpenAI 和 Anthropic。',
     'features.telegram.title': 'Telegram集成',
     'features.telegram.desc': '通过Telegram机器人随时随地与AI代理对话。',
     'providers.label': 'AI Providers',
@@ -379,21 +386,11 @@ function safeHtml(val) {
 }
 
 function detectLang() {
-  var saved = localStorage.getItem(STORAGE_KEY)
-  if (saved && SUPPORTED_LANGS.indexOf(saved) !== -1) return saved
-
-  var nav = (navigator.language || '').toLowerCase()
-  if (nav.startsWith('ko')) return 'ko'
-  if (nav.startsWith('ja')) return 'ja'
-  if (nav.startsWith('zh')) return 'zh'
-  return 'en'
+  return 'zh'
 }
 
 function setLang(lang) {
-  if (SUPPORTED_LANGS.indexOf(lang) === -1) lang = DEFAULT_LANG
-  _currentLang = lang
-  localStorage.setItem(STORAGE_KEY, lang)
-  applyLang(lang)
+  applyLang('zh')
 }
 
 function applyLang(lang) {
@@ -412,10 +409,6 @@ function applyLang(lang) {
     var key = el.getAttribute('data-i18n-html')
     if (t[key] != null) el.innerHTML = safeHtml(t[key])
   })
-
-  var selector = document.getElementById('lang-selector')
-  if (selector) selector.value = lang
-
   if (typeof refreshProduct === 'function') refreshProduct()
 }
 
@@ -424,14 +417,5 @@ function getCurrentLang() {
 }
 
 ;(function initI18n() {
-  var lang = detectLang()
-  applyLang(lang)
-
-  var selector = document.getElementById('lang-selector')
-  if (selector) {
-    selector.value = lang
-    selector.addEventListener('change', function () {
-      setLang(this.value)
-    })
-  }
+  applyLang('zh')
 })()

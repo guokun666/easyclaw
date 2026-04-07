@@ -8,6 +8,7 @@ export type StepName =
   | 'apiKeyGuide'
   | 'telegramGuide'
   | 'config'
+  | 'setup'
   | 'done'
   | 'troubleshoot'
 
@@ -19,6 +20,7 @@ const STEPS: StepName[] = [
   'apiKeyGuide',
   'telegramGuide',
   'config',
+  'setup',
   'done'
 ]
 

@@ -1,9 +1,22 @@
 import { autoUpdater } from 'electron-updater'
 import { BrowserWindow } from 'electron'
 import { is } from '@electron-toolkit/utils'
+import { getAppUpdateFeedUrl } from './install-sources'
+
+const configureUpdateFeed = (): void => {
+  const feedUrl = getAppUpdateFeedUrl()
+  if (!feedUrl) return
+
+  autoUpdater.setFeedURL({
+    provider: 'generic',
+    url: feedUrl
+  })
+}
 
 export const setupAutoUpdater = (getWin: () => BrowserWindow | null): void => {
   if (is.dev) return
+
+  configureUpdateFeed()
 
   autoUpdater.autoDownload = false
   autoUpdater.autoInstallOnAppQuit = true
@@ -39,6 +52,7 @@ export const setupAutoUpdater = (getWin: () => BrowserWindow | null): void => {
 
 export const checkForUpdates = (): void => {
   if (is.dev) return
+  configureUpdateFeed()
   autoUpdater.checkForUpdates().catch(() => {
     // Ignore network errors
   })

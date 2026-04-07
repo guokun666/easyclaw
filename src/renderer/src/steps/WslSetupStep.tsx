@@ -2,6 +2,9 @@ import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import LobsterLogo from '../components/LobsterLogo'
 import Button from '../components/Button'
+import InstallProgressCard from '../components/InstallProgressCard'
+import LogViewer from '../components/LogViewer'
+import { useInstallLogs } from '../hooks/useIpc'
 
 type WslState =
   | 'not_available'
@@ -21,6 +24,7 @@ export default function WslSetupStep({ wslState, onReady }: WslSetupStepProps): 
   const [installing, setInstalling] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [currentState, setCurrentState] = useState<WslState>(wslState)
+  const { logs, status, clearLogs } = useInstallLogs()
 
   useEffect(() => {
     setCurrentState(wslState)
@@ -36,6 +40,7 @@ export default function WslSetupStep({ wslState, onReady }: WslSetupStepProps): 
   const handleInstallWsl = async (): Promise<void> => {
     setInstalling(true)
     setError(null)
+    clearLogs()
     try {
       const result = await window.electronAPI.wsl.install(currentState)
       if (result.success && result.needsReboot) {
@@ -59,6 +64,7 @@ export default function WslSetupStep({ wslState, onReady }: WslSetupStepProps): 
   const handleInstallDistro = async (): Promise<void> => {
     setInstalling(true)
     setError(null)
+    clearLogs()
     try {
       const result = await window.electronAPI.wsl.install(currentState)
       if (result.success && result.needsReboot) {
@@ -87,67 +93,76 @@ export default function WslSetupStep({ wslState, onReady }: WslSetupStepProps): 
   const logoState = installing ? 'loading' : currentState === 'ready' ? 'success' : 'idle'
 
   return (
-    <div className="flex-1 flex flex-col items-center pt-16 px-8 gap-5">
-      <LobsterLogo state={logoState} size={72} />
+    <div className="flex-1 w-full overflow-y-auto">
+      <div className="flex flex-col items-center pt-16 px-8 pb-28 gap-5 min-h-full">
+        <LobsterLogo state={logoState} size={72} />
 
-      <h2 className="text-lg font-extrabold">{t('wslSetup.title')}</h2>
+        <h2 className="text-lg font-extrabold">{t('wslSetup.title')}</h2>
 
-      {currentState === 'not_available' && (
-        <div className="text-center space-y-3 max-w-sm">
-          <p className="text-text-muted text-sm">{t('wslSetup.notAvailable')}</p>
-          <p className="text-text-muted text-xs">{t('wslSetup.checkVersion')}</p>
-        </div>
-      )}
-
-      {currentState === 'not_installed' && (
-        <div className="text-center space-y-3 max-w-sm">
-          <p className="text-text-muted text-sm">{t('wslSetup.wslRequired')}</p>
-          <p className="text-text-muted text-xs">{t('wslSetup.autoInstall')}</p>
-          <Button variant="primary" size="lg" onClick={handleInstallWsl} loading={installing}>
-            {installing ? t('wslSetup.wslInstalling') : t('wslSetup.wslInstall')}
-          </Button>
-        </div>
-      )}
-
-      {currentState === 'needs_reboot' && (
-        <div className="text-center space-y-3 max-w-sm">
-          <div className="glass-card px-5 py-4 space-y-2">
-            <p className="text-sm font-semibold text-primary">{t('wslSetup.rebootRequired')}</p>
-            <p className="text-text-muted text-xs leading-relaxed">{t('wslSetup.rebootDesc')}</p>
+        {currentState === 'not_available' && (
+          <div className="text-center space-y-3 max-w-sm">
+            <p className="text-text-muted text-sm">{t('wslSetup.notAvailable')}</p>
+            <p className="text-text-muted text-xs">{t('wslSetup.checkVersion')}</p>
           </div>
-          <Button variant="primary" size="lg" onClick={handleReboot}>
-            {t('wslSetup.rebootNow')}
-          </Button>
-        </div>
-      )}
+        )}
 
-      {currentState === 'no_distro' && (
-        <div className="text-center space-y-3 max-w-sm">
-          <p className="text-text-muted text-sm">{t('wslSetup.ubuntuInstallDesc')}</p>
-          <Button variant="primary" size="lg" onClick={handleInstallDistro} loading={installing}>
-            {installing ? t('wslSetup.ubuntuInstalling') : t('wslSetup.ubuntuInstall')}
-          </Button>
-        </div>
-      )}
+        {currentState === 'not_installed' && (
+          <div className="text-center space-y-3 max-w-sm">
+            <p className="text-text-muted text-sm">{t('wslSetup.wslRequired')}</p>
+            <p className="text-text-muted text-xs">{t('wslSetup.autoInstall')}</p>
+            <Button variant="primary" size="lg" onClick={handleInstallWsl} loading={installing}>
+              {installing ? t('wslSetup.wslInstalling') : t('wslSetup.wslInstall')}
+            </Button>
+          </div>
+        )}
 
-      {currentState === 'not_initialized' && (
-        <div className="text-center space-y-3 max-w-sm">
-          <p className="text-text-muted text-sm">{t('wslSetup.ubuntuInitDesc')}</p>
-          <Button variant="primary" size="lg" onClick={handleInstallDistro} loading={installing}>
-            {installing ? t('wslSetup.ubuntuIniting') : t('wslSetup.ubuntuInit')}
-          </Button>
-        </div>
-      )}
+        {currentState === 'needs_reboot' && (
+          <div className="text-center space-y-3 max-w-sm">
+            <div className="glass-card px-5 py-4 space-y-2">
+              <p className="text-sm font-semibold text-primary">{t('wslSetup.rebootRequired')}</p>
+              <p className="text-text-muted text-xs leading-relaxed">{t('wslSetup.rebootDesc')}</p>
+            </div>
+            <Button variant="primary" size="lg" onClick={handleReboot}>
+              {t('wslSetup.rebootNow')}
+            </Button>
+          </div>
+        )}
 
-      {currentState === 'ready' && (
-        <p className="text-text-muted text-sm animate-pulse">{t('wslSetup.wslReady')}</p>
-      )}
+        {currentState === 'no_distro' && (
+          <div className="text-center space-y-3 max-w-sm">
+            <p className="text-text-muted text-sm">{t('wslSetup.ubuntuInstallDesc')}</p>
+            <Button variant="primary" size="lg" onClick={handleInstallDistro} loading={installing}>
+              {installing ? t('wslSetup.ubuntuInstalling') : t('wslSetup.ubuntuInstall')}
+            </Button>
+          </div>
+        )}
 
-      {error && (
-        <div className="glass-card px-4 py-3 max-w-sm">
-          <p className="text-error text-xs">{error}</p>
-        </div>
-      )}
+        {currentState === 'not_initialized' && (
+          <div className="text-center space-y-3 max-w-sm">
+            <p className="text-text-muted text-sm">{t('wslSetup.ubuntuInitDesc')}</p>
+            <Button variant="primary" size="lg" onClick={handleInstallDistro} loading={installing}>
+              {installing ? t('wslSetup.ubuntuIniting') : t('wslSetup.ubuntuInit')}
+            </Button>
+          </div>
+        )}
+
+        {currentState === 'ready' && (
+          <p className="text-text-muted text-sm animate-pulse">{t('wslSetup.wslReady')}</p>
+        )}
+
+        {(installing || status || logs.length > 0) && (
+          <div className="w-full max-w-sm space-y-3">
+            <InstallProgressCard status={status} />
+            {logs.length > 0 && <LogViewer lines={logs} />}
+          </div>
+        )}
+
+        {error && (
+          <div className="glass-card px-4 py-3 max-w-sm">
+            <p className="text-error text-xs">{error}</p>
+          </div>
+        )}
+      </div>
     </div>
   )
 }

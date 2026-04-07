@@ -1,32 +1,51 @@
-import { ipcMain, BrowserWindow, app } from 'electron'
+import { ipcMain, BrowserWindow, app, shell } from 'electron'
 import { spawn } from 'child_process'
-import { platform } from 'os'
+import { platform, homedir } from 'os'
 import { join } from 'path'
-import { existsSync, readFileSync, writeFileSync, unlinkSync } from 'fs'
-import i18nMain, { initI18nMain } from '../shared/i18n/main'
-import { rebuildTrayMenu } from './services/tray-manager'
+import { existsSync, readFileSync, writeFileSync, unlinkSync, rmSync } from 'fs'
 import { checkEnvironment, checkOpenclawUpdate } from './services/env-checker'
+import { getPathEnv, resolvePreferredBin } from './services/path-utils'
 import { checkPort, runDoctorFix } from './services/troubleshooter'
 import {
+  beginInstallTask,
+  buildInstallFailureMessage,
+  cancelActiveInstall,
+  endInstallTask,
   installNodeMac,
   installOpenClaw,
   installWsl,
   installNodeWsl,
   installOpenClawWsl
 } from './services/installer'
-import { runOnboard, readCurrentConfig, switchProvider } from './services/onboarder'
+import {
+  cancelActiveOnboard,
+  runOnboard,
+  readCurrentConfig,
+  switchProvider,
+  validateProviderApiKey,
+  updateChannel,
+  setupChannelOnly
+} from './services/onboarder'
 import {
   startGateway,
   stopGateway,
   restartGateway,
   getGatewayStatus,
-  setGatewayLogCallback
+  setGatewayLogCallback,
+  setGatewayStatusCallback
 } from './services/gateway'
-import { checkWslState } from './services/wsl-utils'
+import { checkWslState, readWslFile, runInWsl } from './services/wsl-utils'
 import { checkForUpdates, downloadUpdate, installUpdate } from './services/updater'
 import { uninstallOpenClaw } from './services/uninstaller'
 import { exportBackup, importBackup } from './services/backup'
 import { loginOpenAICodex } from './services/oauth'
+import { executeAiRepairPlan, planAiRepair, runAiRepair } from './services/ai-repair'
+import {
+  getOpenclawVersionCatalog,
+  normalizeInstallSourceMode,
+  normalizeOpenclawVersion,
+  type InstallSourceMode
+} from './services/install-sources'
 
 interface WizardPersistedState {
   step: string
@@ -36,6 +55,7 @@ interface WizardPersistedState {
 
 const getWizardStatePath = (): string => join(app.getPath('userData'), 'wizard-state.json')
 const getSettingsPath = (): string => join(app.getPath('userData'), 'settings.json')
+const INSTALLER_INITIALIZED_KEY = '__installerInitialized'
 
 const readSettings = (): Record<string, unknown> => {
   try {
@@ -52,14 +72,32 @@ const writeSettings = (patch: Record<string, unknown>): void => {
   writeFileSync(getSettingsPath(), JSON.stringify(settings, null, 2))
 }
 
-export const getSavedLocale = (): string => {
+const getInstallSourceSettings = (): {
+  sourceMode: InstallSourceMode
+  openclawVersion: string
+} => {
   const settings = readSettings()
-  if (typeof settings.language === 'string') return settings.language
-  const sys = app.getLocale()
-  if (sys.startsWith('ko')) return 'ko'
-  if (sys.startsWith('ja')) return 'ja'
-  if (sys.startsWith('zh')) return 'zh'
-  return 'en'
+  return {
+    sourceMode: normalizeInstallSourceMode(
+      typeof settings.sourceMode === 'string' ? settings.sourceMode : undefined
+    ),
+    openclawVersion: normalizeOpenclawVersion(
+      typeof settings.openclawVersion === 'string' ? settings.openclawVersion : undefined
+    )
+  }
+}
+
+const applyInstallSourceSettings = (): void => {
+  const { sourceMode } = getInstallSourceSettings()
+  process.env.OPENCLAW_INSTALL_SOURCE_MODE = sourceMode
+}
+
+export const applySavedInstallSourceSettings = (): void => {
+  applyInstallSourceSettings()
+}
+
+export const getSavedLocale = (): string => {
+  return 'zh'
 }
 
 export const registerIpcHandlers = (getWin: () => BrowserWindow | null): void => {
@@ -71,8 +109,210 @@ export const registerIpcHandlers = (getWin: () => BrowserWindow | null): void =>
 
   ipcMain.handle('app:version', () => app.getVersion())
 
-  ipcMain.handle('env:check', () => checkEnvironment())
-  ipcMain.handle('openclaw:check-update', () => checkOpenclawUpdate())
+  ipcMain.handle('settings:get-install-sources', () => getInstallSourceSettings())
+  ipcMain.handle(
+    'settings:set-install-sources',
+    (
+      _e,
+      patch: {
+        sourceMode?: InstallSourceMode
+        openclawVersion?: string
+      }
+    ) => {
+      writeSettings({
+        sourceMode: normalizeInstallSourceMode(patch.sourceMode),
+        ...(patch.openclawVersion
+          ? { openclawVersion: normalizeOpenclawVersion(patch.openclawVersion) }
+          : {})
+      })
+      applyInstallSourceSettings()
+      return { success: true }
+    }
+  )
+  ipcMain.handle(
+    'openclaw:list-versions',
+    async (
+      _e,
+      opts?: {
+        sourceMode?: InstallSourceMode
+      }
+    ) => {
+      const sourceMode = normalizeInstallSourceMode(opts?.sourceMode)
+      const catalog = await getOpenclawVersionCatalog(sourceMode)
+      return {
+        success: true,
+        ...catalog
+      }
+    }
+  )
+
+  ipcMain.handle('env:check', () => {
+    applyInstallSourceSettings()
+    const isFreshInstallerLaunch = readSettings()[INSTALLER_INITIALIZED_KEY] !== true
+    writeSettings({ [INSTALLER_INITIALIZED_KEY]: true })
+    return checkEnvironment().then((result) => ({
+      ...result,
+      freshInstallerLaunch: isFreshInstallerLaunch
+    }))
+  })
+  ipcMain.handle('openclaw:check-update', () => {
+    applyInstallSourceSettings()
+    return checkOpenclawUpdate()
+  })
+
+  ipcMain.handle(
+    'openclaw:update-channel',
+    async (
+      _e,
+      channelType: 'telegram',
+      channelConfig: { botToken: string }
+    ) => {
+      try {
+        const result = await updateChannel(channelType, channelConfig)
+        if (result.success) {
+          // Restart gateway to pick up new channel config
+          await restartGateway()
+        }
+        return result
+      } catch (e) {
+        return { success: false, error: e instanceof Error ? e.message : String(e) }
+      }
+    }
+  )
+
+  ipcMain.handle('onboard:channel-only', async (_e, config) => {
+    try {
+      const result = await setupChannelOnly(win(), config)
+      return result
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      if (msg === 'ONBOARD_CANCELLED') {
+        return { success: false, error: msg }
+      }
+      try {
+        win().webContents.send('install:error', msg)
+      } catch { /* window destroyed */ }
+      return { success: false, error: msg }
+    }
+  })
+
+  ipcMain.handle('openclaw:clean-uninstall', async () => {
+    try {
+      await stopGateway().catch(() => {})
+      if (platform() === 'win32') {
+        try {
+          await runInWsl(
+            'openclaw uninstall --all --yes --non-interactive || true; npm uninstall -g openclaw || true; rm -rf /root/.openclaw',
+            120000
+          )
+          return { success: true }
+        } catch (err) {
+          return {
+            success: false,
+            error: err instanceof Error ? err.message : String(err)
+          }
+        }
+      }
+
+      const openclaw = resolvePreferredBin('openclaw')
+      const npm = resolvePreferredBin('npm')
+      return new Promise<{ success: boolean; error?: string }>((resolve) => {
+        let cleanupStarted = false
+        const finishCleanup = (): void => {
+          if (cleanupStarted) return
+          cleanupStarted = true
+          const npmChild = spawn(npm, ['uninstall', '-g', 'openclaw'], {
+            env: getPathEnv(),
+            stdio: ['ignore', 'pipe', 'pipe']
+          })
+          npmChild.stdout.on('data', (d) => chunks.push(d.toString()))
+          npmChild.stderr.on('data', (d) => chunks.push(d.toString()))
+          npmChild.on('close', () => {
+            try {
+              rmSync(join(homedir(), '.openclaw'), { recursive: true, force: true })
+              const wizardStatePath = getWizardStatePath()
+              if (existsSync(wizardStatePath)) unlinkSync(wizardStatePath)
+              resolve({ success: true })
+            } catch (err) {
+              resolve({
+                success: false,
+                error: err instanceof Error ? err.message : String(err)
+              })
+            }
+          })
+          npmChild.on('error', (err) => resolve({ success: false, error: err.message }))
+        }
+
+        const child = spawn(openclaw, ['uninstall', '--all', '--yes', '--non-interactive'], {
+          env: getPathEnv(),
+          stdio: ['ignore', 'pipe', 'pipe']
+        })
+        const chunks: string[] = []
+        child.stdout.on('data', (d) => chunks.push(d.toString()))
+        child.stderr.on('data', (d) => chunks.push(d.toString()))
+        child.on('close', finishCleanup)
+        child.on('error', finishCleanup)
+      })
+    } catch (e) {
+      return { success: false, error: e instanceof Error ? e.message : String(e) }
+    }
+  })
+
+  ipcMain.handle('openclaw:dashboard', async () => {
+    try {
+      if (platform() === 'win32') {
+        let raw: string
+        try {
+          raw = await readWslFile('/root/.openclaw/openclaw.json')
+        } catch (err) {
+          return {
+            success: false,
+            error: err instanceof Error ? err.message : String(err)
+          }
+        }
+        const cfg = JSON.parse(raw) as {
+          gateway?: { auth?: { token?: string } }
+        }
+        const token = cfg.gateway?.auth?.token
+        const dashboardUrl = token
+          ? `http://127.0.0.1:18789/#token=${encodeURIComponent(token)}`
+          : 'http://127.0.0.1:18789/'
+        await shell.openExternal(dashboardUrl)
+        return { success: true }
+      }
+
+      const configPath = join(homedir(), '.openclaw', 'openclaw.json')
+      if (existsSync(configPath)) {
+        try {
+          const cfg = JSON.parse(readFileSync(configPath, 'utf-8')) as {
+            gateway?: { auth?: { token?: string } }
+          }
+          const token = cfg.gateway?.auth?.token
+          const dashboardUrl = token
+            ? `http://127.0.0.1:18789/#token=${encodeURIComponent(token)}`
+            : 'http://127.0.0.1:18789/'
+          await shell.openExternal(dashboardUrl)
+          return { success: true }
+        } catch {
+          /* fall back to CLI dashboard */
+        }
+      }
+
+      const openclaw = resolvePreferredBin('openclaw')
+      return await new Promise<{ success: boolean; error?: string }>((resolve) => {
+        const child = spawn(openclaw, ['dashboard'], {
+          env: getPathEnv(),
+          stdio: 'ignore',
+          detached: true
+        })
+        child.unref()
+        child.on('error', (err) => resolve({ success: false, error: err.message }))
+        setTimeout(() => resolve({ success: true }), 1000)
+      })
+    } catch (e) {
+      return { success: false, error: e instanceof Error ? e.message : String(e) }
+    }
+  })
 
   // WSL-related IPC
   ipcMain.handle('wsl:check', () => checkWslState())
@@ -129,7 +369,9 @@ export const registerIpcHandlers = (getWin: () => BrowserWindow | null): void =>
   })
 
   ipcMain.handle('install:node', async () => {
+    beginInstallTask()
     try {
+      applyInstallSourceSettings()
       if (platform() === 'win32') {
         await installNodeWsl(win())
       } else {
@@ -137,33 +379,63 @@ export const registerIpcHandlers = (getWin: () => BrowserWindow | null): void =>
       }
       return { success: true }
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e)
+      const msg = await buildInstallFailureMessage('node', e)
       try {
         win().webContents.send('install:error', msg)
       } catch {
         /* window destroyed */
       }
       return { success: false, error: msg }
+    } finally {
+      endInstallTask()
     }
   })
 
-  ipcMain.handle('install:openclaw', async () => {
+  ipcMain.handle(
+    'install:openclaw',
+    async (
+      _e,
+      opts?: {
+        version?: string
+      }
+    ) => {
+    beginInstallTask()
     try {
+      applyInstallSourceSettings()
+      const configuredVersion = opts?.version
+        ? normalizeOpenclawVersion(opts.version)
+        : getInstallSourceSettings().openclawVersion
       if (platform() === 'win32') {
-        await installOpenClawWsl(win())
+        await installOpenClawWsl(win(), configuredVersion)
       } else {
-        await installOpenClaw(win())
+        await installOpenClaw(win(), configuredVersion)
       }
       return { success: true }
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e)
+      const msg = await buildInstallFailureMessage('openclaw', e)
       try {
         win().webContents.send('install:error', msg)
       } catch {
         /* window destroyed */
       }
       return { success: false, error: msg }
+    } finally {
+      endInstallTask()
     }
+    }
+  )
+
+  ipcMain.handle('install:cancel', () => {
+    const cancelled = cancelActiveInstall()
+    try {
+      win().webContents.send(
+        'install:error',
+        cancelled ? 'INSTALL_CANCELLED' : '当前没有正在执行的安装任务'
+      )
+    } catch {
+      /* window destroyed */
+    }
+    return { success: true, cancelled }
   })
 
   ipcMain.handle(
@@ -171,11 +443,28 @@ export const registerIpcHandlers = (getWin: () => BrowserWindow | null): void =>
     async (
       _e,
       config: {
-        provider: 'anthropic' | 'google' | 'openai' | 'minimax' | 'glm' | 'deepseek' | 'ollama'
+        provider:
+          | 'modelfamily'
+          | 'anthropic'
+          | 'google'
+          | 'openai'
+          | 'minimax'
+          | 'glm'
+          | 'deepseek'
+          | 'ollama'
         apiKey?: string
         authMethod?: 'api-key' | 'oauth'
+        channelType?: 'feishu' | 'wechat' | 'telegram'
+        channelSetupMode?: 'one-click' | 'manual'
         telegramBotToken?: string
+        feishuAppId?: string
+        feishuAppSecret?: string
         modelId?: string
+        memorySearch?: {
+          enabled?: boolean
+          provider?: 'openai' | 'gemini'
+          apiKey?: string
+        }
       }
     ) => {
       try {
@@ -183,6 +472,9 @@ export const registerIpcHandlers = (getWin: () => BrowserWindow | null): void =>
         return { success: true, botUsername: result.botUsername }
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e)
+        if (msg === 'ONBOARD_CANCELLED') {
+          return { success: false, error: msg }
+        }
         try {
           win().webContents.send('install:error', msg)
         } catch {
@@ -193,9 +485,22 @@ export const registerIpcHandlers = (getWin: () => BrowserWindow | null): void =>
     }
   )
 
+  ipcMain.handle('onboard:cancel', () => {
+    const cancelled = cancelActiveOnboard()
+    try {
+      win().webContents.send(
+        'install:error',
+        cancelled ? 'ONBOARD_CANCELLED' : '当前没有正在执行的渠道配置任务'
+      )
+    } catch {
+      /* window destroyed */
+    }
+    return { success: true, cancelled }
+  })
+
   ipcMain.handle('oauth:openai-codex', async () => {
     try {
-      await loginOpenAICodex(win())
+      await loginOpenAICodex()
       return { success: true }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
@@ -214,20 +519,60 @@ export const registerIpcHandlers = (getWin: () => BrowserWindow | null): void =>
   })
 
   ipcMain.handle(
-    'config:switch-provider',
+    'config:validate-api-key',
     async (
       _e,
       config: {
-        provider: 'anthropic' | 'google' | 'openai' | 'minimax' | 'glm' | 'deepseek' | 'ollama'
+        provider:
+          | 'modelfamily'
+          | 'anthropic'
+          | 'google'
+          | 'openai'
+          | 'minimax'
+          | 'glm'
+          | 'deepseek'
+          | 'ollama'
         apiKey?: string
         authMethod?: 'api-key' | 'oauth'
         modelId?: string
       }
     ) => {
       try {
-        await switchProvider(win(), config)
+        return await validateProviderApiKey(config)
+      } catch (e) {
+        return { success: false, error: e instanceof Error ? e.message : String(e) }
+      }
+    }
+  )
+
+  ipcMain.handle(
+    'config:switch-provider',
+    async (
+      _e,
+      config: {
+        provider:
+          | 'modelfamily'
+          | 'anthropic'
+          | 'google'
+          | 'openai'
+          | 'minimax'
+          | 'glm'
+          | 'deepseek'
+          | 'ollama'
+        apiKey?: string
+        authMethod?: 'api-key' | 'oauth'
+        modelId?: string
+        memorySearch?: {
+          enabled?: boolean
+          provider?: 'openai' | 'gemini'
+          apiKey?: string
+        }
+      }
+    ) => {
+      try {
+        const result = await switchProvider(win(), config)
         await restartGateway()
-        return { success: true }
+        return { success: true, warning: result.warning }
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e)
         try {
@@ -244,6 +589,13 @@ export const registerIpcHandlers = (getWin: () => BrowserWindow | null): void =>
   setGatewayLogCallback((msg) => {
     try {
       win().webContents.send('gateway:log', msg)
+    } catch {
+      /* window destroyed */
+    }
+  })
+  setGatewayStatusCallback((status) => {
+    try {
+      win().webContents.send('gateway:status-changed', status)
     } catch {
       /* window destroyed */
     }
@@ -282,10 +634,90 @@ export const registerIpcHandlers = (getWin: () => BrowserWindow | null): void =>
 
   ipcMain.handle('troubleshoot:check-port', () => checkPort())
   ipcMain.handle('troubleshoot:doctor-fix', () => runDoctorFix(win()))
+  ipcMain.handle(
+    'troubleshoot:ai-repair-plan',
+    async (
+      _e,
+      payload?: {
+        logs?: string[]
+      }
+    ) => {
+      try {
+        return await planAiRepair(win(), payload)
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e)
+        try {
+          win().webContents.send('install:error', msg)
+        } catch {
+          /* window destroyed */
+        }
+        return {
+          success: false,
+          summary: 'AI 修复计划生成失败。',
+          source: 'fallback' as const,
+          actions: [],
+          requiresApproval: false,
+          error: msg
+        }
+      }
+    }
+  )
+  ipcMain.handle(
+    'troubleshoot:ai-repair-execute',
+    async (
+      _e,
+      payload: {
+        planId: string
+      }
+    ) => {
+      try {
+        return await executeAiRepairPlan(win(), payload)
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e)
+        try {
+          win().webContents.send('install:error', msg)
+        } catch {
+          /* window destroyed */
+        }
+        return {
+          success: false,
+          summary: 'AI 修复执行失败。',
+          actions: [],
+          error: msg
+        }
+      }
+    }
+  )
+  ipcMain.handle(
+    'troubleshoot:ai-repair',
+    async (
+      _e,
+      payload?: {
+        logs?: string[]
+      }
+    ) => {
+      try {
+        return await runAiRepair(win(), payload)
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e)
+        try {
+          win().webContents.send('install:error', msg)
+        } catch {
+          /* window destroyed */
+        }
+        return {
+          success: false,
+          summary: 'AI 修复执行失败。',
+          actions: [],
+          error: msg
+        }
+      }
+    }
+  )
 
   ipcMain.handle('newsletter:subscribe', async (_e, email: string) => {
     try {
-      const r = await fetch('https://easyclaw.kr/api/newsletter', {
+      const r = await fetch('https://www.model-family.com/api/newsletter', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, source: 'app' })
@@ -338,31 +770,19 @@ export const registerIpcHandlers = (getWin: () => BrowserWindow | null): void =>
   })
 
   // Uninstall OpenClaw
-  ipcMain.handle('uninstall:openclaw', async (_e, opts: { removeConfig: boolean }) => {
+  ipcMain.handle(
+    'uninstall:openclaw',
+    async (_e, opts: { removeConfig: boolean; unregisterWsl?: boolean }) => {
     try {
       await uninstallOpenClaw(win(), opts)
       return { success: true }
     } catch (e) {
       return { success: false, error: e instanceof Error ? e.message : String(e) }
     }
-  })
+    }
+  )
 
   // Backup / restore
   ipcMain.handle('backup:export', () => exportBackup(win()))
   ipcMain.handle('backup:import', () => importBackup(win()))
-
-  // i18n settings
-  ipcMain.handle('i18n:get-locale', () => i18nMain.language || getSavedLocale())
-
-  const SUPPORTED_LANGS = ['ko', 'en', 'ja', 'zh']
-
-  ipcMain.handle('i18n:set-language', async (_e, lng: string) => {
-    if (!SUPPORTED_LANGS.includes(lng)) {
-      return { success: false, error: 'Unsupported language' }
-    }
-    writeSettings({ language: lng })
-    await initI18nMain(lng)
-    rebuildTrayMenu()
-    return { success: true }
-  })
 }

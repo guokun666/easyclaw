@@ -15,6 +15,7 @@
     "ocWslInstalling": "正在 WSL 内部安装 OpenClaw...",
     "ocWslDone": "OpenClaw 安装完成！",
     "nodeDownloading": "正在下载 Node.js 22...",
+    "nodeInstalling": "正在安装 Node.js...",
     "nodeInstallerOpening": "正在打开 Node.js 安装窗口...",
     "nodeDone": "Node.js 安装完成！",
     "xcodeOpening": "正在打开 Xcode Command Line Tools 安装窗口...",
@@ -22,16 +23,94 @@
     "xcodeDone": "Xcode Command Line Tools 安装完成！",
     "xcodeTimeout": "Xcode Command Line Tools 安装超时。请在终端运行 xcode-select --install。",
     "ocInstalling": "正在安装 OpenClaw...",
-    "ocDone": "OpenClaw 安装完成！"
+    "ocDone": "OpenClaw 安装完成！",
+    "networkDiagnoseTitle": "检测到这次安装可能是网络相关问题：",
+    "networkCauseTimeout": "可能是下载超时、镜像暂时不可达，或当前网络过慢。",
+    "networkCauseDns": "可能是 DNS 解析失败，或当前网络无法访问对应域名。",
+    "networkCauseProxy": "可能是 Windows 系统代理不可用，或代理未能为 WSL 正常转发。",
+    "networkCauseTls": "可能是 HTTPS 证书校验失败，或当前网络存在 TLS / 证书拦截。",
+    "networkCauseRegistry": "可能是当前下载源返回异常响应，或镜像暂时不可用。",
+    "networkFixSwitchSource": "可尝试在“高级安装源”里改用 {{alternatives}} 后重试。",
+    "networkFixProxy": "当前检测到系统代理 {{proxy}}。如果你依赖代理联网，请先确认代理本身可用，然后重新安装。",
+    "networkFixDns": "可尝试切换网络、检查 DNS / 防火墙，或确认 WSL 当前能访问外网。",
+    "networkFixTls": "如果你处于公司网络或 HTTPS 拦截环境，请检查证书信任链，或切换到不做 HTTPS 拦截的网络。",
+    "networkFixNodeWsl": "Windows 下的 Node.js 安装仍依赖 NodeSource 脚本；如果这一步失败，请额外确认 deb.nodesource.com 可访问。",
+    "networkFixRetry": "修复后可直接点击“重试”重新安装。"
   },
   "onboarder": {
     "starting": "开始 OpenClaw 初始配置...",
+    "status": {
+      "preparing": "准备执行配置",
+      "initializing": "初始化 OpenClaw",
+      "stoppingOldGateway": "停止旧 Gateway",
+      "applyingConfig": "写入基础配置",
+      "validatingProvider": "校验模型提供方令牌",
+      "configuringChannel": "写入渠道配置",
+      "launchingFeishu": "启动飞书一键安装",
+      "launchingWechat": "启动微信一键安装",
+      "waitingExternal": "等待外部终端完成授权",
+      "validatingFeishu": "校验飞书令牌与连通性",
+      "checkingTelegram": "检查 Telegram 状态",
+      "finishing": "收尾并启动 Gateway",
+      "completed": "配置完成"
+    },
     "configCreatedSkipGw": "配置文件创建完成（跳过 gateway 验证）",
     "basicDone": "基本配置完成！",
-    "addingTelegram": "正在添加 Telegram 频道...",
-    "telegramDone": "Telegram 频道添加完成！",
+    "channelAdding": {
+      "feishu": "正在添加飞书渠道...",
+      "wechat": "正在准备微信渠道安装...",
+      "telegram": "正在添加 Telegram 渠道..."
+    },
+    "channelDone": {
+      "feishu": "飞书渠道添加完成！",
+      "wechat": "微信渠道安装完成！",
+      "telegram": "Telegram 渠道添加完成！"
+    },
+    "channelOneClick": {
+      "feishu": "正在执行飞书一键安装命令...",
+      "wechat": "正在执行微信一键安装命令..."
+    },
     "configNotFound": "找不到 OpenClaw 配置文件",
-    "checkingTelegram": "正在检查 Telegram 连接状态...",
+    "npxRequired": "未检测到 npm / npx。请先在环境安装步骤安装 Node.js，然后重试渠道配置。",
+    "openclawNotInitialized": "OpenClaw 尚未初始化完成，无法继续执行飞书自动配置。",
+    "embeddedTerminalStarting": "正在应用内启动嵌入式终端...",
+    "embeddedTerminalFallback": "嵌入式终端启动失败，正在回退到系统 Terminal。",
+    "externalTerminalOpened": "已在 Terminal 中打开交互安装窗口，请在外部终端完成扫码或授权。",
+    "feishuStreaming": "正在开启飞书流式响应...",
+    "feishuDiagnosing": "正在校验飞书令牌与 API 连通性...",
+    "feishuDiagnosePassed": "飞书令牌校验通过，API 连通性正常。",
+    "gatewayRestarting": "正在重启 Gateway...",
+    "feishuAuthPrompt": "飞书应用已创建，请扫描下方二维码完成最后的 Oauth 授权。",
+    "feishuChatAuthPrompt": "如后续需要补用户权限授权，请在飞书中向机器人发送 /feishu auth。",
+    "feishuPluginSyncing": "检测到飞书插件版本较旧，正在同步到与 OpenClaw {{openclawVersion}} 兼容的版本（当前插件：{{pluginVersion}}）...",
+    "feishuPluginSynced": "飞书插件已同步完成，已切换到与 OpenClaw {{openclawVersion}} 兼容的版本。",
+    "feishuPluginSyncFailed": "飞书插件自动同步失败：{{message}}。安装器将继续尝试启动 Gateway。",
+    "providerValidating": {
+      "modelfamily": "正在校验 Model Family API Key..."
+    },
+    "providerValidatePassed": {
+      "modelfamily": "Model Family API Key 校验通过。"
+    },
+    "providerValidateSkipped": {
+      "modelfamily": "Model Family API Key 校验超时或网络较慢，已允许继续：{{message}}",
+      "openai": "OpenAI API Key 校验超时或网络较慢，已允许继续：{{message}}",
+      "anthropic": "Anthropic API Key 校验超时或网络较慢，已允许继续：{{message}}"
+    },
+    "providerValidateFailed": {
+      "modelfamily": "Model Family API Key 校验失败：{{message}}",
+      "openai": "OpenAI API Key 校验失败：{{message}}",
+      "anthropic": "Anthropic API Key 校验失败：{{message}}"
+    },
+    "memorySearch": {
+      "enabled": "语义记忆已启用：{{provider}} / {{model}}",
+      "disabledMissing": "语义记忆未填写完整，已自动关闭。",
+      "disabledInvalid": "语义记忆校验失败，已自动关闭（{{provider}}）：{{message}}",
+      "migratedDisabled": "检测到旧配置未显式关闭语义记忆，已自动补齐为关闭状态。"
+    },
+    "feishuSecretProviderMissingDisabled": "检测到飞书渠道依赖的密钥提供器 lark-secrets 未配置，已自动停用该渠道以避免 Gateway 启动失败。请在“配置渠道”中重新配置飞书。",
+    "channelChecking": {
+      "telegram": "正在检查 Telegram 连接状态..."
+    },
     "cleaningGateway": "正在清理现有 Gateway...",
     "startingGateway": "正在启动 Gateway...",
     "switchStarting": "开始切换提供商...",
@@ -41,7 +120,7 @@
     "switchDone": "提供商切换完成！"
   },
   "tray": {
-    "open": "打开 EasyClaw",
+    "open": "打开 familyClaw",
     "gwRunning": "Gateway 运行中",
     "gwStopped": "Gateway 已停止",
     "gwStart": "启动 Gateway",
@@ -49,19 +128,23 @@
     "quit": "退出",
     "notifyRunning": "Gateway 正在运行",
     "notifyStopped": "Gateway 已停止",
-    "tooltipRunning": "EasyClaw - Gateway 运行中",
-    "tooltipStopped": "EasyClaw - Gateway 已停止"
+    "tooltipRunning": "familyClaw - Gateway 运行中",
+    "tooltipStopped": "familyClaw - Gateway 已停止"
   },
   "gateway": {
     "processExit": "[gateway] 进程退出（code: {{code}}）",
     "errorDetail": "[gateway] 错误详情：",
     "error": "[gateway] 错误：{{message}}",
+    "proxyAutoBridge": "[proxy] 检测到 Windows 系统代理 {{proxy}}，正在自动适配到 WSL 宿主机地址",
     "notInstalledRetry": "[gateway] 检测到服务未安装，安装后重试"
   },
   "uninstaller": {
     "stoppingGw": "正在停止 Gateway...",
     "removing": "正在删除 OpenClaw 软件包...",
     "removingConfig": "正在删除配置文件...",
+    "unregisteringWsl": "正在注销 WSL Ubuntu 环境...",
+    "unregisterWslDone": "WSL Ubuntu 环境已注销。",
+    "unregisterWslMissing": "未检测到可注销的 WSL Ubuntu 环境。",
     "done": "删除完成！"
   },
   "backup": {

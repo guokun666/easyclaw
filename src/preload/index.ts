@@ -11,6 +11,7 @@ const electronAPI = {
       openclawInstalled: boolean
       openclawVersion: string | null
       openclawLatestVersion: string | null
+      freshInstallerLaunch?: boolean
       wslState?:
         | 'not_available'
         | 'not_installed'
@@ -18,12 +19,39 @@ const electronAPI = {
         | 'no_distro'
         | 'not_initialized'
         | 'ready'
+      wslProxyInfo?: {
+        enabled: boolean
+        displayValue?: string
+        needsAutoBridge: boolean
+      }
     }> => ipcRenderer.invoke('env:check')
+  },
+  settings: {
+    getInstallSources: (): Promise<{
+      sourceMode: 'auto' | 'official' | 'npmmirror' | 'tencent'
+      openclawVersion: string
+    }> => ipcRenderer.invoke('settings:get-install-sources'),
+    setInstallSources: (patch: {
+      sourceMode?: 'auto' | 'official' | 'npmmirror' | 'tencent'
+      openclawVersion?: string
+    }): Promise<{ success: boolean }> => ipcRenderer.invoke('settings:set-install-sources', patch)
   },
   install: {
     node: (): Promise<{ success: boolean; error?: string }> => ipcRenderer.invoke('install:node'),
-    openclaw: (): Promise<{ success: boolean; error?: string }> =>
-      ipcRenderer.invoke('install:openclaw'),
+    openclaw: (opts?: { version?: string }): Promise<{ success: boolean; error?: string }> =>
+      ipcRenderer.invoke('install:openclaw', opts),
+    cancel: (): Promise<{ success: boolean; cancelled: boolean }> =>
+      ipcRenderer.invoke('install:cancel'),
+    onStatus: (
+      cb: (status: { percent: number; stage: string; detail?: string }) => void
+    ): (() => void) => {
+      const handler = (
+        _: unknown,
+        status: { percent: number; stage: string; detail?: string }
+      ): void => cb(status)
+      ipcRenderer.on('install:status', handler)
+      return () => ipcRenderer.removeListener('install:status', handler)
+    },
     onProgress: (cb: (msg: string) => void): (() => void) => {
       const handler = (_: unknown, msg: string): void => cb(msg)
       ipcRenderer.on('install:progress', handler)
@@ -35,15 +63,56 @@ const electronAPI = {
       return () => ipcRenderer.removeListener('install:error', handler)
     }
   },
+  terminal: {
+    onOutput: (cb: (chunk: string) => void): (() => void) => {
+      const handler = (_: unknown, chunk: string): void => cb(chunk)
+      ipcRenderer.on('terminal:output', handler)
+      return () => ipcRenderer.removeListener('terminal:output', handler)
+    },
+    onExit: (cb: (result: { success: boolean; code: number | null }) => void): (() => void) => {
+      const handler = (_: unknown, result: { success: boolean; code: number | null }): void =>
+        cb(result)
+      ipcRenderer.on('terminal:exit', handler)
+      return () => ipcRenderer.removeListener('terminal:exit', handler)
+    }
+  },
   onboard: {
+    channelOnly: (config: {
+      channelType?: 'feishu' | 'wechat' | 'telegram'
+      channelSetupMode?: 'one-click' | 'manual'
+      telegramBotToken?: string
+      feishuAppId?: string
+      feishuAppSecret?: string
+    }): Promise<{ success: boolean; error?: string; botUsername?: string }> =>
+      ipcRenderer.invoke('onboard:channel-only', config),
     run: (config: {
-      provider: 'anthropic' | 'google' | 'openai' | 'minimax' | 'glm' | 'deepseek' | 'ollama'
+      provider:
+        | 'modelfamily'
+        | 'modelfamily'
+        | 'anthropic'
+        | 'google'
+        | 'openai'
+        | 'minimax'
+        | 'glm'
+        | 'deepseek'
+        | 'ollama'
       apiKey?: string
       authMethod?: 'api-key' | 'oauth'
+      channelType?: 'feishu' | 'wechat' | 'telegram'
+      channelSetupMode?: 'one-click' | 'manual'
       telegramBotToken?: string
+      feishuAppId?: string
+      feishuAppSecret?: string
       modelId?: string
+      memorySearch?: {
+        enabled?: boolean
+        provider?: 'openai' | 'gemini'
+        apiKey?: string
+      }
     }): Promise<{ success: boolean; error?: string; botUsername?: string }> =>
-      ipcRenderer.invoke('onboard:run', config)
+      ipcRenderer.invoke('onboard:run', config),
+    cancel: (): Promise<{ success: boolean; cancelled: boolean }> =>
+      ipcRenderer.invoke('onboard:cancel')
   },
   oauth: {
     loginCodex: (): Promise<{ success: boolean; error?: string }> =>
@@ -70,7 +139,74 @@ const electronAPI = {
   troubleshoot: {
     checkPort: (): Promise<{ inUse: boolean; pid?: string }> =>
       ipcRenderer.invoke('troubleshoot:check-port'),
-    doctorFix: (): Promise<{ success: boolean }> => ipcRenderer.invoke('troubleshoot:doctor-fix')
+    doctorFix: (): Promise<{ success: boolean }> => ipcRenderer.invoke('troubleshoot:doctor-fix'),
+    aiRepairPlan: (payload?: {
+      logs?: string[]
+    }): Promise<{
+      success: boolean
+      summary: string
+      source: 'ai' | 'fallback'
+      actions: Array<{
+        type:
+          | 'doctor_fix'
+          | 'disable_memory_search'
+          | 'set_gateway_mode_local'
+          | 'sync_feishu_plugin'
+          | 'trust_lark_plugin'
+          | 'disable_feishu_channel'
+          | 'restart_gateway'
+          | 'reinstall_openclaw_current'
+          | 'install_openclaw_recommended'
+          | 'run_command'
+        label: string
+        reason: string
+        effect: string
+        commandPreview: string
+        commandRuntime: string
+        approval: 'auto' | 'confirm'
+      }>
+      requiresApproval: boolean
+      planId?: string
+      error?: string
+    }> => ipcRenderer.invoke('troubleshoot:ai-repair-plan', payload),
+    aiRepairExecute: (payload: {
+      planId: string
+    }): Promise<{
+      success: boolean
+      summary: string
+      actions: string[]
+      error?: string
+      roundsCompleted?: number
+      awaitingApproval?: {
+        planId: string
+        summary: string
+        source: 'ai' | 'fallback'
+        actions: Array<{
+          type:
+            | 'doctor_fix'
+            | 'disable_memory_search'
+            | 'set_gateway_mode_local'
+            | 'sync_feishu_plugin'
+            | 'trust_lark_plugin'
+            | 'disable_feishu_channel'
+            | 'restart_gateway'
+            | 'reinstall_openclaw_current'
+            | 'install_openclaw_recommended'
+            | 'run_command'
+          label: string
+          reason: string
+          effect: string
+          commandPreview: string
+          commandRuntime: string
+          approval: 'auto' | 'confirm'
+        }>
+      }
+    }> =>
+      ipcRenderer.invoke('troubleshoot:ai-repair-execute', payload),
+    aiRepair: (payload?: {
+      logs?: string[]
+    }): Promise<{ success: boolean; summary: string; actions: string[]; error?: string }> =>
+      ipcRenderer.invoke('troubleshoot:ai-repair', payload)
   },
   wsl: {
     check: (): Promise<
@@ -126,20 +262,78 @@ const electronAPI = {
   config: {
     read: (): Promise<{
       success: boolean
-      config: { provider?: string; model?: string; hasTelegram?: boolean } | null
+      config: {
+        provider?: string
+        model?: string
+        hasChannel?: boolean
+        channelType?: 'feishu' | 'wechat' | 'telegram'
+        memorySearch?: {
+          enabled: boolean
+          provider?: 'openai' | 'gemini'
+        }
+        hasCredentials?: boolean
+        gatewayMode?: string
+        isConfigured?: boolean
+        issues?: string[]
+      } | null
       error?: string
     }> => ipcRenderer.invoke('config:read'),
-    switchProvider: (config: {
-      provider: 'anthropic' | 'google' | 'openai' | 'minimax' | 'glm' | 'deepseek' | 'ollama'
+    validateApiKey: (config: {
+      provider:
+        | 'modelfamily'
+        | 'anthropic'
+        | 'google'
+        | 'openai'
+        | 'minimax'
+        | 'glm'
+        | 'deepseek'
+        | 'ollama'
       apiKey?: string
       authMethod?: 'api-key' | 'oauth'
       modelId?: string
-    }): Promise<{ success: boolean; error?: string }> =>
+    }): Promise<{ success: boolean; error?: string; warning?: string }> =>
+      ipcRenderer.invoke('config:validate-api-key', config),
+    switchProvider: (config: {
+      provider:
+        | 'modelfamily'
+        | 'anthropic'
+        | 'google'
+        | 'openai'
+        | 'minimax'
+        | 'glm'
+        | 'deepseek'
+        | 'ollama'
+      apiKey?: string
+      authMethod?: 'api-key' | 'oauth'
+      modelId?: string
+      memorySearch?: {
+        enabled?: boolean
+        provider?: 'openai' | 'gemini'
+        apiKey?: string
+      }
+    }): Promise<{ success: boolean; error?: string; warning?: string }> =>
       ipcRenderer.invoke('config:switch-provider', config)
   },
   openclaw: {
     checkUpdate: (): Promise<{ currentVersion: string | null; latestVersion: string | null }> =>
-      ipcRenderer.invoke('openclaw:check-update')
+      ipcRenderer.invoke('openclaw:check-update'),
+    listVersions: (opts?: {
+      sourceMode?: 'auto' | 'official' | 'npmmirror' | 'tencent'
+    }): Promise<{
+      success: boolean
+      versions: string[]
+      latestVersion: string | null
+      recommendedVersion: string
+    }> => ipcRenderer.invoke('openclaw:list-versions', opts),
+    dashboard: (): Promise<{ success: boolean; error?: string }> =>
+      ipcRenderer.invoke('openclaw:dashboard'),
+    updateChannel: (
+      channelType: 'telegram',
+      channelConfig: { botToken: string }
+    ): Promise<{ success: boolean; error?: string; botUsername?: string }> =>
+      ipcRenderer.invoke('openclaw:update-channel', channelType, channelConfig),
+    cleanUninstall: (): Promise<{ success: boolean; error?: string }> =>
+      ipcRenderer.invoke('openclaw:clean-uninstall')
   },
   autoLaunch: {
     get: (): Promise<{ enabled: boolean }> => ipcRenderer.invoke('autolaunch:get'),
@@ -147,7 +341,10 @@ const electronAPI = {
       ipcRenderer.invoke('autolaunch:set', enabled)
   },
   uninstall: {
-    openclaw: (opts: { removeConfig: boolean }): Promise<{ success: boolean; error?: string }> =>
+    openclaw: (opts: {
+      removeConfig: boolean
+      unregisterWsl?: boolean
+    }): Promise<{ success: boolean; error?: string }> =>
       ipcRenderer.invoke('uninstall:openclaw', opts),
     onProgress: (cb: (msg: string) => void): (() => void) => {
       const handler = (_: unknown, msg: string): void => cb(msg)
@@ -159,11 +356,6 @@ const electronAPI = {
     export: (): Promise<{ success: boolean; error?: string }> =>
       ipcRenderer.invoke('backup:export'),
     import: (): Promise<{ success: boolean; error?: string }> => ipcRenderer.invoke('backup:import')
-  },
-  i18n: {
-    getLocale: (): Promise<string> => ipcRenderer.invoke('i18n:get-locale'),
-    setLanguage: (lng: string): Promise<{ success: boolean }> =>
-      ipcRenderer.invoke('i18n:set-language', lng)
   }
 }
 

@@ -1,5 +1,5 @@
-appId: com.easyclaw.app
-productName: EasyClaw
+appId: com.modelfamily.familyclaw
+productName: familyClaw
 directories:
   buildResources: build
 files:
@@ -13,7 +13,7 @@ asarUnpack:
   - resources/**
 win:
   icon: build/icon.ico
-  executableName: EasyClaw
+  executableName: familyClaw
   forceCodeSigning: false
   requestedExecutionLevel: asInvoker
   target:
@@ -21,10 +21,11 @@ win:
       arch:
         - x64
 nsis:
-  artifactName: ${name}-setup.${ext}
+  artifactName: familyClaw-setup.${ext}
   shortcutName: ${productName}
   uninstallDisplayName: ${productName}
   createDesktopShortcut: always
+  deleteAppDataOnUninstall: true
 mac:
   icon: build/icon.icns
   hardenedRuntime: true
@@ -40,7 +41,7 @@ mac:
       arch:
         - universal
 dmg:
-  artifactName: ${name}.${ext}
+  artifactName: familyClaw.${ext}
   title: ${productName}
   background: build/background.png
   iconSize: 80
@@ -56,7 +57,8 @@ dmg:
       path: /Applications
 publish:
   provider: github
-  owner: ybgwon96
-  repo: easyclaw
+  owner: model-family
+  repo: openclaw-installer
   releaseType: release
+afterSign: build/afterSign.js
 npmRebuild: false

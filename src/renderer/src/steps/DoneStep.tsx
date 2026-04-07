@@ -6,19 +6,40 @@ import Button from '../components/Button'
 import LogViewer from '../components/LogViewer'
 import ManagementModal from '../components/ManagementModal'
 import ProviderSwitchModal from '../components/ProviderSwitchModal'
-import LanguageSwitcher from '../components/LanguageSwitcher'
+import AiRepairApprovalModal from '../components/AiRepairApprovalModal'
 import { useManagement } from '../hooks/useManagement'
+import type { ChannelType } from './TelegramGuideStep'
+import type { CurrentMemorySearchConfig } from '../../../shared/types/memory-search'
+
+interface PendingAiRepairPlan {
+  planId: string
+  summary: string
+  actions: Array<{
+    label: string
+    reason: string
+    effect: string
+    commandPreview: string
+    commandRuntime: string
+    approval: 'auto' | 'confirm'
+  }>
+}
 
 const UPDATE_CHECK_INTERVAL = 30 * 60 * 1000 // 30 min
 
 export default function DoneStep({
-  botUsername,
+  botUsername: _botUsername,
+  channelType: _channelType,
+  isWindows = false,
   onTroubleshoot,
-  onUninstallDone
+  onUninstallDone,
+  onConfigureChannel
 }: {
   botUsername?: string
+  channelType: ChannelType
+  isWindows?: boolean
   onTroubleshoot?: () => void
   onUninstallDone?: () => void
+  onConfigureChannel?: () => void
 }): React.JSX.Element {
   const { t } = useTranslation('management')
   const [status, setStatus] = useState<'starting' | 'running' | 'stopped'>('starting')
@@ -28,7 +49,12 @@ export default function DoneStep({
   const [autoLaunch, setAutoLaunch] = useState(false)
   const [currentModel, setCurrentModel] = useState<string | null>(null)
   const [currentProvider, setCurrentProvider] = useState<string | undefined>()
+  const [currentMemorySearch, setCurrentMemorySearch] = useState<CurrentMemorySearchConfig | undefined>()
+  const [configReady, setConfigReady] = useState<boolean | null>(null)
   const [showProviderModal, setShowProviderModal] = useState(false)
+  const [aiRepairing, setAiRepairing] = useState(false)
+  const [aiRepairConfirming, setAiRepairConfirming] = useState(false)
+  const [pendingAiRepairPlan, setPendingAiRepairPlan] = useState<PendingAiRepairPlan | null>(null)
 
   // OpenClaw update state
   const [openclawUpdate, setOpenclawUpdate] = useState<{
@@ -38,11 +64,41 @@ export default function DoneStep({
   const [updating, setUpdating] = useState(false)
   const [updateLogs, setUpdateLogs] = useState<string[]>([])
   const updateCheckedRef = useRef(false)
+  const expectedStopRef = useRef(false)
+  const autoStartAttemptedRef = useRef(false)
+  const shouldRenderLogs = status === 'starting' || logs.length > 0 || hasError
 
   const tRef = useRef<TFunction>(t)
   tRef.current = t
 
-  const { uninstall, backup } = useManagement(setStatus)
+  const { uninstall, backup } = useManagement(setStatus, isWindows)
+
+  const syncGatewayStatus = useCallback(async (): Promise<'running' | 'stopped'> => {
+    const nextStatus = await window.electronAPI.gateway.status()
+    const normalizedStatus = nextStatus === 'running' ? 'running' : 'stopped'
+    setStatus(normalizedStatus)
+    if (normalizedStatus === 'running') {
+      setHasError(false)
+      expectedStopRef.current = false
+    }
+    return nextStatus
+  }, [])
+
+  const waitForGatewayRunning = useCallback(async (): Promise<'running' | 'stopped'> => {
+    for (let i = 0; i < 15; i += 1) {
+      const nextStatus = await window.electronAPI.gateway.status()
+      if (nextStatus === 'running') {
+        setStatus('running')
+        setHasError(false)
+        expectedStopRef.current = false
+        return 'running'
+      }
+      await new Promise((resolve) => setTimeout(resolve, 2000))
+    }
+
+    setStatus('stopped')
+    return 'stopped'
+  }, [])
 
   // Check for OpenClaw updates
   const checkOpenclawUpdate = useCallback(async () => {
@@ -73,6 +129,9 @@ export default function DoneStep({
 
   // Execute OpenClaw update
   const handleOpenclawUpdate = useCallback(async () => {
+    const targetVersion = openclawUpdate?.latest
+    if (!targetVersion) return
+
     setUpdating(true)
     setUpdateLogs([])
 
@@ -84,37 +143,76 @@ export default function DoneStep({
     })
 
     try {
-      const result = await window.electronAPI.install.openclaw()
-      if (result.success) {
-        setUpdateLogs((prev) => [...prev, tRef.current('done.restartingGw')])
-        await window.electronAPI.gateway.restart()
-        setStatus('running')
-        await checkOpenclawUpdate()
+      setUpdateLogs((prev) => [...prev, `[系统] 正在安装 OpenClaw v${targetVersion}...`])
+      const result = await window.electronAPI.install.openclaw({ version: targetVersion })
+      if (!result.success) {
+        throw new Error(result.error || `OpenClaw v${targetVersion} 更新失败`)
       }
+      await window.electronAPI.settings.setInstallSources({ openclawVersion: targetVersion })
+      setUpdateLogs((prev) => [...prev, tRef.current('done.restartingGw')])
+      await window.electronAPI.gateway.restart()
+      const nextStatus = await syncGatewayStatus()
+      if (nextStatus !== 'running') {
+        setHasError(true)
+        setShowLogs(true)
+      }
+      await checkOpenclawUpdate()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      setUpdateLogs((prev) => [...prev, tRef.current('done.errorPrefix', { msg: message })])
     } finally {
       unsubProgress()
       unsubError()
       setUpdating(false)
     }
-  }, [checkOpenclawUpdate])
+  }, [checkOpenclawUpdate, openclawUpdate, syncGatewayStatus])
 
   // Load auto launch settings
   useEffect(() => {
     window.electronAPI.autoLaunch.get().then((r) => setAutoLaunch(r.enabled))
   }, [])
 
-  // Read current provider/model
-  const loadCurrentConfig = useCallback(() => {
-    window.electronAPI.config.read().then((r) => {
-      if (r.success && r.config) {
-        setCurrentModel(r.config.model || null)
-        setCurrentProvider(r.config.provider)
-      }
+  const appendLogOnce = useCallback((message: string) => {
+    setLogs((prev) => (prev.includes(message) ? prev : [...prev, message]))
+  }, [])
+
+  const bindAiRepairLogBridge = useCallback(() => {
+    const unsubProgress = window.electronAPI.install.onProgress((msg) => {
+      setLogs((prev) => [...prev, ...msg.split('\n').filter(Boolean)])
     })
+    const unsubError = window.electronAPI.install.onError((msg) => {
+      setLogs((prev) => [...prev, tRef.current('done.errorPrefix', { msg })])
+      setHasError(true)
+      setShowLogs(true)
+    })
+
+    return () => {
+      unsubProgress()
+      unsubError()
+    }
+  }, [])
+
+  // Read current provider/model
+  const loadCurrentConfig = useCallback(async () => {
+    const result = await window.electronAPI.config.read()
+
+    if (result.success && result.config) {
+      setCurrentModel(result.config.model || null)
+      setCurrentProvider(result.config.provider)
+      setCurrentMemorySearch(result.config.memorySearch)
+      setConfigReady(result.config.isConfigured === true)
+      return result.config
+    }
+
+    setCurrentModel(null)
+    setCurrentProvider(undefined)
+    setCurrentMemorySearch(undefined)
+    setConfigReady(false)
+    return null
   }, [])
 
   useEffect(() => {
-    loadCurrentConfig()
+    void loadCurrentConfig()
   }, [loadCurrentConfig])
 
   const toggleAutoLaunch = async (): Promise<void> => {
@@ -130,91 +228,229 @@ export default function DoneStep({
     return unsub
   }, [])
 
+  useEffect(() => {
+    if (status === 'starting' || hasError) {
+      setShowLogs(true)
+    }
+  }, [hasError, status])
+
   // Subscribe to Gateway status changes from tray
   useEffect(() => {
     const unsub = window.electronAPI.gateway.onStatusChanged((s) => {
       setStatus(s === 'running' ? 'running' : 'stopped')
+      if (s === 'running') {
+        expectedStopRef.current = false
+        setHasError(false)
+      }
+      if (s === 'stopped' && !expectedStopRef.current) {
+        setHasError(true)
+        setShowLogs(true)
+        appendLogOnce(tRef.current('done.stoppedUnexpectedlyLog'))
+      }
+      if (s === 'stopped' && expectedStopRef.current) {
+        expectedStopRef.current = false
+      }
     })
     return unsub
-  }, [])
+  }, [appendLogOnce])
 
   useEffect(() => {
+    if (configReady === null) return
+
+    if (!configReady) {
+      setStatus('stopped')
+      setHasError(true)
+      setShowLogs(true)
+      appendLogOnce(tRef.current('done.configRequiredLog'))
+      return
+    }
+
     let cancelled = false
 
-    const poll = async (): Promise<void> => {
-      for (let i = 0; i < 15; i++) {
+    const ensureGateway = async (): Promise<void> => {
+      if (cancelled) return
+
+      const currentStatus = await window.electronAPI.gateway.status()
+      if (cancelled) return
+
+      if (currentStatus === 'running') {
+        setStatus('running')
+        setHasError(false)
+        return
+      }
+
+      if (!autoStartAttemptedRef.current) {
+        autoStartAttemptedRef.current = true
+        setStatus('starting')
+        setHasError(false)
+        appendLogOnce(tRef.current('done.autoStartAttemptLog'))
+
+        const result = await window.electronAPI.gateway.start()
         if (cancelled) return
-        const s = await window.electronAPI.gateway.status()
+
+        if (!result.success && result.error) {
+          setLogs((prev) => [...prev, tRef.current('done.errorPrefix', { msg: result.error })])
+        }
+
+        const nextStatus = await waitForGatewayRunning()
         if (cancelled) return
-        if (s === 'running') {
-          setStatus('running')
+        if (nextStatus === 'running') {
           return
         }
-        await new Promise((r) => setTimeout(r, 2000))
       }
+
       if (cancelled) return
-      const r = await window.electronAPI.gateway.start()
-      if (!cancelled) {
-        setStatus(r.success ? 'running' : 'stopped')
-        if (!r.success) {
-          setHasError(true)
-          if (r.error) {
-            setLogs((prev) => [...prev, tRef.current('done.errorPrefix', { msg: r.error })])
-            setShowLogs(true)
-          }
-        }
-      }
+      setStatus('stopped')
+      setHasError(true)
+      setShowLogs(true)
+      appendLogOnce(tRef.current('done.startNotDetectedLog'))
     }
-    poll()
+    void ensureGateway()
 
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [appendLogOnce, configReady, waitForGatewayRunning])
 
   const handleStop = async (): Promise<void> => {
+    expectedStopRef.current = true
     await window.electronAPI.gateway.stop()
     setStatus('stopped')
   }
 
-  const handleStart = async (): Promise<void> => {
-    setStatus('starting')
-    setLogs([])
-    setHasError(false)
-    const r = await window.electronAPI.gateway.start()
-    setStatus(r.success ? 'running' : 'stopped')
-    if (!r.success) {
-      setHasError(true)
-      if (r.error) {
-        setLogs((prev) => [...prev, tRef.current('done.errorPrefix', { msg: r.error })])
-        setShowLogs(true)
-      }
-    }
-  }
-
   const handleRestart = useCallback(async (): Promise<void> => {
+    expectedStopRef.current = true
     setStatus('starting')
     setLogs([])
     setHasError(false)
     const r = await window.electronAPI.gateway.restart()
-    setStatus(r.success ? 'running' : 'stopped')
-    if (!r.success) {
+    if (r.success) {
+      const nextStatus = await syncGatewayStatus()
+      if (nextStatus !== 'running') {
+        setHasError(true)
+        setShowLogs(true)
+      } else {
+        setHasError(false)
+      }
+    } else {
+      setStatus('stopped')
       setHasError(true)
       if (r.error) {
         setLogs((prev) => [...prev, tRef.current('done.errorPrefix', { msg: r.error })])
         setShowLogs(true)
       }
     }
-  }, [])
+  }, [syncGatewayStatus])
+
+  const handleAiRepair = useCallback(async (): Promise<void> => {
+    setAiRepairing(true)
+    setShowLogs(true)
+    setHasError(false)
+    setPendingAiRepairPlan(null)
+    const teardown = bindAiRepairLogBridge()
+
+    try {
+      setLogs((prev) => [...prev, tRef.current('done.aiRepairStarted')])
+      const plan = await window.electronAPI.troubleshoot.aiRepairPlan({ logs })
+      if (!plan.success || !plan.planId) {
+        setHasError(true)
+        setShowLogs(true)
+        return
+      }
+
+      if (plan.requiresApproval) {
+        setLogs((prev) => [...prev, tRef.current('done.aiRepairAwaitingApproval')])
+        setPendingAiRepairPlan({
+          planId: plan.planId,
+          summary: plan.summary,
+          actions: plan.actions
+        })
+        return
+      }
+
+      const result = await window.electronAPI.troubleshoot.aiRepairExecute({ planId: plan.planId })
+      if (result.awaitingApproval) {
+        const nextStatus = await syncGatewayStatus()
+        if (nextStatus !== 'running') {
+          setHasError(true)
+          setShowLogs(true)
+        }
+        setPendingAiRepairPlan({
+          planId: result.awaitingApproval.planId,
+          summary: result.awaitingApproval.summary,
+          actions: result.awaitingApproval.actions
+        })
+        return
+      }
+
+      const nextStatus = await syncGatewayStatus()
+      if (result.success && nextStatus === 'running') {
+        setHasError(false)
+      } else {
+        setHasError(true)
+        setShowLogs(true)
+      }
+    } finally {
+      teardown()
+      setAiRepairing(false)
+    }
+  }, [bindAiRepairLogBridge, logs, syncGatewayStatus])
+
+  const handleAiRepairConfirm = useCallback(async (): Promise<void> => {
+    if (!pendingAiRepairPlan) return
+
+    setAiRepairConfirming(true)
+    setShowLogs(true)
+    const teardown = bindAiRepairLogBridge()
+
+    try {
+      const result = await window.electronAPI.troubleshoot.aiRepairExecute({
+        planId: pendingAiRepairPlan.planId
+      })
+      if (result.awaitingApproval) {
+        const nextStatus = await syncGatewayStatus()
+        if (nextStatus !== 'running') {
+          setHasError(true)
+          setShowLogs(true)
+        }
+        setPendingAiRepairPlan({
+          planId: result.awaitingApproval.planId,
+          summary: result.awaitingApproval.summary,
+          actions: result.awaitingApproval.actions
+        })
+        return
+      }
+
+      const nextStatus = await syncGatewayStatus()
+      if (result.success && nextStatus === 'running') {
+        setHasError(false)
+      } else {
+        setHasError(true)
+        setShowLogs(true)
+      }
+      setPendingAiRepairPlan(null)
+    } finally {
+      teardown()
+      setAiRepairConfirming(false)
+    }
+  }, [bindAiRepairLogBridge, pendingAiRepairPlan, syncGatewayStatus])
+
+  const handleAiRepairCancel = useCallback((): void => {
+    setPendingAiRepairPlan(null)
+    setLogs((prev) => [...prev, tRef.current('done.aiRepairCancelled')])
+    void syncGatewayStatus().then((nextStatus) => {
+      if (nextStatus !== 'running') {
+        setHasError(true)
+        setShowLogs(true)
+      }
+    })
+  }, [syncGatewayStatus])
 
   return (
-    <div className="flex-1 flex flex-col items-center justify-center px-10 gap-3 overflow-hidden">
-      <div className="absolute top-4 right-4">
-        <LanguageSwitcher />
-      </div>
-
+    <div className="w-full px-10 pt-8 pb-28">
+      <div className="mx-auto flex max-w-4xl flex-col items-center justify-center gap-5 min-h-full">
       {/* Logo + status */}
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-5">
         <div className="relative">
           <div
             className={`absolute inset-0 rounded-full blur-2xl scale-125 transition-colors duration-700 ${
@@ -223,13 +459,13 @@ export default function DoneStep({
           />
           <LobsterLogo
             state={status === 'running' ? 'success' : status === 'starting' ? 'loading' : 'idle'}
-            size={44}
+            size={54}
           />
         </div>
         <div className="flex flex-col gap-1">
           <div className="flex items-center gap-2">
             <div
-              className={`w-2 h-2 rounded-full transition-colors duration-500 ${
+              className={`w-2.5 h-2.5 rounded-full transition-colors duration-500 ${
                 status === 'running'
                   ? 'bg-success'
                   : status === 'starting'
@@ -245,7 +481,7 @@ export default function DoneStep({
                   : {}
               }
             />
-            <span className="text-sm font-bold tracking-wide">
+            <span className="text-xl font-bold tracking-wide">
               {status === 'running'
                 ? t('done.gatewayRunning')
                 : status === 'starting'
@@ -258,9 +494,9 @@ export default function DoneStep({
               onClick={() => setShowProviderModal(true)}
               className="flex items-center gap-1.5 cursor-pointer hover:opacity-80 transition-opacity"
             >
-              <span className="text-[11px] text-text-muted">{t('done.aiModel')}</span>
-              <span className="text-[11px] font-bold text-primary">{currentModel}</span>
-              <span className="text-[10px] text-text-muted/60">{t('done.changeModel')}</span>
+              <span className="text-sm text-text-muted">{t('done.aiModel')}</span>
+              <span className="text-sm font-bold text-primary">{currentModel}</span>
+              <span className="text-xs text-text-muted/60">{t('done.changeModel')}</span>
             </button>
           )}
         </div>
@@ -268,20 +504,20 @@ export default function DoneStep({
 
       {/* OpenClaw update banner */}
       {(openclawUpdate || updating) && (
-        <div className="w-full max-w-md flex items-center gap-3 px-4 py-2 rounded-xl bg-gradient-to-r from-blue-500/15 via-blue-500/10 to-blue-500/15 border border-blue-500/30">
-          <span className="text-base">{updating ? '⏳' : '🔄'}</span>
+        <div className="w-full max-w-2xl flex items-center gap-4 px-5 py-3 rounded-2xl bg-gradient-to-r from-blue-500/15 via-blue-500/10 to-blue-500/15 border border-blue-500/30">
+          <span className="text-lg">{updating ? '⏳' : '🔄'}</span>
           <div className="flex-1 min-w-0">
             {updating ? (
               <div>
-                <span className="text-[12px] font-bold">{t('common:status.updating')}</span>
+                <span className="text-sm font-bold">{t('common:status.updating')}</span>
                 {updateLogs.length > 0 && (
-                  <p className="text-[11px] text-text-muted/70 truncate">
+                  <p className="text-sm text-text-muted/70 truncate">
                     {updateLogs[updateLogs.length - 1]}
                   </p>
                 )}
               </div>
             ) : (
-              <span className="text-[12px] font-bold">
+              <span className="text-sm font-bold">
                 {t('done.ocUpdateAvailable', { latest: openclawUpdate!.latest })}
                 <span className="text-text-muted/50 font-normal ml-1">
                   ({t('done.ocCurrentVersion', { current: openclawUpdate!.current })})
@@ -292,7 +528,7 @@ export default function DoneStep({
           {!updating && (
             <button
               onClick={handleOpenclawUpdate}
-              className="px-3 py-1 text-[11px] font-bold rounded-lg bg-blue-500/20 text-blue-400 border border-blue-500/30 hover:bg-blue-500/30 transition-all duration-200 cursor-pointer whitespace-nowrap"
+              className="px-4 py-2 text-sm font-bold rounded-xl bg-blue-500/20 text-blue-400 border border-blue-500/30 hover:bg-blue-500/30 transition-all duration-200 cursor-pointer whitespace-nowrap"
             >
               {t('common:button.update')}
             </button>
@@ -302,88 +538,69 @@ export default function DoneStep({
 
       {/* Action buttons */}
       <div className="flex gap-3">
-        {status === 'running' && (
-          <Button
-            variant="primary"
-            size="lg"
-            onClick={() => {
-              const url = botUsername ? `tg://resolve?domain=${botUsername}` : 'tg://'
-              window.open(url, '_blank')
-            }}
-          >
-            {t('done.openTelegram')}
-          </Button>
-        )}
         {status === 'running' ? (
           <>
-            <Button variant="secondary" size="sm" onClick={handleRestart}>
+            <Button
+              variant="primary"
+              size="lg"
+              onClick={() => window.electronAPI.openclaw.dashboard()}
+            >
+              {t('done.openDashboard')}
+            </Button>
+            <Button variant="secondary" size="lg" onClick={handleRestart}>
               {t('done.restartBtn')}
             </Button>
-            <Button variant="secondary" size="sm" onClick={handleStop}>
+            <Button variant="secondary" size="lg" onClick={handleStop}>
               {t('done.stopBtn')}
             </Button>
+            {hasError && (
+              <Button variant="secondary" size="lg" onClick={handleAiRepair} loading={aiRepairing}>
+                {aiRepairing ? t('done.aiRepairing') : t('done.aiRepair')}
+              </Button>
+            )}
           </>
-        ) : status === 'stopped' ? (
-          <Button variant="secondary" size="sm" onClick={handleStart}>
-            {t('done.startBtn')}
-          </Button>
+        ) : configReady ? (
+          <>
+            <Button variant="primary" size="lg" onClick={handleRestart}>
+              {t('done.startBtn')}
+            </Button>
+            <Button variant="secondary" size="lg" onClick={handleAiRepair} loading={aiRepairing}>
+              {aiRepairing ? t('done.aiRepairing') : t('done.aiRepair')}
+            </Button>
+          </>
         ) : null}
       </div>
 
       {/* Gateway logs */}
-      {logs.length > 0 && (
-        <div className="w-full max-w-sm">
+      {shouldRenderLogs && (
+        <div className="w-full max-w-2xl">
           <button
             onClick={() => setShowLogs((v) => !v)}
-            className="text-[11px] text-text-muted/60 hover:text-text-muted transition-colors mb-1"
+            className="text-sm text-text-muted/60 hover:text-text-muted transition-colors mb-2"
           >
             {showLogs ? t('done.hideLog') : t('done.showLog')}
-            {hasError && <span className="ml-1.5 text-error">{t('done.errorDetected')}</span>}
+            {hasError && <span className="ml-1.5 text-sm text-error">{t('done.errorDetected')}</span>}
           </button>
           {showLogs && <LogViewer lines={logs} />}
         </div>
       )}
 
-      {/* ─── Star + KakaoTalk chat banner ─── */}
-      <div className="w-full max-w-md grid grid-cols-2 gap-2">
-        <button
-          onClick={() => window.open('https://github.com/ybgwon96/easyclaw', '_blank')}
-          className="flex items-center gap-2.5 px-4 py-2.5 rounded-xl cursor-pointer bg-white/5 border border-glass-border hover:border-primary/40 hover:bg-white/8 transition-all duration-200"
-        >
-          <span className="text-lg">⭐</span>
-          <div className="flex-1 text-left">
-            <span className="text-sm font-bold">Star on GitHub</span>
-            <p className="text-[11px] text-text-muted/70">{t('done.starDesc')}</p>
-          </div>
-        </button>
-        <button
-          onClick={() => window.open('https://open.kakao.com/o/gbBkPehi', '_blank')}
-          className="flex items-center gap-2.5 px-4 py-2.5 rounded-xl cursor-pointer bg-white/5 border border-glass-border hover:border-primary/40 hover:bg-white/8 transition-all duration-200"
-        >
-          <span className="text-lg">💬</span>
-          <div className="flex-1 text-left">
-            <span className="text-sm font-bold">{t('done.kakaoChat')}</span>
-            <p className="text-[11px] text-text-muted/70">{t('done.kakaoChatDesc')}</p>
-          </div>
-        </button>
-      </div>
-
       {/* ─── Action grid (3 columns) ─── */}
-      <div className="w-full max-w-md grid grid-cols-3 gap-2">
+      <div className="w-full max-w-2xl grid grid-cols-3 gap-3">
         <button
           onClick={toggleAutoLaunch}
-          className="glass-card flex items-center gap-2 px-3 py-2 cursor-pointer hover:border-primary/40 transition-all duration-200"
+          className="glass-card flex items-center gap-3 px-4 py-3.5 cursor-pointer hover:border-primary/40 transition-all duration-200"
         >
-          <span className="text-sm">⚙️</span>
-          <span className="text-[11px] font-bold flex-1 text-left">{t('done.autoLaunch')}</span>
+          <span className="text-base">⚙️</span>
+          <span className="text-sm font-bold flex-1 text-left">{t('done.autoLaunch')}</span>
           <div
-            className={`w-8 h-4.5 rounded-full p-0.5 transition-colors duration-200 ${
+            className={`w-10 h-5.5 rounded-full p-0.5 transition-colors duration-200 ${
               autoLaunch ? 'bg-primary' : 'bg-white/15'
             }`}
           >
             <div
-              className={`w-3.5 h-3.5 rounded-full bg-white shadow-sm transition-transform duration-200 ${
-                autoLaunch ? 'translate-x-3.5' : 'translate-x-0'
+              className={`w-4.5 h-4.5 rounded-full bg-white shadow-sm transition-transform duration-200 ${
+                autoLaunch ? 'translate-x-4' : 'translate-x-0'
               }`}
             />
           </div>
@@ -391,32 +608,48 @@ export default function DoneStep({
         {onTroubleshoot && (
           <button
             onClick={onTroubleshoot}
-            className="glass-card flex items-center gap-2 px-3 py-2 cursor-pointer hover:border-primary/40 transition-all duration-200"
+            className="glass-card flex items-center gap-3 px-4 py-3.5 cursor-pointer hover:border-primary/40 transition-all duration-200"
           >
-            <span className="text-sm">🔧</span>
-            <span className="text-[11px] font-bold flex-1 text-left">{t('done.troubleshoot')}</span>
+            <span className="text-base">🔧</span>
+            <span className="text-sm font-bold flex-1 text-left">{t('done.troubleshoot')}</span>
+          </button>
+        )}
+        <button
+          onClick={() => setShowProviderModal(true)}
+          className="glass-card flex items-center gap-3 px-4 py-3.5 cursor-pointer hover:border-primary/40 transition-all duration-200"
+        >
+          <span className="text-base">🔑</span>
+          <span className="text-sm font-bold flex-1 text-left">{t('done.configKey')}</span>
+        </button>
+        {onConfigureChannel && (
+          <button
+            onClick={onConfigureChannel}
+            className="glass-card flex items-center gap-3 px-4 py-3.5 cursor-pointer hover:border-primary/40 transition-all duration-200"
+          >
+            <span className="text-base">📱</span>
+            <span className="text-sm font-bold flex-1 text-left">{t('done.configChannel')}</span>
           </button>
         )}
         <button
           onClick={backup.execute}
-          className="glass-card flex items-center gap-2 px-3 py-2 cursor-pointer hover:border-primary/40 transition-all duration-200"
+          className="glass-card flex items-center gap-3 px-4 py-3.5 cursor-pointer hover:border-primary/40 transition-all duration-200"
         >
-          <span className="text-sm">📦</span>
-          <span className="text-[11px] font-bold flex-1 text-left">{t('done.backup')}</span>
+          <span className="text-base">📦</span>
+          <span className="text-sm font-bold flex-1 text-left">{t('done.backup')}</span>
         </button>
         <button
           onClick={backup.openRestore}
-          className="glass-card flex items-center gap-2 px-3 py-2 cursor-pointer hover:border-primary/40 transition-all duration-200"
+          className="glass-card flex items-center gap-3 px-4 py-3.5 cursor-pointer hover:border-primary/40 transition-all duration-200"
         >
-          <span className="text-sm">📥</span>
-          <span className="text-[11px] font-bold flex-1 text-left">{t('done.restore')}</span>
+          <span className="text-base">📥</span>
+          <span className="text-sm font-bold flex-1 text-left">{t('done.restore')}</span>
         </button>
         <button
           onClick={uninstall.open}
-          className="glass-card flex items-center gap-2 px-3 py-2 cursor-pointer hover:border-error/40 transition-all duration-200"
+          className="glass-card flex items-center gap-3 px-4 py-3.5 cursor-pointer hover:border-error/40 transition-all duration-200"
         >
-          <span className="text-sm">🗑️</span>
-          <span className="text-[11px] font-bold flex-1 text-left text-error/80">
+          <span className="text-base">🗑️</span>
+          <span className="text-sm font-bold flex-1 text-left text-error/80">
             {t('done.delete')}
           </span>
         </button>
@@ -440,12 +673,31 @@ export default function DoneStep({
             <label className="flex items-center gap-2 cursor-pointer">
               <input
                 type="checkbox"
-                checked={uninstall.removeConfig}
+                checked={uninstall.removeConfig || uninstall.unregisterWsl}
                 onChange={(e) => uninstall.setRemoveConfig(e.target.checked)}
+                disabled={uninstall.unregisterWsl}
                 className="w-4 h-4 rounded border-glass-border accent-primary"
               />
-              <span className="text-sm">{t('uninstall.removeConfig')}</span>
+              <span
+                className={`text-sm ${uninstall.unregisterWsl ? 'text-text-muted' : ''}`}
+              >
+                {t('uninstall.removeConfig')}
+              </span>
             </label>
+            {isWindows && (
+              <>
+                <label className="flex items-start gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={uninstall.unregisterWsl}
+                    onChange={(e) => uninstall.setUnregisterWsl(e.target.checked)}
+                    className="mt-0.5 w-4 h-4 rounded border-glass-border accent-error"
+                  />
+                  <span className="text-sm leading-relaxed">{t('uninstall.unregisterWsl')}</span>
+                </label>
+                <p className="text-xs leading-relaxed text-error/80">{t('uninstall.unregisterWslDesc')}</p>
+              </>
+            )}
             <div className="flex gap-2 pt-1">
               <Button variant="secondary" size="sm" onClick={uninstall.close}>
                 {t('common:button.cancel')}
@@ -495,23 +747,51 @@ export default function DoneStep({
         />
       )}
 
-      {/* ─── Provider switch modal ─── */}
-      {showProviderModal && (
-        <ProviderSwitchModal
-          currentProvider={currentProvider}
-          currentModel={currentModel || undefined}
-          onClose={() => setShowProviderModal(false)}
-          onSuccess={() => {
-            loadCurrentConfig()
-            // Gateway restart is handled by IPC handler (config:switch-provider)
-            setStatus('starting')
-            setTimeout(async () => {
-              const s = await window.electronAPI.gateway.status()
-              setStatus(s === 'running' ? 'running' : 'stopped')
-            }, 3000)
-          }}
-        />
-      )}
+        {/* ─── Provider switch modal ─── */}
+        {showProviderModal && (
+          <ProviderSwitchModal
+            currentProvider={currentProvider}
+            currentModel={currentModel || undefined}
+            currentMemorySearch={currentMemorySearch}
+            onClose={() => setShowProviderModal(false)}
+            onSuccess={() => {
+              void loadCurrentConfig()
+              // Gateway restart is handled by IPC handler (config:switch-provider)
+              setStatus('starting')
+              setLogs([])
+              setShowLogs(false)
+              setHasError(false)
+              setTimeout(async () => {
+                const s = await window.electronAPI.gateway.status()
+                setStatus(s === 'running' ? 'running' : 'stopped')
+                if (s === 'running') {
+                  setHasError(false)
+                }
+              }, 3000)
+            }}
+          />
+        )}
+
+        {pendingAiRepairPlan && (
+          <AiRepairApprovalModal
+            title={t('done.aiRepairReviewTitle')}
+            description={t('done.aiRepairReviewDesc')}
+            summaryLabel={t('done.aiRepairProblemLabel')}
+            actionLabel={t('done.aiRepairActionLabel')}
+            commandLabel={t('done.aiRepairCommandLabel')}
+            runtimeLabel={t('done.aiRepairRuntimeLabel')}
+            effectLabel={t('done.aiRepairEffectLabel')}
+            cancelLabel={t('common:button.cancel')}
+            confirmLabel={t('done.aiRepairApprove')}
+            summary={pendingAiRepairPlan.summary}
+            actions={pendingAiRepairPlan.actions}
+            onClose={handleAiRepairCancel}
+            onConfirm={handleAiRepairConfirm}
+            confirming={aiRepairConfirming}
+          />
+        )}
+
+      </div>
     </div>
   )
 }
