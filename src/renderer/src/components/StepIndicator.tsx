@@ -41,50 +41,53 @@ export default function StepIndicator({
   const current = Math.max(0, steps.indexOf(currentStep))
 
   return (
-    <div className="px-8 pt-12 pb-4">
-      {/* Dot indicators with connecting line */}
-      <div className="relative flex justify-between items-center">
-        {/* Background line */}
-        <div className="absolute top-1/2 left-2 right-2 h-[2px] -translate-y-1/2 bg-white/8 rounded-full" />
-        {/* Active line */}
-        <div
-          className="absolute top-1/2 left-2 h-[2px] -translate-y-1/2 bg-gradient-to-r from-primary to-primary-hover rounded-full transition-all duration-700 ease-out"
-          style={{ width: `${(current / (total - 1)) * 100}%` }}
-        />
+    <div className="px-8 pt-7 pb-4">
+      <div className="glass-card relative overflow-hidden px-5 py-4">
+        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.38),transparent_40%)]" />
+        <div className="relative flex items-start justify-between gap-3">
+          <div className="absolute left-4 right-4 top-[14px] h-px rounded-full bg-black/[0.06]" />
+          <div
+            className="absolute left-4 top-[14px] h-px rounded-full bg-gradient-to-r from-primary/75 to-primary-hover/55 transition-all duration-700 ease-out"
+            style={{ width: `${(current / (total - 1)) * 100}%` }}
+          />
 
-        {labels.map((label, i) => {
-          const isActive = i <= current
-          const isCurrent = i === current
+          {labels.map((label, i) => {
+            const isActive = i <= current
+            const isCurrent = i === current
 
-          return (
-            <div key={i} className="relative flex flex-col items-center z-10">
-              <div
-                className={`h-3.5 w-3.5 rounded-full transition-all duration-500 ${
-                  isCurrent
-                    ? 'bg-primary scale-125 shadow-[0_0_10px_var(--color-primary-glow)]'
-                    : isActive
-                      ? 'bg-primary/80'
-                      : 'bg-white/15'
-                }`}
-                style={
-                  isCurrent
-                    ? {
-                        animation: 'glow-pulse 2s ease-in-out infinite',
-                        color: 'var(--color-primary)'
-                      }
-                    : {}
-                }
-              />
-              <span
-                className={`mt-2.5 text-xs font-semibold tracking-wide transition-all duration-500 ${
-                  isCurrent ? 'text-primary' : isActive ? 'text-text/70' : 'text-text-muted/50'
-                }`}
-              >
-                {label}
-              </span>
-            </div>
-          )
-        })}
+            return (
+              <div key={i} className="relative z-10 flex min-w-0 flex-1 flex-col items-center">
+                <div
+                  className={`flex h-7 w-7 items-center justify-center rounded-full border transition-all duration-500 ${
+                    isCurrent
+                      ? 'border-primary/35 bg-white text-primary shadow-[0_10px_24px_rgba(0,113,227,0.18)]'
+                      : isActive
+                        ? 'border-primary/18 bg-white/78 text-primary/80'
+                        : 'border-black/6 bg-white/58 text-text-muted/55'
+                  }`}
+                  style={isCurrent ? { animation: 'glow-pulse 2.4s ease-in-out infinite' } : {}}
+                >
+                  <span
+                    className={`h-2.5 w-2.5 rounded-full ${
+                      isCurrent
+                        ? 'bg-primary'
+                        : isActive
+                          ? 'bg-primary/70'
+                          : 'bg-black/10'
+                    }`}
+                  />
+                </div>
+                <span
+                  className={`mt-3 max-w-full truncate text-[11px] font-semibold tracking-[0.01em] transition-all duration-500 ${
+                    isCurrent ? 'text-text' : isActive ? 'text-text-muted/90' : 'text-text-muted/55'
+                  }`}
+                >
+                  {label}
+                </span>
+              </div>
+            )
+          })}
+        </div>
       </div>
     </div>
   )

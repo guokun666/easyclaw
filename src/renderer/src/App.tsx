@@ -171,16 +171,30 @@ function App({ debugMode }: { debugMode?: string }): React.JSX.Element {
   )
 
   if (isDebugBareShell) {
-    return <div className="h-screen bg-bg" />
+    return (
+      <>
+        <div className="aurora-bg" />
+        <div className="relative z-10 flex h-full p-4">
+          <div className="app-shell flex-1" />
+        </div>
+      </>
+    )
   }
 
   if (isDebugWelcomeOnly) {
     return (
       <>
         <div className="aurora-bg" />
-        <div className="flex flex-col h-full relative z-10">
-          <div className="flex-1 flex flex-col min-h-0 pb-10 step-enter">
-            <WelcomeStep onNext={() => undefined} />
+        <div className="relative z-10 flex h-full p-4 md:p-5">
+          <div className="app-shell flex-1">
+            <div className="shell-toolbar" aria-hidden="true">
+              <span />
+              <span />
+              <span />
+            </div>
+            <div className="flex-1 flex flex-col min-h-0 pb-10 step-enter">
+              <WelcomeStep onNext={() => undefined} />
+            </div>
           </div>
         </div>
       </>
@@ -191,181 +205,189 @@ function App({ debugMode }: { debugMode?: string }): React.JSX.Element {
     <>
       <div className="aurora-bg" />
 
-      <div className="flex flex-col h-full relative z-10">
-        {currentStep !== 'welcome' && currentStep !== 'troubleshoot' && (
-          <StepIndicator currentStep={currentStep} isWindows={isWindows} />
-        )}
+      <div className="relative z-10 flex h-full p-4 md:p-5">
+        <div className="app-shell flex-1">
+          <div className="shell-toolbar" aria-hidden="true">
+            <span />
+            <span />
+            <span />
+          </div>
 
-        <div className="flex-1 min-h-0 overflow-hidden">
-          <div className="flex h-full min-h-0 flex-col pb-16 step-enter" key={currentStep}>
-            {currentStep === 'welcome' && <WelcomeStep onNext={next} />}
-            {currentStep === 'envCheck' && (
-              <EnvCheckStep onNext={() => goTo('apiKeyGuide')} onNeedInstall={handleEnvCheckDone} />
-            )}
-            {currentStep === 'wslSetup' && (
-              <WslSetupStep wslState={wslState} onReady={handleWslReady} />
-            )}
-            {currentStep === 'install' && (
-              <InstallStep
-                needs={installNeeds}
-                forceCleanInstall={forceCleanInstall}
-                onDone={() => goTo('apiKeyGuide')}
-              />
-            )}
-            {currentStep === 'apiKeyGuide' && (
-              <ApiKeyGuideStep
-                provider={provider}
-                onSelectProvider={(p) => {
-                  setProvider(p)
-                  setModelId(undefined)
-                  setAuthMethod('api-key')
-                  setConfigDraft((current) => ({
-                    ...current,
-                    validatedApiKey: null,
-                    apiKeyTestState: 'idle',
-                    apiKeyTestMessage: null,
-                    oauthDone: false
-                  }))
-                }}
-                authMethod={authMethod}
-                onSelectAuthMethod={(method) => {
-                  setAuthMethod(method)
-                  setConfigDraft((current) => ({
-                    ...current,
-                    validatedApiKey: null,
-                    apiKeyTestState: 'idle',
-                    apiKeyTestMessage: null,
-                    oauthDone: method === 'oauth' ? current.oauthDone : false
-                  }))
-                }}
-                modelId={modelId}
-                onSelectModel={(model) => {
-                  setModelId(model)
-                  setConfigDraft((current) => ({
-                    ...current,
-                    validatedApiKey: null,
-                    apiKeyTestState: 'idle',
-                    apiKeyTestMessage: null
-                  }))
-                }}
-                onNext={next}
-              />
-            )}
-            {currentStep === 'telegramGuide' && (
-              <TelegramGuideStep
-                channelType={channelType}
-                onSelectChannel={setChannelType}
-                onSkip={() => {
-                  if (channelOnly) {
+          {currentStep !== 'welcome' && currentStep !== 'troubleshoot' && (
+            <StepIndicator currentStep={currentStep} isWindows={isWindows} />
+          )}
+
+          <div className="flex-1 min-h-0 overflow-hidden">
+            <div className="flex h-full min-h-0 flex-col pb-16 step-enter" key={currentStep}>
+              {currentStep === 'welcome' && <WelcomeStep onNext={next} />}
+              {currentStep === 'envCheck' && (
+                <EnvCheckStep onNext={() => goTo('apiKeyGuide')} onNeedInstall={handleEnvCheckDone} />
+              )}
+              {currentStep === 'wslSetup' && (
+                <WslSetupStep wslState={wslState} onReady={handleWslReady} />
+              )}
+              {currentStep === 'install' && (
+                <InstallStep
+                  needs={installNeeds}
+                  forceCleanInstall={forceCleanInstall}
+                  onDone={() => goTo('apiKeyGuide')}
+                />
+              )}
+              {currentStep === 'apiKeyGuide' && (
+                <ApiKeyGuideStep
+                  provider={provider}
+                  onSelectProvider={(p) => {
+                    setProvider(p)
+                    setModelId(undefined)
+                    setAuthMethod('api-key')
+                    setConfigDraft((current) => ({
+                      ...current,
+                      validatedApiKey: null,
+                      apiKeyTestState: 'idle',
+                      apiKeyTestMessage: null,
+                      oauthDone: false
+                    }))
+                  }}
+                  authMethod={authMethod}
+                  onSelectAuthMethod={(method) => {
+                    setAuthMethod(method)
+                    setConfigDraft((current) => ({
+                      ...current,
+                      validatedApiKey: null,
+                      apiKeyTestState: 'idle',
+                      apiKeyTestMessage: null,
+                      oauthDone: method === 'oauth' ? current.oauthDone : false
+                    }))
+                  }}
+                  modelId={modelId}
+                  onSelectModel={(model) => {
+                    setModelId(model)
+                    setConfigDraft((current) => ({
+                      ...current,
+                      validatedApiKey: null,
+                      apiKeyTestState: 'idle',
+                      apiKeyTestMessage: null
+                    }))
+                  }}
+                  onNext={next}
+                />
+              )}
+              {currentStep === 'telegramGuide' && (
+                <TelegramGuideStep
+                  channelType={channelType}
+                  onSelectChannel={setChannelType}
+                  onSkip={() => {
+                    if (channelOnly) {
                     setChannelOnly(false)
-                    goTo('done')
-                    return
-                  }
-                  setSetupPayload(null)
-                  setSkipChannelConfig(true)
-                  goTo('config')
-                }}
-                onNext={() => {
-                  setSkipChannelConfig(false)
-                  next()
-                }}
-              />
+                      goTo('done')
+                      return
+                    }
+                    setSetupPayload(null)
+                    setSkipChannelConfig(true)
+                    goTo('config')
+                  }}
+                  onNext={() => {
+                    setSkipChannelConfig(false)
+                    next()
+                  }}
+                />
+              )}
+              {currentStep === 'config' && (
+                <ConfigStep
+                  provider={provider}
+                  authMethod={authMethod}
+                  modelId={modelId}
+                  onModelChange={(model) => {
+                    setModelId(model)
+                    setConfigDraft((current) => ({
+                      ...current,
+                      validatedApiKey: null,
+                      apiKeyTestState: 'idle',
+                      apiKeyTestMessage: null
+                    }))
+                  }}
+                  channelType={channelType}
+                  skipChannelConfig={skipChannelConfig}
+                  draft={configDraft}
+                  onDraftChange={setConfigDraft}
+                  onNext={(payload) => {
+                    setSetupPayload(payload)
+                    goTo('setup')
+                  }}
+                />
+              )}
+              {currentStep === 'setup' && setupPayload && (
+                <ChannelSetupStep
+                  payload={setupPayload}
+                  channelOnly={channelOnly}
+                  onDone={(username) => {
+                    setChannelOnly(false)
+                    handleDone(username)
+                  }}
+                />
+              )}
+              {currentStep === 'done' && (
+                <DoneStep
+                  botUsername={botUsername}
+                  channelType={channelType}
+                  isWindows={isWindows}
+                  onTroubleshoot={() => goTo('troubleshoot')}
+                  onUninstallDone={() => {
+                    window.electronAPI.wizard.clearState()
+                    goTo('welcome')
+                  }}
+                  onConfigureChannel={() => {
+                    setChannelOnly(true)
+                    setSkipChannelConfig(false)
+                    goTo('telegramGuide')
+                  }}
+                />
+              )}
+              {currentStep === 'troubleshoot' && (
+                <TroubleshootStep isWindows={isWindows} onBack={prev} />
+              )}
+            </div>
+          </div>
+
+          <div className="absolute bottom-4 right-5 flex items-center gap-2">
+            {import.meta.env.DEV && currentStep !== 'done' && (
+              <button
+                onClick={() => goTo('done')}
+                className="soft-pill px-3 py-1.5 text-[10px] font-semibold text-text-muted transition-colors hover:text-primary"
+              >
+                [skip→done]
+              </button>
             )}
-            {currentStep === 'config' && (
-              <ConfigStep
-                provider={provider}
-                authMethod={authMethod}
-                modelId={modelId}
-                onModelChange={(model) => {
-                  setModelId(model)
-                  setConfigDraft((current) => ({
-                    ...current,
-                    validatedApiKey: null,
-                    apiKeyTestState: 'idle',
-                    apiKeyTestMessage: null
-                  }))
-                }}
-                channelType={channelType}
-                skipChannelConfig={skipChannelConfig}
-                draft={configDraft}
-                onDraftChange={setConfigDraft}
-                onNext={(payload) => {
-                  setSetupPayload(payload)
-                  goTo('setup')
-                }}
-              />
-            )}
-            {currentStep === 'setup' && setupPayload && (
-              <ChannelSetupStep
-                payload={setupPayload}
-                channelOnly={channelOnly}
-                onDone={(username) => {
-                  setChannelOnly(false)
-                  handleDone(username)
-                }}
-              />
-            )}
-            {currentStep === 'done' && (
-              <DoneStep
-                botUsername={botUsername}
-                channelType={channelType}
-                isWindows={isWindows}
-                onTroubleshoot={() => goTo('troubleshoot')}
-                onUninstallDone={() => {
-                  window.electronAPI.wizard.clearState()
-                  goTo('welcome')
-                }}
-                onConfigureChannel={() => {
-                  setChannelOnly(true)
-                  setSkipChannelConfig(false)
-                  goTo('telegramGuide')
-                }}
-              />
-            )}
-            {currentStep === 'troubleshoot' && (
-              <TroubleshootStep isWindows={isWindows} onBack={prev} />
+            {version && (
+              <span className="soft-pill px-3 py-1.5 text-[10px] font-semibold text-text-muted/85 select-none">
+                v{version}
+              </span>
             )}
           </div>
-        </div>
 
-        <div className="absolute bottom-3 right-4 flex items-center gap-2">
-          {import.meta.env.DEV && currentStep !== 'done' && (
+          {!isDebugNoBanner && <UpdateBanner />}
+
+          {canGoBack && currentStep !== 'troubleshoot' && (
             <button
-              onClick={() => goTo('done')}
-              className="text-[10px] text-text-muted/40 hover:text-primary/60 font-mono transition-colors"
+              onClick={prev}
+              className="absolute bottom-14 left-6 z-20 flex items-center gap-1.5 rounded-full border border-black/6 bg-white/78 px-4 py-2 text-xs font-semibold text-text-muted shadow-[0_12px_28px_rgba(15,23,42,0.08)] backdrop-blur-xl transition-all duration-200 hover:-translate-y-px hover:text-text"
             >
-              [skip→done]
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <polyline points="15 18 9 12 15 6" />
+              </svg>
+              {t('button.back')}
             </button>
           )}
-          {version && (
-            <span className="text-[10px] text-text-muted/30 font-medium select-none">
-              v{version}
-            </span>
-          )}
         </div>
-
-        {!isDebugNoBanner && <UpdateBanner />}
-
-        {canGoBack && currentStep !== 'troubleshoot' && (
-          <button
-            onClick={prev}
-            className="absolute bottom-4 left-6 z-20 flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-text-muted hover:text-text bg-white/5 hover:bg-white/10 rounded-xl border border-glass-border transition-all duration-200"
-          >
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <polyline points="15 18 9 12 15 6" />
-            </svg>
-            {t('button.back')}
-          </button>
-        )}
       </div>
     </>
   )
