@@ -5,7 +5,7 @@ import { checkPort } from './troubleshooter'
 import { createTerminalLineEmitter } from './terminal-output'
 import { buildWslBashArgs, getWslProxyRuntimeInfo } from './wsl-utils'
 import {
-  ensureFeishuPluginCompatible,
+  ensureRetainedPluginCompatibility,
   ensureFeishuSecretProviderReady,
   ensureOptionalMemorySearchDisabled
 } from './onboarder'
@@ -336,7 +336,34 @@ export const waitUntilStopped = async (timeoutMs = 5000): Promise<void> => {
 
 export const startGateway = async (): Promise<GatewayResult> => {
   await ensureOptionalMemorySearchDisabled((msg) => emitLog(msg))
-  await ensureFeishuPluginCompatible((msg) => emitLog(msg))
+  const currentVersion = await (async (): Promise<string | null> => {
+    try {
+      const isWin = platform() === 'win32'
+      const cmd = isWin ? 'wsl' : resolvePreferredBin('openclaw')
+      const args = isWin ? await buildWslBashArgs('openclaw --version') : ['--version']
+      const output = await new Promise<string>((resolve, reject) => {
+        const child = spawn(cmd, args, {
+          env: isWin ? process.env : getPathEnv()
+        })
+        let stdout = ''
+        let stderr = ''
+        child.stdout.on('data', (d) => (stdout += d.toString()))
+        child.stderr.on('data', (d) => (stderr += d.toString()))
+        child.on('close', (code) => {
+          if (code === 0) resolve(stdout.trim())
+          else reject(new Error(stderr.trim() || `exit code ${code}`))
+        })
+        child.on('error', reject)
+      })
+      const match = output.match(/v?(\d+\.\d+\.\d+)/)
+      return match ? match[1] : null
+    } catch {
+      return null
+    }
+  })()
+  if (currentVersion) {
+    await ensureRetainedPluginCompatibility(currentVersion, (msg) => emitLog(msg))
+  }
   await ensureFeishuSecretProviderReady((msg) => emitLog(msg))
   const isWin = platform() === 'win32'
   if (isWin) {

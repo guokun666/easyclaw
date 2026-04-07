@@ -19,6 +19,8 @@ import {
 } from './services/installer'
 import {
   cancelActiveOnboard,
+  disableRetainedIncompatiblePlugins,
+  inspectRetainedPluginCompatibility,
   runOnboard,
   readCurrentConfig,
   switchProvider,
@@ -142,6 +144,65 @@ export const registerIpcHandlers = (getWin: () => BrowserWindow | null): void =>
       return {
         success: true,
         ...catalog
+      }
+    }
+  )
+  ipcMain.handle(
+    'openclaw:inspect-plugin-compatibility',
+    async (
+      _e,
+      opts?: {
+        version?: string
+      }
+    ) => {
+      try {
+        const version = normalizeOpenclawVersion(opts?.version)
+        const report = await inspectRetainedPluginCompatibility(version)
+        return { success: true, ...report }
+      } catch (e) {
+        return {
+          success: false,
+          targetVersion: normalizeOpenclawVersion(opts?.version),
+          entries: [],
+          autoSyncCount: 0,
+          warningCount: 0,
+          error: e instanceof Error ? e.message : String(e)
+        }
+      }
+    }
+  )
+  ipcMain.handle(
+    'openclaw:disable-incompatible-plugins',
+    async (
+      _e,
+      opts?: {
+        version?: string
+      }
+    ) => {
+      try {
+        const version = normalizeOpenclawVersion(opts?.version)
+        const result = await disableRetainedIncompatiblePlugins(version, (msg) => {
+          try {
+            win().webContents.send('install:progress', msg)
+          } catch {
+            /* window destroyed */
+          }
+        })
+        return {
+          success: true,
+          disabledIds: result.disabledIds,
+          ...result.report
+        }
+      } catch (e) {
+        return {
+          success: false,
+          disabledIds: [],
+          targetVersion: normalizeOpenclawVersion(opts?.version),
+          entries: [],
+          autoSyncCount: 0,
+          warningCount: 0,
+          error: e instanceof Error ? e.message : String(e)
+        }
       }
     }
   )

@@ -85,6 +85,21 @@
     "feishuPluginSyncing": "检测到飞书插件版本较旧，正在同步到与 OpenClaw {{openclawVersion}} 兼容的版本（当前插件：{{pluginVersion}}）...",
     "feishuPluginSynced": "飞书插件已同步完成，已切换到与 OpenClaw {{openclawVersion}} 兼容的版本。",
     "feishuPluginSyncFailed": "飞书插件自动同步失败：{{message}}。安装器将继续尝试启动 Gateway。",
+    "pluginCompatibility": {
+      "compatible": "检测到保留插件 {{pluginId}}（{{pluginVersion}}），与目标 OpenClaw {{targetVersion}} 一致。",
+      "autoSync": "检测到保留插件 {{pluginId}}（{{pluginVersion}}），将在安装/启动 {{targetVersion}} 前自动同步为兼容版本。",
+      "autoSyncDone": "保留插件 {{pluginId}} 已同步到与 OpenClaw {{targetVersion}} 兼容的版本。",
+      "autoSyncFailed": "保留插件 {{pluginId}} 自动同步失败：{{message}}。安装器会继续安装/启动，但如果后续异常，建议清除旧版本后重装。",
+      "disabling": "正在禁用保留插件 {{pluginId}}（{{pluginVersion}}）...",
+      "disabled": "保留插件 {{pluginId}} 已被显式禁用，本次不会再参与 OpenClaw {{targetVersion}} 的启动。",
+      "directoryDisabled": "已将插件目录 {{pluginId}} 移出自动扫描路径：{{targetPath}}",
+      "disableDone": "已禁用 {{count}} 个保留插件。现在可以继续安装或启动 OpenClaw {{targetVersion}}。",
+      "ignored": "检测到残留插件 {{pluginId}}（{{pluginVersion}}），但当前未配置对应渠道，本次不会主动处理它。",
+      "unknownVersion": "检测到保留插件 {{pluginId}}，但无法识别其版本，无法自动确认是否兼容 OpenClaw {{targetVersion}}。",
+      "newerThanTarget": "检测到保留插件 {{pluginId}}（{{pluginVersion}}）高于目标 OpenClaw {{targetVersion}}，可能不兼容。",
+      "versionMismatch": "检测到保留插件 {{pluginId}}（{{pluginVersion}}）与目标 OpenClaw {{targetVersion}} 不一致，兼容性未确认。",
+      "warningSummary": "检测到 {{count}} 个保留插件存在兼容风险。若后续启动异常，建议先使用“清除旧版本后安装”，或在完成页使用 AI 修复继续处理。"
+    },
     "providerValidating": {
       "modelfamily": "正在校验 Model Family API Key..."
     },

@@ -14,6 +14,23 @@ interface InstallNeeds {
   needOpenclaw: boolean
 }
 
+interface PluginCompatibilityEntry {
+  id: string
+  installedVersion: string | null
+  targetVersion: string
+  status: 'compatible' | 'auto-sync' | 'warning' | 'ignored'
+  message: string
+}
+
+interface PluginCompatibilityReport {
+  success: boolean
+  targetVersion: string
+  entries: PluginCompatibilityEntry[]
+  autoSyncCount: number
+  warningCount: number
+  error?: string
+}
+
 export default function InstallStep({
   needs,
   forceCleanInstall = false,
@@ -38,6 +55,11 @@ export default function InstallStep({
   const [recommendedVersion, setRecommendedVersion] = useState('2026.4.1')
   const [loadingVersions, setLoadingVersions] = useState(false)
   const [versionError, setVersionError] = useState<string | null>(null)
+  const [pluginCompatibility, setPluginCompatibility] = useState<PluginCompatibilityReport | null>(null)
+  const [loadingPluginCompatibility, setLoadingPluginCompatibility] = useState(false)
+  const [disablingPlugins, setDisablingPlugins] = useState(false)
+  const [pluginCompatibilityMessage, setPluginCompatibilityMessage] = useState<string | null>(null)
+  const [pluginCompatibilityError, setPluginCompatibilityError] = useState<string | null>(null)
   const [savingSources, setSavingSources] = useState(false)
   const [sourcesMessage, setSourcesMessage] = useState<string | null>(null)
   const [sourcesError, setSourcesError] = useState<string | null>(null)
@@ -93,6 +115,76 @@ export default function InstallStep({
       cancelled = true
     }
   }, [openclawVersion, sourceMode, t])
+
+  const loadPluginCompatibility = useCallback(async (): Promise<void> => {
+    setLoadingPluginCompatibility(true)
+    try {
+      const result = await window.electronAPI.openclaw.inspectPluginCompatibility({
+        version: openclawVersion
+      })
+      setPluginCompatibility(result)
+    } catch {
+      setPluginCompatibility(null)
+    } finally {
+      setLoadingPluginCompatibility(false)
+    }
+  }, [openclawVersion])
+
+  useEffect(() => {
+    let disposed = false
+
+    const load = async (): Promise<void> => {
+      setLoadingPluginCompatibility(true)
+      try {
+        const result = await window.electronAPI.openclaw.inspectPluginCompatibility({
+          version: openclawVersion
+        })
+        if (!disposed) {
+          setPluginCompatibility(result)
+        }
+      } catch {
+        if (!disposed) {
+          setPluginCompatibility(null)
+        }
+      } finally {
+        if (!disposed) {
+          setLoadingPluginCompatibility(false)
+        }
+      }
+    }
+
+    void load()
+
+    return () => {
+      disposed = true
+    }
+  }, [openclawVersion])
+
+  const disableIncompatiblePlugins = useCallback(async () => {
+    setDisablingPlugins(true)
+    setPluginCompatibilityMessage(null)
+    setPluginCompatibilityError(null)
+    try {
+      const result = await window.electronAPI.openclaw.disableIncompatiblePlugins({
+        version: openclawVersion
+      })
+      if (!result.success) {
+        setPluginCompatibilityError(result.error || t('install.pluginCompatDisableError'))
+        return
+      }
+      setPluginCompatibility(result)
+      setPluginCompatibilityMessage(
+        result.disabledIds.length > 0
+          ? t('install.pluginCompatDisableDone', { count: result.disabledIds.length })
+          : t('install.pluginCompatAlreadyDisabled')
+      )
+      await loadPluginCompatibility()
+    } catch {
+      setPluginCompatibilityError(t('install.pluginCompatDisableError'))
+    } finally {
+      setDisablingPlugins(false)
+    }
+  }, [loadPluginCompatibility, openclawVersion, t])
 
   const runInstall = useCallback(async () => {
     setInstalling(true)
@@ -288,6 +380,103 @@ export default function InstallStep({
             </div>
           )}
         </div>
+
+        {(loadingPluginCompatibility ||
+          (pluginCompatibility &&
+            (pluginCompatibility.autoSyncCount > 0 || pluginCompatibility.warningCount > 0))) && (
+          <div className="glass-card p-4 space-y-3">
+            <div className="space-y-1">
+              <div className="text-sm font-bold">{t('install.pluginCompatTitle')}</div>
+              <div className="text-xs text-text-muted">{t('install.pluginCompatDesc')}</div>
+            </div>
+
+            {loadingPluginCompatibility ? (
+              <p className="text-[11px] text-text-muted">{t('install.pluginCompatLoading')}</p>
+            ) : (
+              <>
+                {pluginCompatibility?.autoSyncCount ? (
+                  <p className="rounded-2xl border border-primary/20 bg-primary/8 px-3 py-2 text-[11px] font-medium leading-5 text-primary">
+                    {t('install.pluginCompatAutoSync', {
+                      count: pluginCompatibility.autoSyncCount,
+                      version: pluginCompatibility.targetVersion
+                    })}
+                  </p>
+                ) : null}
+
+                {pluginCompatibility?.warningCount ? (
+                  <p className="rounded-2xl border border-warning/25 bg-warning/10 px-3 py-2 text-[11px] font-medium leading-5 text-warning">
+                    {t('install.pluginCompatWarning', {
+                      count: pluginCompatibility.warningCount,
+                      version: pluginCompatibility.targetVersion
+                    })}
+                  </p>
+                ) : null}
+
+                <div className="space-y-2">
+                  {pluginCompatibility?.entries
+                    .filter(
+                      (entry) =>
+                        entry.status === 'auto-sync' ||
+                        entry.status === 'warning' ||
+                        entry.status === 'ignored'
+                    )
+                    .map((entry) => (
+                      <div
+                        key={`${entry.id}:${entry.installedVersion ?? 'unknown'}`}
+                        className={`rounded-2xl border px-3 py-2 ${
+                          entry.status === 'auto-sync'
+                            ? 'border-primary/15 bg-primary/[0.06]'
+                            : entry.status === 'ignored'
+                              ? 'border-white/10 bg-white/[0.04]'
+                            : 'border-warning/20 bg-warning/8'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 text-[11px] font-semibold">
+                          <span>{entry.id}</span>
+                          <span className="text-text-muted">
+                            {entry.installedVersion ?? t('install.pluginCompatUnknownVersion')}
+                          </span>
+                        </div>
+                        <p className="mt-1 text-[11px] leading-5 text-text-muted">
+                          {entry.message}
+                        </p>
+                      </div>
+                    ))}
+                </div>
+
+                {pluginCompatibilityMessage && (
+                  <p className="rounded-2xl border border-success/20 bg-success/10 px-3 py-2 text-[11px] font-medium leading-5 text-success">
+                    {pluginCompatibilityMessage}
+                  </p>
+                )}
+                {pluginCompatibilityError && (
+                  <p className="rounded-2xl border border-error/20 bg-error/10 px-3 py-2 text-[11px] font-medium leading-5 text-error">
+                    {pluginCompatibilityError}
+                  </p>
+                )}
+
+                {pluginCompatibility?.warningCount ? (
+                  <div className="flex justify-end">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={disableIncompatiblePlugins}
+                      disabled={disablingPlugins || installing}
+                    >
+                      {disablingPlugins
+                        ? t('install.pluginCompatDisableLoading')
+                        : t('install.pluginCompatDisableBtn')}
+                    </Button>
+                  </div>
+                ) : null}
+
+                <p className="text-[11px] leading-5 text-text-muted">
+                  {t('install.pluginCompatHint')}
+                </p>
+              </>
+            )}
+          </div>
+        )}
 
         {(installing || status || logs.length > 0) && <InstallProgressCard status={status} />}
         {(installing || logs.length > 0) && <LogViewer lines={logs} />}

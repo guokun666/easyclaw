@@ -90,6 +90,18 @@
     "versionLoadError": "可用版本拉取失败，已保留当前已知版本列表。",
     "versionLatestBadge": "最新",
     "versionRecommendedBadge": "推荐",
+    "pluginCompatTitle": "残留插件兼容性",
+    "pluginCompatDesc": "切换 OpenClaw 版本前，先检查本机保留的插件是否需要同步或可能产生兼容风险。",
+    "pluginCompatLoading": "正在扫描保留插件...",
+    "pluginCompatAutoSync": "检测到 {{count}} 个受管理插件会在安装 {{version}} 后自动同步到兼容版本。",
+    "pluginCompatWarning": "检测到 {{count}} 个保留插件与目标版本 {{version}} 不一致，安装器暂时无法自动确认兼容性。",
+    "pluginCompatUnknownVersion": "版本未知",
+    "pluginCompatDisableBtn": "禁用这些有风险插件",
+    "pluginCompatDisableLoading": "正在禁用插件...",
+    "pluginCompatDisableDone": "已禁用 {{count}} 个有风险插件。现在可以继续安装目标版本。",
+    "pluginCompatAlreadyDisabled": "这些有风险插件已经处于禁用状态。",
+    "pluginCompatDisableError": "禁用这些有风险插件失败，请查看日志后重试。",
+    "pluginCompatHint": "如果这些保留插件后续导致启动异常，优先尝试“清除旧版本后安装”；仍有问题时，再用完成页里的 AI 修复继续处理。",
     "sourceMode": {
       "auto": {
         "label": "自动选择",

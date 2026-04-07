@@ -258,6 +258,39 @@ interface ElectronAPI {
       latestVersion: string | null
       recommendedVersion: string
     }>
+    inspectPluginCompatibility: (opts?: {
+      version?: string
+    }) => Promise<{
+      success: boolean
+      targetVersion: string
+      entries: Array<{
+        id: string
+        installedVersion: string | null
+        targetVersion: string
+        status: 'compatible' | 'auto-sync' | 'warning' | 'ignored'
+        message: string
+      }>
+      autoSyncCount: number
+      warningCount: number
+      error?: string
+    }>
+    disableIncompatiblePlugins: (opts?: {
+      version?: string
+    }) => Promise<{
+      success: boolean
+      disabledIds: string[]
+      targetVersion: string
+      entries: Array<{
+        id: string
+        installedVersion: string | null
+        targetVersion: string
+        status: 'compatible' | 'auto-sync' | 'warning' | 'ignored'
+        message: string
+      }>
+      autoSyncCount: number
+      warningCount: number
+      error?: string
+    }>
     dashboard: () => Promise<{ success: boolean; error?: string }>
     updateChannel: (
       channelType: 'telegram',

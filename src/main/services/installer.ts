@@ -24,7 +24,7 @@ import {
   normalizeOpenclawVersion,
   getOpenclawPackageCandidates
 } from './install-sources'
-import { ensureFeishuPluginCompatible } from './onboarder'
+import { ensureRetainedPluginCompatibility } from './onboarder'
 
 type ProgressCallback = (msg: string) => void
 
@@ -616,7 +616,7 @@ export const installOpenClawWsl = async (
     log
   )
 
-  await ensureFeishuPluginCompatible(log)
+  await ensureRetainedPluginCompatibility(targetVersion, log)
   sendStatus(win, 100, t('installer.ocWslDone'))
   log(t('installer.ocWslDone'))
 }
@@ -779,7 +779,7 @@ export const installOpenClaw = async (
     }
   }
 
-  await ensureFeishuPluginCompatible(log)
+  await ensureRetainedPluginCompatibility(targetVersion, log)
   sendStatus(win, 100, t('installer.ocDone'))
   log(t('installer.ocDone'))
 }

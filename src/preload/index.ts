@@ -325,6 +325,39 @@ const electronAPI = {
       latestVersion: string | null
       recommendedVersion: string
     }> => ipcRenderer.invoke('openclaw:list-versions', opts),
+    inspectPluginCompatibility: (opts?: {
+      version?: string
+    }): Promise<{
+      success: boolean
+      targetVersion: string
+      entries: Array<{
+        id: string
+        installedVersion: string | null
+        targetVersion: string
+        status: 'compatible' | 'auto-sync' | 'warning' | 'ignored'
+        message: string
+      }>
+      autoSyncCount: number
+      warningCount: number
+      error?: string
+    }> => ipcRenderer.invoke('openclaw:inspect-plugin-compatibility', opts),
+    disableIncompatiblePlugins: (opts?: {
+      version?: string
+    }): Promise<{
+      success: boolean
+      disabledIds: string[]
+      targetVersion: string
+      entries: Array<{
+        id: string
+        installedVersion: string | null
+        targetVersion: string
+        status: 'compatible' | 'auto-sync' | 'warning' | 'ignored'
+        message: string
+      }>
+      autoSyncCount: number
+      warningCount: number
+      error?: string
+    }> => ipcRenderer.invoke('openclaw:disable-incompatible-plugins', opts),
     dashboard: (): Promise<{ success: boolean; error?: string }> =>
       ipcRenderer.invoke('openclaw:dashboard'),
     updateChannel: (

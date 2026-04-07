@@ -1,5 +1,15 @@
 import { spawn, type ChildProcess } from 'child_process'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, unlinkSync } from 'fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+  unlinkSync
+} from 'fs'
 import { platform, homedir, tmpdir } from 'os'
 import { join } from 'path'
 import https from 'https'
@@ -11,7 +21,8 @@ import { t } from '../../shared/i18n/main'
 import {
   getCompatibleLarkPluginPackageCandidates,
   getCompatibleLarkPluginPackageSpec,
-  OPENCLAW_RECOMMENDED_VERSION
+  OPENCLAW_RECOMMENDED_VERSION,
+  normalizeOpenclawVersion
 } from './install-sources'
 import type {
   CurrentMemorySearchConfig,
@@ -47,6 +58,21 @@ interface OnboardResult {
 interface ActiveOnboardTask {
   cancelled: boolean
   children: Set<ChildProcess>
+}
+
+export interface RetainedPluginCompatibilityEntry {
+  id: string
+  installedVersion: string | null
+  targetVersion: string
+  status: 'compatible' | 'auto-sync' | 'warning' | 'ignored'
+  message: string
+}
+
+export interface RetainedPluginCompatibilityReport {
+  targetVersion: string
+  entries: RetainedPluginCompatibilityEntry[]
+  autoSyncCount: number
+  warningCount: number
 }
 
 export interface ProviderKeyValidationResult {
@@ -513,6 +539,395 @@ const getInstalledLarkPluginVersion = async (
   } catch {
     return null
   }
+}
+
+const isPluginExplicitlyDisabled = (config: Record<string, unknown>, pluginId: string): boolean => {
+  const entries =
+    (config.plugins as Record<string, unknown> | undefined)?.entries as
+      | Record<string, unknown>
+      | undefined
+  const entry = entries?.[pluginId] as Record<string, unknown> | undefined
+  return entry?.enabled === false
+}
+
+const getExtensionPluginVersions = async (): Promise<Map<string, string | null>> => {
+  const versions = new Map<string, string | null>()
+
+  if (platform() === 'win32') {
+    let packagePaths: string[] = []
+    try {
+      const raw = await runInWsl(
+        'find /root/.openclaw/extensions -mindepth 2 -maxdepth 2 -name package.json -print 2>/dev/null || true',
+        10000
+      )
+      packagePaths = raw
+        .split('\n')
+        .map((value) => value.trim())
+        .filter(Boolean)
+    } catch {
+      return versions
+    }
+
+    for (const packagePath of packagePaths) {
+      try {
+        const raw = await readWslFile(packagePath)
+        const pkg = JSON.parse(raw) as { name?: string; version?: string }
+        const fallbackId = packagePath.split('/').slice(-2, -1)[0]
+        const id =
+          typeof pkg.name === 'string' && pkg.name.trim().length > 0 ? pkg.name.trim() : fallbackId
+        const version =
+          typeof pkg.version === 'string' && pkg.version.trim().length > 0 ? pkg.version.trim() : null
+        if (id) versions.set(id, version)
+      } catch {
+        /* ignore invalid package.json */
+      }
+    }
+
+    return versions
+  }
+
+  const extensionRoot = join(homedir(), '.openclaw', 'extensions')
+  if (!existsSync(extensionRoot)) return versions
+
+  for (const entry of readdirSync(extensionRoot, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue
+    const packagePath = join(extensionRoot, entry.name, 'package.json')
+    if (!existsSync(packagePath)) continue
+    try {
+      const pkg = JSON.parse(readFileSync(packagePath, 'utf-8')) as { name?: string; version?: string }
+      const id =
+        typeof pkg.name === 'string' && pkg.name.trim().length > 0 ? pkg.name.trim() : entry.name
+      const version =
+        typeof pkg.version === 'string' && pkg.version.trim().length > 0 ? pkg.version.trim() : null
+      if (id) versions.set(id, version)
+    } catch {
+      /* ignore invalid package.json */
+    }
+  }
+
+  return versions
+}
+
+const getInstalledPluginInventory = async (
+  config: Record<string, unknown>
+): Promise<Array<{ id: string; version: string | null }>> => {
+  const installs =
+    (config.plugins as Record<string, unknown> | undefined)?.installs as
+      | Record<string, unknown>
+      | undefined
+  const extensionVersions = await getExtensionPluginVersions()
+  const ids = new Set<string>([
+    ...Object.keys(installs ?? {}).filter(Boolean),
+    ...extensionVersions.keys()
+  ])
+
+  return [...ids]
+    .map((id) => {
+      const installEntry = installs?.[id] as Record<string, unknown> | undefined
+      const installVersion =
+        typeof installEntry?.version === 'string' && installEntry.version.trim().length > 0
+          ? installEntry.version.trim()
+          : null
+      return {
+        id,
+        version: installVersion ?? extensionVersions.get(id) ?? null
+      }
+    })
+    .sort((left, right) => left.id.localeCompare(right.id))
+}
+
+export const inspectRetainedPluginCompatibility = async (
+  targetOpenclawVersion: string
+): Promise<RetainedPluginCompatibilityReport> => {
+  const targetVersion = normalizeOpenclawVersion(targetOpenclawVersion)
+  const config = await readOpenClawConfig()
+  if (!config) {
+    return {
+      targetVersion,
+      entries: [],
+      autoSyncCount: 0,
+      warningCount: 0
+    }
+  }
+
+  const hasFeishuConfig = hasFeishuPluginConfig(config)
+  const inventory = await getInstalledPluginInventory(config)
+  const entries = inventory.map<RetainedPluginCompatibilityEntry>(({ id, version }) => {
+    if (isPluginExplicitlyDisabled(config, id)) {
+      return {
+        id,
+        installedVersion: version,
+        targetVersion,
+        status: 'ignored',
+        message: t('onboarder.pluginCompatibility.disabled', {
+          pluginId: id,
+          pluginVersion: version ?? 'unknown',
+          targetVersion
+        })
+      }
+    }
+
+    if (id === LARK_PLUGIN_ID && hasFeishuConfig) {
+      if (version && compareSemanticVersions(version, targetVersion) === 0) {
+        return {
+          id,
+          installedVersion: version,
+          targetVersion,
+          status: 'compatible',
+          message: t('onboarder.pluginCompatibility.compatible', {
+            pluginId: id,
+            pluginVersion: version,
+            targetVersion
+          })
+        }
+      }
+
+      return {
+        id,
+        installedVersion: version,
+        targetVersion,
+        status: 'auto-sync',
+        message: t('onboarder.pluginCompatibility.autoSync', {
+          pluginId: id,
+          pluginVersion: version ?? 'unknown',
+          targetVersion
+        })
+      }
+    }
+
+    if (id === LARK_PLUGIN_ID && !hasFeishuConfig) {
+      return {
+        id,
+        installedVersion: version,
+        targetVersion,
+        status: 'ignored',
+        message: t('onboarder.pluginCompatibility.ignored', {
+          pluginId: id,
+          pluginVersion: version ?? 'unknown',
+          targetVersion
+        })
+      }
+    }
+
+    if (!version) {
+      return {
+        id,
+        installedVersion: null,
+        targetVersion,
+        status: 'warning',
+        message: t('onboarder.pluginCompatibility.unknownVersion', {
+          pluginId: id,
+          targetVersion
+        })
+      }
+    }
+
+    if (compareSemanticVersions(version, targetVersion) === 0) {
+      return {
+        id,
+        installedVersion: version,
+        targetVersion,
+        status: 'compatible',
+        message: t('onboarder.pluginCompatibility.compatible', {
+          pluginId: id,
+          pluginVersion: version,
+          targetVersion
+        })
+      }
+    }
+
+    return {
+      id,
+      installedVersion: version,
+      targetVersion,
+      status: 'warning',
+      message:
+        compareSemanticVersions(version, targetVersion) > 0
+          ? t('onboarder.pluginCompatibility.newerThanTarget', {
+              pluginId: id,
+              pluginVersion: version,
+              targetVersion
+            })
+          : t('onboarder.pluginCompatibility.versionMismatch', {
+              pluginId: id,
+              pluginVersion: version,
+              targetVersion
+            })
+    }
+  })
+
+  return {
+    targetVersion,
+    entries,
+    autoSyncCount: entries.filter((entry) => entry.status === 'auto-sync').length,
+    warningCount: entries.filter((entry) => entry.status === 'warning').length
+  }
+}
+
+export const ensureRetainedPluginCompatibility = async (
+  targetOpenclawVersion: string,
+  onLog?: (msg: string) => void
+): Promise<RetainedPluginCompatibilityReport> => {
+  const report = await inspectRetainedPluginCompatibility(targetOpenclawVersion)
+
+  for (const entry of report.entries) {
+    if (entry.status === 'auto-sync' && entry.id === LARK_PLUGIN_ID) {
+      onLog?.(entry.message)
+      try {
+        await installCompatibleLarkPlugin(report.targetVersion, onLog ?? (() => {}))
+        onLog?.(
+          t('onboarder.pluginCompatibility.autoSyncDone', {
+            pluginId: entry.id,
+            targetVersion: report.targetVersion
+          })
+        )
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        onLog?.(
+          t('onboarder.pluginCompatibility.autoSyncFailed', {
+            pluginId: entry.id,
+            targetVersion: report.targetVersion,
+            message
+          })
+        )
+      }
+      continue
+    }
+
+    if (entry.status === 'warning') {
+      onLog?.(entry.message)
+    }
+  }
+
+  if (report.warningCount > 0) {
+    onLog?.(
+      t('onboarder.pluginCompatibility.warningSummary', {
+        count: report.warningCount,
+        targetVersion: report.targetVersion
+      })
+    )
+  }
+
+  return report
+}
+
+const disablePluginExtensionDirectory = async (
+  pluginId: string,
+  onLog?: (msg: string) => void
+): Promise<boolean> => {
+  if (platform() === 'win32') {
+    try {
+      const extensionPath = `/root/.openclaw/extensions/${pluginId}`
+      const output = await runInWsl(
+        [
+          `dir=${shellEscape(extensionPath)}`,
+          'if [ -d "$dir" ]; then',
+          '  target="${dir}.disabled-by-easyclaw"',
+          '  if [ -e "$target" ]; then',
+          '    target="${dir}.disabled-by-easyclaw-$(date +%s)"',
+          '  fi',
+          '  mv "$dir" "$target"',
+          '  printf "%s" "$target"',
+          'fi'
+        ].join('; '),
+        10000
+      )
+      const renamedTo = output.trim()
+      if (renamedTo) {
+        onLog?.(t('onboarder.pluginCompatibility.directoryDisabled', { pluginId, targetPath: renamedTo }))
+        return true
+      }
+      return false
+    } catch {
+      return false
+    }
+  }
+
+  const extensionPath = join(homedir(), '.openclaw', 'extensions', pluginId)
+  if (!existsSync(extensionPath)) return false
+
+  let targetPath = `${extensionPath}.disabled-by-easyclaw`
+  if (existsSync(targetPath)) {
+    targetPath = `${extensionPath}.disabled-by-easyclaw-${Date.now()}`
+  }
+
+  try {
+    renameSync(extensionPath, targetPath)
+    onLog?.(t('onboarder.pluginCompatibility.directoryDisabled', { pluginId, targetPath }))
+    return true
+  } catch {
+    return false
+  }
+}
+
+export const disableRetainedIncompatiblePlugins = async (
+  targetOpenclawVersion: string,
+  onLog?: (msg: string) => void
+): Promise<{ disabledIds: string[]; report: RetainedPluginCompatibilityReport }> => {
+  const targetVersion = normalizeOpenclawVersion(targetOpenclawVersion)
+  const report = await inspectRetainedPluginCompatibility(targetVersion)
+  const disableTargets = report.entries.filter((entry) => entry.status === 'warning')
+
+  if (disableTargets.length === 0) {
+    return { disabledIds: [], report }
+  }
+
+  const config = await readOpenClawConfig()
+  if (!config) {
+    return { disabledIds: [], report }
+  }
+
+  const typed = config as Record<string, unknown>
+  typed.plugins = (typed.plugins as Record<string, unknown> | undefined) ?? {}
+  const plugins = typed.plugins as Record<string, unknown>
+  plugins.entries = (plugins.entries as Record<string, unknown> | undefined) ?? {}
+  const entries = plugins.entries as Record<string, unknown>
+
+  const currentAllow = Array.isArray(plugins.allow)
+    ? (plugins.allow as unknown[]).filter((value): value is string => typeof value === 'string')
+    : null
+
+  let changed = false
+  for (const entry of disableTargets) {
+    const currentEntry =
+      entries[entry.id] && typeof entries[entry.id] === 'object'
+        ? (entries[entry.id] as Record<string, unknown>)
+        : {}
+    if (currentEntry.enabled !== false) {
+      currentEntry.enabled = false
+      changed = true
+    }
+    entries[entry.id] = currentEntry
+    if (currentAllow && currentAllow.includes(entry.id)) {
+      plugins.allow = currentAllow.filter((value) => value !== entry.id)
+      changed = true
+    }
+    onLog?.(
+      t('onboarder.pluginCompatibility.disabling', {
+        pluginId: entry.id,
+        pluginVersion: entry.installedVersion ?? 'unknown'
+      })
+    )
+  }
+
+  if (changed) {
+    await writeOpenClawConfig(config)
+  }
+
+  const disabledIds: string[] = []
+  for (const entry of disableTargets) {
+    await disablePluginExtensionDirectory(entry.id, onLog)
+    disabledIds.push(entry.id)
+  }
+
+  const refreshedReport = await inspectRetainedPluginCompatibility(targetVersion)
+  onLog?.(
+    t('onboarder.pluginCompatibility.disableDone', {
+      count: disabledIds.length,
+      targetVersion
+    })
+  )
+  return { disabledIds, report: refreshedReport }
 }
 
 const hasFeishuPluginConfig = (config: Record<string, unknown>): boolean => {
