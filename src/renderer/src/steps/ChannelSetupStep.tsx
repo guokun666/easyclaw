@@ -117,6 +117,13 @@ export default function ChannelSetupStep({
   const handleSkipChannel = async (): Promise<void> => {
     if (channelOnly || skippedChannelConfig) return
 
+    if (channelExecutionStarted && !running) {
+      clearLogs()
+      setError(null)
+      onDone()
+      return
+    }
+
     if (!running) {
       startRun(true)
       return
@@ -128,6 +135,13 @@ export default function ChannelSetupStep({
     clearLogs()
     setError(null)
     setRunning(false)
+    setSkipping(false)
+
+    if (channelExecutionStarted) {
+      onDone()
+      return
+    }
+
     await new Promise((resolve) => window.setTimeout(resolve, 250))
     startRun(true)
   }
