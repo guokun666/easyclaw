@@ -9,15 +9,10 @@ import {
   stripModelNamespace,
   type Provider
 } from '../constants/providers'
-import {
-  memorySearchProviderMap,
-  memorySearchProviderOptions
-} from '../constants/memory-search'
+import { memorySearchProviderMap, memorySearchProviderOptions } from '../constants/memory-search'
 import type { ChannelType } from './TelegramGuideStep'
-import type {
-  MemorySearchConfigPayload,
-  MemorySearchProvider
-} from '../../../shared/types/memory-search'
+import type { MemorySearchConfigPayload } from '../../../shared/types/memory-search'
+import type { ChannelSetupMode, ConfigDraft, SetupPayload } from '../constants/setup'
 
 const providerPatterns: Record<Provider, RegExp> = {
   modelfamily: /^.{8,}$/,
@@ -44,55 +39,6 @@ const providerPlaceholders: Record<Provider, string> = {
 const TELEGRAM_BOT_TOKEN_PATTERN = /^\d+:[A-Za-z0-9_-]+$/
 const FEISHU_APP_ID_PATTERN = /^cli_[A-Za-z0-9]+$/
 const GENERIC_APP_SECRET_PATTERN = /^.{8,}$/
-export type ChannelSetupMode = 'one-click' | 'manual'
-
-export interface ConfigDraft {
-  apiKey: string
-  telegramBotToken: string
-  feishuSetupMode: ChannelSetupMode
-  feishuAppId: string
-  feishuAppSecret: string
-  memorySearchEnabled: boolean
-  memorySearchProvider: MemorySearchProvider
-  memorySearchApiKey: string
-  memorySearchNoticeTone: 'idle' | 'success' | 'warning'
-  memorySearchNotice: string | null
-  oauthDone: boolean
-  validatedApiKey: string | null
-  apiKeyTestState: 'idle' | 'success' | 'warning' | 'error'
-  apiKeyTestMessage: string | null
-}
-
-export const EMPTY_CONFIG_DRAFT: ConfigDraft = {
-  apiKey: '',
-  telegramBotToken: '',
-  feishuSetupMode: 'one-click',
-  feishuAppId: '',
-  feishuAppSecret: '',
-  memorySearchEnabled: false,
-  memorySearchProvider: 'openai',
-  memorySearchApiKey: '',
-  memorySearchNoticeTone: 'idle',
-  memorySearchNotice: null,
-  oauthDone: false,
-  validatedApiKey: null,
-  apiKeyTestState: 'idle',
-  apiKeyTestMessage: null
-}
-
-export interface SetupPayload {
-  provider: Provider
-  apiKey?: string
-  authMethod?: 'api-key' | 'oauth'
-  skipChannelConfig?: boolean
-  channelType?: 'feishu' | 'wechat' | 'telegram'
-  channelSetupMode?: 'one-click' | 'manual'
-  telegramBotToken?: string
-  feishuAppId?: string
-  feishuAppSecret?: string
-  modelId?: string
-  memorySearch?: MemorySearchConfigPayload
-}
 
 interface Props {
   provider: Provider
@@ -166,19 +112,16 @@ export default function ConfigStep({
     channelType === 'feishu' ? t(`config.channelSetupMode.${feishuSetupMode}.title`) : null
   const memorySearchOption = memorySearchProviderMap[memorySearchProvider]
   const memorySearchApiKeyValid = memorySearchOption.pattern.test(memorySearchApiKey)
-  const channelValid =
-    skipChannelConfig
-      ? true
-      : channelType === 'telegram'
+  const channelValid = skipChannelConfig
+    ? true
+    : channelType === 'telegram'
       ? telegramBotTokenValid
       : channelType === 'feishu'
         ? feishuSetupMode === 'one-click' || (feishuAppIdValid && feishuAppSecretValid)
         : true
-  const canSave = !!resolvedModelId && (isOAuth
-    ? oauthDone && channelValid
-    : isOllama
-      ? channelValid
-      : apiKeyValid && channelValid)
+  const canSave =
+    !!resolvedModelId &&
+    (isOAuth ? oauthDone && channelValid : isOllama ? channelValid : apiKeyValid && channelValid)
 
   const updateDraft = (patch: Partial<ConfigDraft>): void => {
     onDraftChange((current) => ({
@@ -325,7 +268,7 @@ export default function ConfigStep({
 
   return (
     <div className="flex-1 flex flex-col min-h-0 px-8 pt-6">
-      <div className="flex-1 overflow-y-auto pb-2 space-y-4">
+      <div className="flex-1 min-h-0 overflow-y-auto pb-2 space-y-4">
         <div className="flex items-center gap-3">
           <LobsterLogo state={oauthLoading ? 'loading' : 'idle'} size={48} />
           <div>
@@ -358,7 +301,9 @@ export default function ConfigStep({
               </div>
             ) : isOAuth ? (
               <div className="space-y-1.5">
-                <label className="text-sm font-bold">OpenAI {t('apiKeyGuide.authMethod.oauth')}</label>
+                <label className="text-sm font-bold">
+                  OpenAI {t('apiKeyGuide.authMethod.oauth')}
+                </label>
                 {oauthDone ? (
                   <div className="flex items-center gap-2 px-4 py-2.5 bg-success/10 border border-success/30 rounded-xl">
                     <svg
@@ -374,7 +319,9 @@ export default function ConfigStep({
                     >
                       <polyline points="20 6 9 17 4 12" />
                     </svg>
-                    <span className="text-sm font-medium text-success">{t('config.oauthSuccess')}</span>
+                    <span className="text-sm font-medium text-success">
+                      {t('config.oauthSuccess')}
+                    </span>
                   </div>
                 ) : (
                   <button
@@ -458,11 +405,7 @@ export default function ConfigStep({
             >
               <div className="flex items-start gap-2">
                 <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-current/30 text-[10px] font-bold">
-                  {apiKeyTestState === 'success'
-                    ? 'OK'
-                    : apiKeyTestState === 'warning'
-                      ? '!'
-                      : 'X'}
+                  {apiKeyTestState === 'success' ? 'OK' : apiKeyTestState === 'warning' ? '!' : 'X'}
                 </span>
                 <div className="min-w-0 space-y-1">
                   <p className="font-semibold">
@@ -613,7 +556,9 @@ export default function ConfigStep({
 
             <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-primary/20 bg-primary/8 px-4 py-2 text-xs">
               <span className="inline-flex h-2 w-2 rounded-full bg-primary shadow-[0_0_14px_rgba(255,122,26,0.9)]" />
-              <span className="font-semibold text-text-muted">{t('channelGuide.currentSelection')}</span>
+              <span className="font-semibold text-text-muted">
+                {t('channelGuide.currentSelection')}
+              </span>
               <span className="font-bold text-primary">{selectedChannelTitle}</span>
               {selectedSetupModeTitle && (
                 <span className="rounded-full border border-primary/35 bg-primary/14 px-2 py-0.5 text-[10px] font-bold text-primary">
@@ -623,127 +568,126 @@ export default function ConfigStep({
             </div>
 
             {channelType === 'telegram' && (
-            <div className="space-y-1.5">
-              <label className="text-sm font-bold">
-                {t('config.telegramToken')}{' '}
-                <span className="text-error text-xs">{t('config.required')}</span>
-              </label>
-              <input
-                type="text"
-                placeholder="123456:ABCDEF..."
-                value={telegramBotToken}
-                onChange={(e) => updateDraft({ telegramBotToken: e.target.value })}
-                className={`w-full bg-bg-input rounded-xl px-4 py-2.5 text-sm font-mono outline-none border transition-all duration-200 placeholder:text-text-muted/30 ${
-                  telegramBotToken && !telegramBotTokenValid
-                    ? 'border-error/50 focus:border-error'
-                    : 'border-glass-border focus:border-primary focus:shadow-[0_0_0_3px_var(--color-primary-glow)]'
-                }`}
-              />
-              {telegramBotToken && !telegramBotTokenValid && (
-                <p className="text-error text-[11px] font-medium">{t('config.telegramHint')}</p>
-              )}
-            </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-bold">
+                  {t('config.telegramToken')}{' '}
+                  <span className="text-error text-xs">{t('config.required')}</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="123456:ABCDEF..."
+                  value={telegramBotToken}
+                  onChange={(e) => updateDraft({ telegramBotToken: e.target.value })}
+                  className={`w-full bg-bg-input rounded-xl px-4 py-2.5 text-sm font-mono outline-none border transition-all duration-200 placeholder:text-text-muted/30 ${
+                    telegramBotToken && !telegramBotTokenValid
+                      ? 'border-error/50 focus:border-error'
+                      : 'border-glass-border focus:border-primary focus:shadow-[0_0_0_3px_var(--color-primary-glow)]'
+                  }`}
+                />
+                {telegramBotToken && !telegramBotTokenValid && (
+                  <p className="text-error text-[11px] font-medium">{t('config.telegramHint')}</p>
+                )}
+              </div>
             )}
 
             {channelType === 'feishu' && (
-            <div className="space-y-3">
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between gap-3">
-                  <label className="text-sm font-bold">{t('config.channelSetupModeLabel')}</label>
-                  <span className="rounded-full border border-primary/35 bg-primary/14 px-2 py-0.5 text-[10px] font-bold text-primary">
-                    {selectedSetupModeTitle}
-                  </span>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  {(['one-click', 'manual'] as ChannelSetupMode[]).map((mode) => (
-                    <button
-                      key={mode}
-                      type="button"
-                      onClick={() => updateDraft({ feishuSetupMode: mode })}
-                      aria-pressed={feishuSetupMode === mode}
-                      className={`glass-card group relative cursor-pointer px-3 py-2 text-left transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/35 hover:bg-white/6 ${
-                        feishuSetupMode === mode
-                          ? 'border-primary/60 bg-primary/12 shadow-[0_10px_30px_rgba(255,122,26,0.14)]'
-                          : ''
-                      }`}
-                    >
-                      <div className="mb-1 flex items-center justify-between gap-2">
-                        <div className="text-sm font-bold">
-                          {t(`config.channelSetupMode.${mode}.title`)}
+              <div className="space-y-3">
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between gap-3">
+                    <label className="text-sm font-bold">{t('config.channelSetupModeLabel')}</label>
+                    <span className="rounded-full border border-primary/35 bg-primary/14 px-2 py-0.5 text-[10px] font-bold text-primary">
+                      {selectedSetupModeTitle}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {(['one-click', 'manual'] as ChannelSetupMode[]).map((mode) => (
+                      <button
+                        key={mode}
+                        type="button"
+                        onClick={() => updateDraft({ feishuSetupMode: mode })}
+                        aria-pressed={feishuSetupMode === mode}
+                        className={`glass-card group relative cursor-pointer px-3 py-2 text-left transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/35 hover:bg-white/6 ${
+                          feishuSetupMode === mode
+                            ? 'border-primary/60 bg-primary/12 shadow-[0_10px_30px_rgba(255,122,26,0.14)]'
+                            : ''
+                        }`}
+                      >
+                        <div className="mb-1 flex items-center justify-between gap-2">
+                          <div className="text-sm font-bold">
+                            {t(`config.channelSetupMode.${mode}.title`)}
+                          </div>
+                          {feishuSetupMode === mode && (
+                            <span className="rounded-full border border-primary/35 bg-primary/14 px-2 py-0.5 text-[10px] font-bold text-primary">
+                              {t('channelGuide.selectedBadge')}
+                            </span>
+                          )}
                         </div>
-                        {feishuSetupMode === mode && (
-                          <span className="rounded-full border border-primary/35 bg-primary/14 px-2 py-0.5 text-[10px] font-bold text-primary">
-                            {t('channelGuide.selectedBadge')}
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-[11px] text-text-muted leading-snug mt-1">
-                        {t(`config.channelSetupMode.${mode}.desc`)}
-                      </div>
-                    </button>
-                  ))}
+                        <div className="text-[11px] text-text-muted leading-snug mt-1">
+                          {t(`config.channelSetupMode.${mode}.desc`)}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
 
-              {feishuSetupMode === 'one-click' ? (
-                <div className="glass-card px-4 py-3 space-y-1.5">
-                  <p className="text-sm font-bold">{t('config.feishuOneClickTitle')}</p>
-                  <p className="text-xs text-text-muted leading-relaxed">
-                    {t('config.feishuOneClickDesc')}
-                  </p>
-                </div>
-              ) : (
-                <>
-                  <div className="space-y-1.5">
-                    <label className="text-sm font-bold">
-                      {t('config.feishuAppId')}{' '}
-                      <span className="text-error text-xs">{t('config.required')}</span>
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="cli_xxxxxxxxxxxxx"
-                      value={feishuAppId}
-                      onChange={(e) => updateDraft({ feishuAppId: e.target.value })}
-                      className={`w-full bg-bg-input rounded-xl px-4 py-2.5 text-sm font-mono outline-none border transition-all duration-200 placeholder:text-text-muted/30 ${
-                        feishuAppId && !feishuAppIdValid
-                          ? 'border-error/50 focus:border-error'
-                          : 'border-glass-border focus:border-primary focus:shadow-[0_0_0_3px_var(--color-primary-glow)]'
-                      }`}
-                    />
+                {feishuSetupMode === 'one-click' ? (
+                  <div className="glass-card px-4 py-3 space-y-1.5">
+                    <p className="text-sm font-bold">{t('config.feishuOneClickTitle')}</p>
+                    <p className="text-xs text-text-muted leading-relaxed">
+                      {t('config.feishuOneClickDesc')}
+                    </p>
                   </div>
-                  <div className="space-y-1.5">
-                    <label className="text-sm font-bold">
-                      {t('config.feishuAppSecret')}{' '}
-                      <span className="text-error text-xs">{t('config.required')}</span>
-                    </label>
-                    <input
-                      type="password"
-                      placeholder={t('config.feishuSecretHint')}
-                      value={feishuAppSecret}
-                      onChange={(e) => updateDraft({ feishuAppSecret: e.target.value })}
-                      className={`w-full bg-bg-input rounded-xl px-4 py-2.5 text-sm font-mono outline-none border transition-all duration-200 placeholder:text-text-muted/30 ${
-                        feishuAppSecret && !feishuAppSecretValid
-                          ? 'border-error/50 focus:border-error'
-                          : 'border-glass-border focus:border-primary focus:shadow-[0_0_0_3px_var(--color-primary-glow)]'
-                      }`}
-                    />
-                  </div>
-                </>
-              )}
-            </div>
+                ) : (
+                  <>
+                    <div className="space-y-1.5">
+                      <label className="text-sm font-bold">
+                        {t('config.feishuAppId')}{' '}
+                        <span className="text-error text-xs">{t('config.required')}</span>
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="cli_xxxxxxxxxxxxx"
+                        value={feishuAppId}
+                        onChange={(e) => updateDraft({ feishuAppId: e.target.value })}
+                        className={`w-full bg-bg-input rounded-xl px-4 py-2.5 text-sm font-mono outline-none border transition-all duration-200 placeholder:text-text-muted/30 ${
+                          feishuAppId && !feishuAppIdValid
+                            ? 'border-error/50 focus:border-error'
+                            : 'border-glass-border focus:border-primary focus:shadow-[0_0_0_3px_var(--color-primary-glow)]'
+                        }`}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-sm font-bold">
+                        {t('config.feishuAppSecret')}{' '}
+                        <span className="text-error text-xs">{t('config.required')}</span>
+                      </label>
+                      <input
+                        type="password"
+                        placeholder={t('config.feishuSecretHint')}
+                        value={feishuAppSecret}
+                        onChange={(e) => updateDraft({ feishuAppSecret: e.target.value })}
+                        className={`w-full bg-bg-input rounded-xl px-4 py-2.5 text-sm font-mono outline-none border transition-all duration-200 placeholder:text-text-muted/30 ${
+                          feishuAppSecret && !feishuAppSecretValid
+                            ? 'border-error/50 focus:border-error'
+                            : 'border-glass-border focus:border-primary focus:shadow-[0_0_0_3px_var(--color-primary-glow)]'
+                        }`}
+                      />
+                    </div>
+                  </>
+                )}
+              </div>
             )}
 
             {channelType === 'wechat' && (
-            <div className="glass-card px-4 py-3 space-y-1.5">
-              <p className="text-sm font-bold">{t('config.wechatOneClickTitle')}</p>
-              <p className="text-xs text-text-muted leading-relaxed">
-                {t('config.wechatOneClickDesc')}
-              </p>
-            </div>
+              <div className="glass-card px-4 py-3 space-y-1.5">
+                <p className="text-sm font-bold">{t('config.wechatOneClickTitle')}</p>
+                <p className="text-xs text-text-muted leading-relaxed">
+                  {t('config.wechatOneClickDesc')}
+                </p>
+              </div>
             )}
           </div>
         )}
-
       </div>
 
       <div className="shrink-0 flex justify-end py-3">

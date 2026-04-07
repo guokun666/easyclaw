@@ -10,11 +10,8 @@ import InstallStep from './steps/InstallStep'
 import ApiKeyGuideStep from './steps/ApiKeyGuideStep'
 import type { Provider } from './constants/providers'
 import TelegramGuideStep from './steps/TelegramGuideStep'
-import ConfigStep, {
-  EMPTY_CONFIG_DRAFT,
-  type ConfigDraft,
-  type SetupPayload
-} from './steps/ConfigStep'
+import ConfigStep from './steps/ConfigStep'
+import { EMPTY_CONFIG_DRAFT, type ConfigDraft, type SetupPayload } from './constants/setup'
 import ChannelSetupStep from './steps/ChannelSetupStep'
 import DoneStep from './steps/DoneStep'
 import TroubleshootStep from './steps/TroubleshootStep'
@@ -125,7 +122,8 @@ function App({ debugMode }: { debugMode?: string }): React.JSX.Element {
 
         if (isKnownProvider(currentConfig?.provider)) setProvider(currentConfig.provider)
         if (currentConfig?.model) setModelId(currentConfig.model)
-        if (isKnownChannelType(currentConfig?.channelType)) setChannelType(currentConfig.channelType)
+        if (isKnownChannelType(currentConfig?.channelType))
+          setChannelType(currentConfig.channelType)
 
         if (currentConfig?.isConfigured) {
           // Installed and configured → skip wizard, go directly to dashboard
@@ -198,8 +196,8 @@ function App({ debugMode }: { debugMode?: string }): React.JSX.Element {
           <StepIndicator currentStep={currentStep} isWindows={isWindows} />
         )}
 
-        <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
-          <div className="flex flex-col min-h-full pb-10 step-enter" key={currentStep}>
+        <div className="flex-1 min-h-0 overflow-hidden">
+          <div className="flex h-full min-h-0 flex-col pb-16 step-enter" key={currentStep}>
             {currentStep === 'welcome' && <WelcomeStep onNext={next} />}
             {currentStep === 'envCheck' && (
               <EnvCheckStep onNext={() => goTo('apiKeyGuide')} onNeedInstall={handleEnvCheckDone} />
@@ -351,7 +349,7 @@ function App({ debugMode }: { debugMode?: string }): React.JSX.Element {
         {canGoBack && currentStep !== 'troubleshoot' && (
           <button
             onClick={prev}
-            className="absolute bottom-14 left-6 z-20 flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-text-muted hover:text-text bg-white/5 hover:bg-white/10 rounded-xl border border-glass-border transition-all duration-200"
+            className="absolute bottom-4 left-6 z-20 flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-text-muted hover:text-text bg-white/5 hover:bg-white/10 rounded-xl border border-glass-border transition-all duration-200"
           >
             <svg
               width="14"

@@ -89,8 +89,8 @@ export default function InstallStep({
       try {
         const result = await window.electronAPI.openclaw.listVersions({ sourceMode })
         if (!result.success || cancelled) return
-        const versions = Array.from(new Set([...(result.versions || []), openclawVersion])).sort((a, b) =>
-          b.localeCompare(a, undefined, { numeric: true, sensitivity: 'base' })
+        const versions = Array.from(new Set([...(result.versions || []), openclawVersion])).sort(
+          (a, b) => b.localeCompare(a, undefined, { numeric: true, sensitivity: 'base' })
         )
         setAvailableVersions(versions)
         setLatestVersion(result.latestVersion)
@@ -225,7 +225,7 @@ export default function InstallStep({
       setInstalling(false)
       setStopping(false)
     }
-  }, [needs, clearLogs, cleanInstall, openclawVersion, sourceMode])
+  }, [needs, clearLogs, cleanInstall, openclawVersion, sourceMode, t])
 
   const stopInstall = useCallback(async () => {
     setStopping(true)
@@ -256,130 +256,131 @@ export default function InstallStep({
   const logoState = installing ? 'loading' : failed ? 'error' : done ? 'success' : 'idle'
 
   return (
-    <div className="flex-1 w-full overflow-y-auto">
-      <div className="flex flex-col px-8 py-12 pb-28 gap-4 min-h-full justify-center">
-        <div className="flex items-center gap-4">
-          <LobsterLogo state={logoState} size={56} />
-          <div>
-            <h2 className="text-lg font-extrabold">
-              {done
-                ? t('install.done')
-                : failed
-                  ? t('install.failed')
-                  : cancelled
-                    ? t('install.cancelled')
-                    : installing
-                      ? t('install.progress')
-                      : t('install.ready')}
-            </h2>
-            <p className="text-text-muted text-xs font-medium">
-              {installing
-                ? t('install.wait')
-                : done
-                  ? t('install.allReady')
+    <div className="flex-1 flex flex-col min-h-0 px-8">
+      <div className="flex-1 min-h-0 overflow-y-auto">
+        <div className="flex flex-col py-12 pb-6 gap-4">
+          <div className="flex items-center gap-4">
+            <LobsterLogo state={logoState} size={56} />
+            <div>
+              <h2 className="text-lg font-extrabold">
+                {done
+                  ? t('install.done')
                   : failed
-                    ? t('install.checkLog')
+                    ? t('install.failed')
                     : cancelled
-                      ? t('install.cancelledDesc')
-                    : t('install.desc')}
-            </p>
+                      ? t('install.cancelled')
+                      : installing
+                        ? t('install.progress')
+                        : t('install.ready')}
+              </h2>
+              <p className="text-text-muted text-xs font-medium">
+                {installing
+                  ? t('install.wait')
+                  : done
+                    ? t('install.allReady')
+                    : failed
+                      ? t('install.checkLog')
+                      : cancelled
+                        ? t('install.cancelledDesc')
+                        : t('install.desc')}
+              </p>
+            </div>
           </div>
-        </div>
 
-        <div className="space-y-2">
-          {needs.needNode && (
-            <div className="glass-card px-4 py-2.5 text-xs font-semibold flex items-center gap-2">
-              <span className="text-primary">01</span> {t('install.nodejs')}
-            </div>
-          )}
-          {needs.needOpenclaw && (
-            <div className="glass-card px-4 py-2.5 text-xs font-semibold flex items-center gap-2">
-              <span className="text-primary">{needs.needNode ? '02' : '01'}</span>{' '}
-              {t('install.openclaw')}
-            </div>
-          )}
-        </div>
-
-        <div className="glass-card p-4 space-y-3">
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={cleanInstall}
-              onChange={(e) => setCleanInstall(e.target.checked)}
-              disabled={installing || forceCleanInstall}
-              className="w-4 h-4 rounded border-glass-border accent-primary"
-            />
-            <div>
-              <span className="text-xs font-semibold">
-                {forceCleanInstall
-                  ? t('install.cleanInstallForcedLabel')
-                  : t('install.cleanInstallLabel')}
-              </span>
-              <p className="text-[11px] text-text-muted/60">{t('install.cleanInstallDesc')}</p>
-            </div>
-          </label>
-          {forceCleanInstall && (
-            <p className="text-[11px] leading-5 text-warning font-medium">
-              {t('install.cleanInstallForcedDesc')}
-            </p>
-          )}
-
-          <button
-            type="button"
-            onClick={() => setShowAdvanced((prev) => !prev)}
-            className="w-full flex items-center justify-between text-left"
-          >
-            <div>
-              <div className="text-sm font-bold">{t('install.advancedTitle')}</div>
-              <div className="text-xs text-text-muted">{t('install.advancedDesc')}</div>
-            </div>
-            <span className="text-text-muted text-xs">{showAdvanced ? '▲' : '▼'}</span>
-          </button>
-
-          {showAdvanced && (
-            <div className="space-y-3">
-              <div className="space-y-1">
-                <label className="text-xs font-semibold">{t('install.sourceModeLabel')}</label>
-                <InstallSourceSelect
-                  value={sourceMode}
-                  onChange={setSourceMode}
-                  disabled={savingSources || installing}
-                />
+          <div className="space-y-2">
+            {needs.needNode && (
+              <div className="glass-card px-4 py-2.5 text-xs font-semibold flex items-center gap-2">
+                <span className="text-primary">01</span> {t('install.nodejs')}
               </div>
-              <div className="space-y-1">
-                <label className="text-xs font-semibold">{t('install.versionLabel')}</label>
-                <OpenClawVersionSelect
-                  value={openclawVersion}
-                  options={availableVersions}
-                  latestVersion={latestVersion}
-                  recommendedVersion={recommendedVersion}
-                  onChange={setOpenclawVersion}
-                  disabled={savingSources || installing || loadingVersions}
-                />
-                {loadingVersions && (
-                  <p className="text-[11px] text-text-muted">{t('install.versionLoading')}</p>
+            )}
+            {needs.needOpenclaw && (
+              <div className="glass-card px-4 py-2.5 text-xs font-semibold flex items-center gap-2">
+                <span className="text-primary">{needs.needNode ? '02' : '01'}</span>{' '}
+                {t('install.openclaw')}
+              </div>
+            )}
+          </div>
+
+          <div className="glass-card p-4 space-y-3">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={cleanInstall}
+                onChange={(e) => setCleanInstall(e.target.checked)}
+                disabled={installing || forceCleanInstall}
+                className="w-4 h-4 rounded border-glass-border accent-primary"
+              />
+              <div>
+                <span className="text-xs font-semibold">
+                  {forceCleanInstall
+                    ? t('install.cleanInstallForcedLabel')
+                    : t('install.cleanInstallLabel')}
+                </span>
+                <p className="text-[11px] text-text-muted/60">{t('install.cleanInstallDesc')}</p>
+              </div>
+            </label>
+            {forceCleanInstall && (
+              <p className="text-[11px] leading-5 text-warning font-medium">
+                {t('install.cleanInstallForcedDesc')}
+              </p>
+            )}
+
+            <button
+              type="button"
+              onClick={() => setShowAdvanced((prev) => !prev)}
+              className="w-full flex items-center justify-between text-left"
+            >
+              <div>
+                <div className="text-sm font-bold">{t('install.advancedTitle')}</div>
+                <div className="text-xs text-text-muted">{t('install.advancedDesc')}</div>
+              </div>
+              <span className="text-text-muted text-xs">{showAdvanced ? '▲' : '▼'}</span>
+            </button>
+
+            {showAdvanced && (
+              <div className="space-y-3">
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold">{t('install.sourceModeLabel')}</label>
+                  <InstallSourceSelect
+                    value={sourceMode}
+                    onChange={setSourceMode}
+                    disabled={savingSources || installing}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold">{t('install.versionLabel')}</label>
+                  <OpenClawVersionSelect
+                    value={openclawVersion}
+                    options={availableVersions}
+                    latestVersion={latestVersion}
+                    recommendedVersion={recommendedVersion}
+                    onChange={setOpenclawVersion}
+                    disabled={savingSources || installing || loadingVersions}
+                  />
+                  {loadingVersions && (
+                    <p className="text-[11px] text-text-muted">{t('install.versionLoading')}</p>
+                  )}
+                  {versionError && (
+                    <p className="text-[11px] text-warning font-medium">{versionError}</p>
+                  )}
+                </div>
+                {sourcesMessage && (
+                  <p className="text-xs text-success font-medium">{sourcesMessage}</p>
                 )}
-                {versionError && (
-                  <p className="text-[11px] text-warning font-medium">{versionError}</p>
-                )}
+                {sourcesError && <p className="text-xs text-error font-medium">{sourcesError}</p>}
+                <div className="flex justify-end">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={saveInstallSources}
+                    disabled={savingSources || installing}
+                  >
+                    {savingSources ? t('install.savingSources') : t('install.saveSources')}
+                  </Button>
+                </div>
               </div>
-              {sourcesMessage && (
-                <p className="text-xs text-success font-medium">{sourcesMessage}</p>
-              )}
-              {sourcesError && <p className="text-xs text-error font-medium">{sourcesError}</p>}
-              <div className="flex justify-end">
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={saveInstallSources}
-                  disabled={savingSources || installing}
-                >
-                  {savingSources ? t('install.savingSources') : t('install.saveSources')}
-                </Button>
-              </div>
-            </div>
-          )}
-        </div>
+            )}
+          </div>
 
         {(loadingPluginCompatibility ||
           (pluginCompatibility &&
@@ -478,39 +479,39 @@ export default function InstallStep({
           </div>
         )}
 
-        {(installing || status || logs.length > 0) && <InstallProgressCard status={status} />}
-        {(installing || logs.length > 0) && <LogViewer lines={logs} />}
-        {error && error !== 'INSTALL_CANCELLED' && (
-          <p className="whitespace-pre-wrap text-error text-xs font-medium">{error}</p>
-        )}
-
-        <div className="flex gap-3 justify-end mt-1">
-          {installing && (
-            <Button variant="secondary" size="sm" onClick={stopInstall} disabled={stopping}>
-              {stopping ? t('install.stoppingBtn') : t('install.stopBtn')}
-            </Button>
-          )}
-          {failed && (
-            <Button variant="secondary" size="sm" onClick={runInstall}>
-              {t('install.retryBtn')}
-            </Button>
-          )}
-          {cancelled && !installing && (
-            <Button variant="secondary" size="sm" onClick={runInstall}>
-              {t('install.retryBtn')}
-            </Button>
-          )}
-          {!done && !installing && !failed && !cancelled && (
-            <Button variant="primary" size="lg" onClick={runInstall}>
-              {t('install.startBtn')}
-            </Button>
-          )}
-          {done && (
-            <Button variant="primary" size="lg" onClick={onDone}>
-              {t('install.nextBtn')}
-            </Button>
+          {(installing || status || logs.length > 0) && <InstallProgressCard status={status} />}
+          {(installing || logs.length > 0) && <LogViewer lines={logs} />}
+          {error && error !== 'INSTALL_CANCELLED' && (
+            <p className="whitespace-pre-wrap text-error text-xs font-medium">{error}</p>
           )}
         </div>
+      </div>
+      <div className="shrink-0 flex gap-3 justify-end py-3">
+        {installing && (
+          <Button variant="secondary" size="sm" onClick={stopInstall} disabled={stopping}>
+            {stopping ? t('install.stoppingBtn') : t('install.stopBtn')}
+          </Button>
+        )}
+        {failed && (
+          <Button variant="secondary" size="sm" onClick={runInstall}>
+            {t('install.retryBtn')}
+          </Button>
+        )}
+        {cancelled && !installing && (
+          <Button variant="secondary" size="sm" onClick={runInstall}>
+            {t('install.retryBtn')}
+          </Button>
+        )}
+        {!done && !installing && !failed && !cancelled && (
+          <Button variant="primary" size="lg" onClick={runInstall}>
+            {t('install.startBtn')}
+          </Button>
+        )}
+        {done && (
+          <Button variant="primary" size="lg" onClick={onDone}>
+            {t('install.nextBtn')}
+          </Button>
+        )}
       </div>
     </div>
   )
