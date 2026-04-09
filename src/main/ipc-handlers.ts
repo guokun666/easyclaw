@@ -2,7 +2,7 @@ import { ipcMain, BrowserWindow, app, shell } from 'electron'
 import { spawn } from 'child_process'
 import { platform, homedir } from 'os'
 import { join } from 'path'
-import { existsSync, readFileSync, writeFileSync, unlinkSync, rmSync } from 'fs'
+import { existsSync, readFileSync, writeFileSync, unlinkSync } from 'fs'
 import { checkEnvironment, checkOpenclawUpdate } from './services/env-checker'
 import { getPathEnv, resolvePreferredBin } from './services/path-utils'
 import { checkPort, runDoctorFix } from './services/troubleshooter'
@@ -36,9 +36,9 @@ import {
   setGatewayLogCallback,
   setGatewayStatusCallback
 } from './services/gateway'
-import { checkWslState, readWslFile, runInWsl } from './services/wsl-utils'
+import { checkWslState, readWslFile } from './services/wsl-utils'
 import { checkForUpdates, downloadUpdate, installUpdate } from './services/updater'
-import { uninstallOpenClaw } from './services/uninstaller'
+import { cleanUninstallOpenClaw, uninstallOpenClaw } from './services/uninstaller'
 import { exportBackup, importBackup } from './services/backup'
 import { loginOpenAICodex } from './services/oauth'
 import { executeAiRepairPlan, planAiRepair, runAiRepair } from './services/ai-repair'
@@ -223,11 +223,7 @@ export const registerIpcHandlers = (getWin: () => BrowserWindow | null): void =>
 
   ipcMain.handle(
     'openclaw:update-channel',
-    async (
-      _e,
-      channelType: 'telegram',
-      channelConfig: { botToken: string }
-    ) => {
+    async (_e, channelType: 'telegram', channelConfig: { botToken: string }) => {
       try {
         const result = await updateChannel(channelType, channelConfig)
         if (result.success) {
@@ -252,68 +248,19 @@ export const registerIpcHandlers = (getWin: () => BrowserWindow | null): void =>
       }
       try {
         win().webContents.send('install:error', msg)
-      } catch { /* window destroyed */ }
+      } catch {
+        /* window destroyed */
+      }
       return { success: false, error: msg }
     }
   })
 
   ipcMain.handle('openclaw:clean-uninstall', async () => {
     try {
-      await stopGateway().catch(() => {})
-      if (platform() === 'win32') {
-        try {
-          await runInWsl(
-            'openclaw uninstall --all --yes --non-interactive || true; npm uninstall -g openclaw || true; rm -rf /root/.openclaw',
-            120000
-          )
-          return { success: true }
-        } catch (err) {
-          return {
-            success: false,
-            error: err instanceof Error ? err.message : String(err)
-          }
-        }
-      }
-
-      const openclaw = resolvePreferredBin('openclaw')
-      const npm = resolvePreferredBin('npm')
-      return new Promise<{ success: boolean; error?: string }>((resolve) => {
-        let cleanupStarted = false
-        const finishCleanup = (): void => {
-          if (cleanupStarted) return
-          cleanupStarted = true
-          const npmChild = spawn(npm, ['uninstall', '-g', 'openclaw'], {
-            env: getPathEnv(),
-            stdio: ['ignore', 'pipe', 'pipe']
-          })
-          npmChild.stdout.on('data', (d) => chunks.push(d.toString()))
-          npmChild.stderr.on('data', (d) => chunks.push(d.toString()))
-          npmChild.on('close', () => {
-            try {
-              rmSync(join(homedir(), '.openclaw'), { recursive: true, force: true })
-              const wizardStatePath = getWizardStatePath()
-              if (existsSync(wizardStatePath)) unlinkSync(wizardStatePath)
-              resolve({ success: true })
-            } catch (err) {
-              resolve({
-                success: false,
-                error: err instanceof Error ? err.message : String(err)
-              })
-            }
-          })
-          npmChild.on('error', (err) => resolve({ success: false, error: err.message }))
-        }
-
-        const child = spawn(openclaw, ['uninstall', '--all', '--yes', '--non-interactive'], {
-          env: getPathEnv(),
-          stdio: ['ignore', 'pipe', 'pipe']
-        })
-        const chunks: string[] = []
-        child.stdout.on('data', (d) => chunks.push(d.toString()))
-        child.stderr.on('data', (d) => chunks.push(d.toString()))
-        child.on('close', finishCleanup)
-        child.on('error', finishCleanup)
-      })
+      await cleanUninstallOpenClaw()
+      const wizardStatePath = getWizardStatePath()
+      if (existsSync(wizardStatePath)) unlinkSync(wizardStatePath)
+      return { success: true }
     } catch (e) {
       return { success: false, error: e instanceof Error ? e.message : String(e) }
     }
@@ -460,29 +407,29 @@ export const registerIpcHandlers = (getWin: () => BrowserWindow | null): void =>
         version?: string
       }
     ) => {
-    beginInstallTask()
-    try {
-      applyInstallSourceSettings()
-      const configuredVersion = opts?.version
-        ? normalizeOpenclawVersion(opts.version)
-        : getInstallSourceSettings().openclawVersion
-      if (platform() === 'win32') {
-        await installOpenClawWsl(win(), configuredVersion)
-      } else {
-        await installOpenClaw(win(), configuredVersion)
-      }
-      return { success: true }
-    } catch (e) {
-      const msg = await buildInstallFailureMessage('openclaw', e)
+      beginInstallTask()
       try {
-        win().webContents.send('install:error', msg)
-      } catch {
-        /* window destroyed */
+        applyInstallSourceSettings()
+        const configuredVersion = opts?.version
+          ? normalizeOpenclawVersion(opts.version)
+          : getInstallSourceSettings().openclawVersion
+        if (platform() === 'win32') {
+          await installOpenClawWsl(win(), configuredVersion)
+        } else {
+          await installOpenClaw(win(), configuredVersion)
+        }
+        return { success: true }
+      } catch (e) {
+        const msg = await buildInstallFailureMessage('openclaw', e)
+        try {
+          win().webContents.send('install:error', msg)
+        } catch {
+          /* window destroyed */
+        }
+        return { success: false, error: msg }
+      } finally {
+        endInstallTask()
       }
-      return { success: false, error: msg }
-    } finally {
-      endInstallTask()
-    }
     }
   )
 
@@ -834,12 +781,12 @@ export const registerIpcHandlers = (getWin: () => BrowserWindow | null): void =>
   ipcMain.handle(
     'uninstall:openclaw',
     async (_e, opts: { removeConfig: boolean; unregisterWsl?: boolean }) => {
-    try {
-      await uninstallOpenClaw(win(), opts)
-      return { success: true }
-    } catch (e) {
-      return { success: false, error: e instanceof Error ? e.message : String(e) }
-    }
+      try {
+        await uninstallOpenClaw(win(), opts)
+        return { success: true }
+      } catch (e) {
+        return { success: false, error: e instanceof Error ? e.message : String(e) }
+      }
     }
   )
 

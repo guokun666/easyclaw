@@ -34,7 +34,6 @@ body {
     BlinkMacSystemFont,
     'Segoe UI',
     sans-serif;
-  -webkit-app-region: drag;
   user-select: none;
   overflow: hidden;
   text-rendering: optimizeLegibility;

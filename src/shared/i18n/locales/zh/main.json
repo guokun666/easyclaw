@@ -157,6 +157,7 @@
     "stoppingGw": "正在停止 Gateway...",
     "removing": "正在删除 OpenClaw 软件包...",
     "removingConfig": "正在删除配置文件...",
+    "stillPresent": "OpenClaw 仍然存在于系统环境中，可能是之前通过 npm 或 pnpm 安装的残留，请重试或手动检查全局安装目录。",
     "unregisteringWsl": "正在注销 WSL Ubuntu 环境...",
     "unregisterWslDone": "WSL Ubuntu 环境已注销。",
     "unregisterWslMissing": "未检测到可注销的 WSL Ubuntu 环境。",
