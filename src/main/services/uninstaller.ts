@@ -6,6 +6,7 @@ import { BrowserWindow } from 'electron'
 import { stopGateway } from './gateway'
 import { getPathEnv, resolvePreferredBin } from './path-utils'
 import { getManagedNpmEnv } from './npm-paths'
+import { getPackageManagerBin, getPackageManagerGlobalRemoveArgs } from './package-manager'
 import { runInWsl, unregisterWslDistro } from './wsl-utils'
 import { t } from '../../shared/i18n/main'
 
@@ -17,20 +18,28 @@ const sendProgress = (win: BrowserWindow, msg: string): void => {
   }
 }
 
-const npmUninstallMac = (): Promise<void> =>
+const runHostUninstall = (cmd: string, args: string[]): Promise<void> =>
   new Promise((resolve, reject) => {
-    const npm = resolvePreferredBin('npm')
-    const child = spawn(npm, ['uninstall', '-g', 'openclaw'], {
+    const child = spawn(cmd, args, {
       env: getManagedNpmEnv(getPathEnv())
     })
     child.stdout.resume()
     child.stderr.resume()
     child.on('close', (code) => {
       if (code === 0) resolve()
-      else reject(new Error(`npm uninstall failed (exit ${code})`))
+      else reject(new Error(`${cmd} uninstall failed (exit ${code})`))
     })
     child.on('error', reject)
   })
+
+const uninstallMac = async (): Promise<void> => {
+  try {
+    await runHostUninstall(getPackageManagerBin(), getPackageManagerGlobalRemoveArgs('openclaw'))
+  } catch {
+    const npm = resolvePreferredBin('npm')
+    await runHostUninstall(npm, ['uninstall', '-g', 'openclaw'])
+  }
+}
 
 export const uninstallOpenClaw = async (
   win: BrowserWindow,
@@ -55,12 +64,12 @@ export const uninstallOpenClaw = async (
     return
   }
 
-  // 2. npm uninstall -g openclaw
+  // 2. Remove the global OpenClaw package
   log(t('uninstaller.removing'))
   if (isWin) {
-    await runInWsl('npm uninstall -g openclaw', 60000)
+    await runInWsl('pnpm remove -g openclaw || npm uninstall -g openclaw', 60000)
   } else {
-    await npmUninstallMac()
+    await uninstallMac()
   }
 
   // 3. (Optional) Remove config directory

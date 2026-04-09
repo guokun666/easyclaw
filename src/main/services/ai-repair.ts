@@ -433,12 +433,12 @@ const buildCommandPreview = async (
     doctor_fix: 'openclaw doctor --fix',
     disable_memory_search: 'openclaw config set agents.defaults.memorySearch.enabled false',
     set_gateway_mode_local: 'openclaw config set gateway.mode local',
-    sync_feishu_plugin: `npx -y ${compatibleLarkPluginPackage ?? '@larksuite/openclaw-lark-tools@<compatible-version>'} install`,
+    sync_feishu_plugin: `pnpm dlx ${compatibleLarkPluginPackage ?? '@larksuite/openclaw-lark-tools@<compatible-version>'} install`,
     trust_lark_plugin: 'openclaw config set plugins.allow ["openclaw-lark"]',
     disable_feishu_channel: 'openclaw config set channels.feishu.enabled false',
     restart_gateway: 'openclaw gateway restart',
-    reinstall_openclaw_current: `npm install -g openclaw@${currentOpenclawVersion ?? '<current-version>'}`,
-    install_openclaw_recommended: `npm install -g openclaw@${OPENCLAW_RECOMMENDED_VERSION}`,
+    reinstall_openclaw_current: `pnpm add -g openclaw@${currentOpenclawVersion ?? '<current-version>'}`,
+    install_openclaw_recommended: `pnpm add -g openclaw@${OPENCLAW_RECOMMENDED_VERSION}`,
     run_command: trimCommand(action.command)
   }
 

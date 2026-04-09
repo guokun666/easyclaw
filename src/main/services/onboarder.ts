@@ -16,6 +16,11 @@ import https from 'https'
 import { BrowserWindow } from 'electron'
 import { runInWsl, readWslFile, writeWslFile, buildWslBashArgs } from './wsl-utils'
 import { getManagedNpmEnv } from './npm-paths'
+import {
+  ensurePackageManagerAvailable,
+  getPackageManagerBin,
+  getPackageManagerDlxArgs
+} from './package-manager'
 import { createTerminalLineEmitter } from './terminal-output'
 import { t } from '../../shared/i18n/main'
 import {
@@ -972,8 +977,7 @@ export const ensureFeishuPluginCompatible = async (
     return false
   }
 
-  await ensureCommandAvailable('npm')
-  await ensureCommandAvailable('npx')
+  await ensureCommandAvailable('pnpm')
 
   onLog?.(
     t('onboarder.feishuPluginSyncing', {
@@ -1022,10 +1026,8 @@ const installCompatibleLarkPlugin = async (
       onLog(`Plugin source candidate: ${candidate.label}`)
       await runChannelCommand(runCmd, onLog, 'env', [
         `npm_config_registry=${candidate.registry}`,
-        platform() === 'win32' ? 'npx' : resolvePreferredBin('npx'),
-        '-y',
-        candidate.packageName,
-        'install'
+        platform() === 'win32' ? 'pnpm' : getPackageManagerBin(),
+        ...getPackageManagerDlxArgs(candidate.packageName, ['install'])
       ])
       onLog(`Plugin source selected: ${candidate.label}`)
       return
@@ -1167,7 +1169,13 @@ const hasOpenClawConfig = async (): Promise<boolean> => {
   return existsSync(getConfigPath())
 }
 
-const ensureCommandAvailable = async (commandName: 'npm' | 'npx'): Promise<void> => {
+const ensureCommandAvailable = async (commandName: 'pnpm'): Promise<void> => {
+  try {
+    await ensurePackageManagerAvailable()
+  } catch {
+    throw new Error(t('onboarder.npxRequired'))
+  }
+
   if (platform() === 'win32') {
     try {
       await runInWsl(`command -v ${commandName} >/dev/null 2>&1`, 10000)
@@ -1177,7 +1185,7 @@ const ensureCommandAvailable = async (commandName: 'npm' | 'npx'): Promise<void>
     }
   }
 
-  const resolved = resolvePreferredBin(commandName)
+  const resolved = getPackageManagerBin()
   try {
     await new Promise<void>((resolve, reject) => {
       const child = spawn(resolved, ['--version'], {
@@ -1220,13 +1228,15 @@ const runMacTerminalScript = async (
   const tempDir = mkdtempSync(join(tmpdir(), 'easyclaw-terminal-'))
   const scriptPath = join(tempDir, 'run.sh')
   const statusPath = join(tempDir, 'status.txt')
-  const env = getPathEnv()
+  const env = getManagedNpmEnv(getPathEnv())
   const scriptEnv: NodeJS.ProcessEnv = { ...env }
   delete scriptEnv.npm_config_prefix
   delete scriptEnv.npm_config_cache
 
   const exportLines = Object.entries({
-    PATH: env.PATH ?? ''
+    PATH: env.PATH ?? '',
+    PNPM_HOME: env.PNPM_HOME ?? '',
+    PNPM_STORE_DIR: env.PNPM_STORE_DIR ?? ''
   })
     .filter(([, value]) => value)
     .map(([key, value]) => `export ${key}=${shellEscape(value)}`)
@@ -1602,12 +1612,11 @@ const runOneClickChannelSetup = async (
   onStatus?: (percent: number, stage: string, detail?: string) => void
 ): Promise<void> => {
   if (config.channelType === 'wechat') {
-    await ensureCommandAvailable('npm')
-    await ensureCommandAvailable('npx')
+    await ensureCommandAvailable('pnpm')
     onLog(t('onboarder.channelOneClick.wechat'))
     if (platform() === 'darwin') {
       const commands = [
-        `${shellEscape(resolvePreferredBin('npx'))} -y @tencent-weixin/openclaw-weixin-cli@latest install`
+        `${shellEscape(getPackageManagerBin())} dlx @tencent-weixin/openclaw-weixin-cli@latest install`
       ]
       await runMacTerminalScript('EasyClaw 微信渠道安装', commands, onLog, onStatus)
       onLog(t('onboarder.channelDone.wechat'))
@@ -1616,8 +1625,8 @@ const runOneClickChannelSetup = async (
     await runChannelCommand(
       runCmd,
       onLog,
-      platform() === 'win32' ? 'npx' : resolvePreferredBin('npx'),
-      ['-y', '@tencent-weixin/openclaw-weixin-cli@latest', 'install']
+      platform() === 'win32' ? 'pnpm' : getPackageManagerBin(),
+      getPackageManagerDlxArgs('@tencent-weixin/openclaw-weixin-cli@latest', ['install'])
     )
     onLog(t('onboarder.channelDone.wechat'))
     return
@@ -1625,15 +1634,14 @@ const runOneClickChannelSetup = async (
 
   if (config.channelType !== 'feishu' || config.channelSetupMode !== 'one-click') return
 
-  await ensureCommandAvailable('npm')
-  await ensureCommandAvailable('npx')
+  await ensureCommandAvailable('pnpm')
   onLog(t('onboarder.channelOneClick.feishu'))
   const installedOpenclawVersion =
     (await getInstalledOpenClawVersion()) ?? OPENCLAW_RECOMMENDED_VERSION
   const compatibleLarkPluginPackage = await getCompatibleLarkPluginPackageSpec(installedOpenclawVersion)
   if (platform() === 'darwin') {
     const commands = [
-      `${shellEscape(resolvePreferredBin('npx'))} -y ${compatibleLarkPluginPackage} install`,
+      `${shellEscape(getPackageManagerBin())} dlx ${compatibleLarkPluginPackage} install`,
       `test -f ${shellEscape(getConfigPath())}`,
       `${shellEscape(ocBin)} config set channels.feishu.streaming true`,
       `${shellEscape(ocBin)} gateway restart`,
@@ -1883,11 +1891,7 @@ export const runOnboard = async (
 
   status(18, t('onboarder.status.initializing'))
   try {
-    await runCmd(
-      isWindows ? 'npm' : ocBin,
-      isWindows ? ['exec', '--', 'openclaw', ...openclawArgs] : [...openclawArgs],
-      log
-    )
+    await runCmd(ocBin, [...openclawArgs], log)
   } catch (e) {
     // Even if onboard fails with gateway connection test (1006),
     // continue if config file was created
@@ -2373,11 +2377,7 @@ export const switchProvider = async (
   ]
 
   try {
-    await runCmd(
-      isWindows ? 'npm' : ocBin,
-      isWindows ? ['exec', '--', 'openclaw', ...openclawArgs] : [...openclawArgs],
-      log
-    )
+    await runCmd(ocBin, [...openclawArgs], log)
   } catch (e) {
     if (isWindows) {
       try {

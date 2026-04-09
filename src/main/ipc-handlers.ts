@@ -5,6 +5,7 @@ import { join } from 'path'
 import { existsSync, readFileSync, writeFileSync, unlinkSync, rmSync } from 'fs'
 import { checkEnvironment, checkOpenclawUpdate } from './services/env-checker'
 import { getPathEnv, resolvePreferredBin } from './services/path-utils'
+import { getManagedNpmEnv } from './services/npm-paths'
 import { checkPort, runDoctorFix } from './services/troubleshooter'
 import {
   beginInstallTask,
@@ -263,7 +264,7 @@ export const registerIpcHandlers = (getWin: () => BrowserWindow | null): void =>
       if (platform() === 'win32') {
         try {
           await runInWsl(
-            'openclaw uninstall --all --yes --non-interactive || true; npm uninstall -g openclaw || true; rm -rf /root/.openclaw',
+            'openclaw uninstall --all --yes --non-interactive || true; pnpm remove -g openclaw || npm uninstall -g openclaw || true; rm -rf /root/.openclaw',
             120000
           )
           return { success: true }
@@ -276,32 +277,48 @@ export const registerIpcHandlers = (getWin: () => BrowserWindow | null): void =>
       }
 
       const openclaw = resolvePreferredBin('openclaw')
+      const pnpm = resolvePreferredBin('pnpm')
       const npm = resolvePreferredBin('npm')
+      const packageManagerEnv = getManagedNpmEnv(getPathEnv())
       return new Promise<{ success: boolean; error?: string }>((resolve) => {
         let cleanupStarted = false
         const finishCleanup = (): void => {
           if (cleanupStarted) return
           cleanupStarted = true
-          const npmChild = spawn(npm, ['uninstall', '-g', 'openclaw'], {
-            env: getPathEnv(),
-            stdio: ['ignore', 'pipe', 'pipe']
-          })
-          npmChild.stdout.on('data', (d) => chunks.push(d.toString()))
-          npmChild.stderr.on('data', (d) => chunks.push(d.toString()))
-          npmChild.on('close', () => {
+          const cleanupOpenClawDir = (): { success: boolean; error?: string } => {
             try {
               rmSync(join(homedir(), '.openclaw'), { recursive: true, force: true })
               const wizardStatePath = getWizardStatePath()
               if (existsSync(wizardStatePath)) unlinkSync(wizardStatePath)
-              resolve({ success: true })
+              return { success: true }
             } catch (err) {
-              resolve({
+              return {
                 success: false,
                 error: err instanceof Error ? err.message : String(err)
-              })
+              }
             }
+          }
+          const fallbackToNpm = (): void => {
+            const npmChild = spawn(npm, ['uninstall', '-g', 'openclaw'], {
+              env: packageManagerEnv,
+              stdio: ['ignore', 'pipe', 'pipe']
+            })
+            npmChild.stdout.on('data', (d) => chunks.push(d.toString()))
+            npmChild.stderr.on('data', (d) => chunks.push(d.toString()))
+            npmChild.on('close', () => resolve(cleanupOpenClawDir()))
+            npmChild.on('error', (err) => resolve({ success: false, error: err.message }))
+          }
+          const pnpmChild = spawn(pnpm, ['remove', '-g', 'openclaw'], {
+            env: packageManagerEnv,
+            stdio: ['ignore', 'pipe', 'pipe']
           })
-          npmChild.on('error', (err) => resolve({ success: false, error: err.message }))
+          pnpmChild.stdout.on('data', (d) => chunks.push(d.toString()))
+          pnpmChild.stderr.on('data', (d) => chunks.push(d.toString()))
+          pnpmChild.on('close', (code) => {
+            if (code === 0) resolve(cleanupOpenClawDir())
+            else fallbackToNpm()
+          })
+          pnpmChild.on('error', fallbackToNpm)
         }
 
         const child = spawn(openclaw, ['uninstall', '--all', '--yes', '--non-interactive'], {

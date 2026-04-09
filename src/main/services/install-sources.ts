@@ -55,6 +55,7 @@ const PACKAGE_META_TIMEOUT_MS = 8000
 
 export const OPENCLAW_PACKAGE_NAME = 'openclaw'
 export const LARK_PLUGIN_PACKAGE_NAME = '@larksuite/openclaw-lark-tools'
+export const PNPM_BOOTSTRAP_PACKAGE_NAME = 'pnpm@10'
 export const OPENCLAW_RECOMMENDED_VERSION = '2026.4.1'
 
 const CONCRETE_SOURCES: Record<ConcreteInstallSource, ConcreteSourceDefinition> = {
@@ -364,17 +365,30 @@ export const getNodeWslSetupCandidates = (): ScriptSourceCandidate[] => {
   )
 }
 
+const getRegistryPackageCandidates = (
+  packageName: string,
+  sourceMode = getInstallSourceSettingsFromEnv().sourceMode
+): OpenclawPackageCandidate[] =>
+  buildCandidatesFromSources(sourceMode, (source) => ({
+    label: `${source.label} npm`,
+    packageName,
+    registry: source.npmRegistry
+  }))
+
+export const getPnpmPackageCandidates = (
+  packageName = PNPM_BOOTSTRAP_PACKAGE_NAME
+): OpenclawPackageCandidate[] => getRegistryPackageCandidates(packageName)
+
 export const getOpenclawPackageCandidates = (
   version = OPENCLAW_RECOMMENDED_VERSION
 ): OpenclawPackageCandidate[] => {
   const settings = getInstallSourceSettingsFromEnv()
   const normalizedVersion = normalizeOpenclawVersion(version)
 
-  return buildCandidatesFromSources(settings.sourceMode, (source) => ({
-    label: `${source.label} npm`,
-    packageName: `${OPENCLAW_PACKAGE_NAME}@${normalizedVersion}`,
-    registry: source.npmRegistry
-  }))
+  return getRegistryPackageCandidates(
+    `${OPENCLAW_PACKAGE_NAME}@${normalizedVersion}`,
+    settings.sourceMode
+  )
 }
 
 export const getOpenclawMetaCandidates = (): DownloadSourceCandidate[] =>

@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync } from 'fs'
 import { homedir } from 'os'
-import { join } from 'path'
+import { delimiter, join } from 'path'
 import { app } from 'electron'
 
 const ensureDir = (path: string): string => {
@@ -21,28 +21,33 @@ export const getManagedNpmPaths = (): {
   prefixDir: string
   cacheDir: string
   binDir: string
+  storeDir: string
 } => {
   const rootDir = getManagedRootDir()
   const prefixDir = ensureDir(join(rootDir, 'global'))
   const cacheDir = ensureDir(join(rootDir, 'cache'))
   const binDir = ensureDir(join(prefixDir, 'bin'))
+  const storeDir = ensureDir(join(rootDir, 'store'))
 
   return {
     rootDir,
     prefixDir,
     cacheDir,
-    binDir
+    binDir,
+    storeDir
   }
 }
 
 export const getManagedNpmEnv = (baseEnv: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv => {
-  const { prefixDir, cacheDir, binDir } = getManagedNpmPaths()
+  const { prefixDir, cacheDir, binDir, storeDir } = getManagedNpmPaths()
 
   return {
     ...baseEnv,
     npm_config_prefix: prefixDir,
     npm_config_cache: cacheDir,
-    PATH: [binDir, baseEnv.PATH ?? ''].filter(Boolean).join(':')
+    PNPM_HOME: binDir,
+    PNPM_STORE_DIR: storeDir,
+    PATH: [binDir, baseEnv.PATH ?? ''].filter(Boolean).join(delimiter)
   }
 }
 

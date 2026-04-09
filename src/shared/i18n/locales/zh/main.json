@@ -71,7 +71,7 @@
       "wechat": "正在执行微信一键安装命令..."
     },
     "configNotFound": "找不到 OpenClaw 配置文件",
-    "npxRequired": "未检测到 npm / npx。请先在环境安装步骤安装 Node.js，然后重试渠道配置。",
+    "npxRequired": "未检测到 pnpm。请先在环境安装步骤安装 Node.js，然后重试渠道配置。",
     "openclawNotInitialized": "OpenClaw 尚未初始化完成，无法继续执行飞书自动配置。",
     "embeddedTerminalStarting": "正在应用内启动嵌入式终端...",
     "embeddedTerminalFallback": "嵌入式终端启动失败，正在回退到系统 Terminal。",

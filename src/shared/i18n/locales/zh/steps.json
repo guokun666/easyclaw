@@ -253,7 +253,7 @@
     "feishuAppSecret": "飞书 App Secret",
     "feishuSecretHint": "请输入飞书应用密钥",
     "wechatOneClickTitle": "微信一键安装",
-    "wechatOneClickDesc": "会直接执行 npx 安装命令，并实时显示二维码或交互提示。微信当前不提供手动填写模式。",
+    "wechatOneClickDesc": "会直接执行 pnpm dlx 安装命令，并实时显示二维码或交互提示。微信当前不提供手动填写模式。",
     "memorySearch": {
       "title": "语义记忆",
       "optional": "可选",
@@ -335,7 +335,7 @@
     "manualTitle": "手动触发执行",
     "manualBody": "进入页面后不会立刻自动执行。请点击下方按钮手动开始，安装器会先校验模型令牌，再继续执行渠道配置。",
     "pausedTitle": "已暂停真实执行",
-    "pausedBody": "当前不会调用 openclaw、npx 或外部 Terminal。先确认点击“下一步”后页面能稳定跳转到这里，再继续恢复执行逻辑。",
+    "pausedBody": "当前不会调用 openclaw、pnpm 或外部 Terminal。先确认点击“下一步”后页面能稳定跳转到这里，再继续恢复执行逻辑。",
     "continueBtn": "继续进入完成页",
     "progressTitle": "当前进度",
     "skipChannelBtn": "跳过渠道，仅完成基础配置",

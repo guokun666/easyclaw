@@ -6,10 +6,12 @@ import { getManagedBinPath, getManagedNpmPaths, hasManagedBin } from './npm-path
 const getPathDirs = (): string[] =>
   [
     getManagedNpmPaths().binDir,
+    process.env.PNPM_HOME ?? '',
     '/usr/local/bin',
     '/opt/homebrew/bin',
     process.env.NVM_BIN ?? '',
     `${process.env.HOME}/.volta/bin`,
+    `${process.env.HOME}/.local/share/pnpm`,
     `${process.env.HOME}/.npm-global/bin`
   ].filter(Boolean)
 

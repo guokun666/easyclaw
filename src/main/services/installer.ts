@@ -6,6 +6,7 @@ import { join } from 'path'
 import https from 'https'
 import type { ClientRequest } from 'http'
 import { BrowserWindow } from 'electron'
+import { createTerminalLineEmitter } from './terminal-output'
 import {
   buildWslBashArgs,
   checkWslState,
@@ -15,6 +16,11 @@ import {
 } from './wsl-utils'
 import { getPathEnv } from './path-utils'
 import { getManagedNpmEnv, getManagedBinPath, hasManagedBin } from './npm-paths'
+import {
+  ensurePackageManagerAvailable,
+  getPackageManagerBin,
+  getPackageManagerGlobalAddArgs
+} from './package-manager'
 import { t } from '../../shared/i18n/main'
 import {
   getNodeMacDownloadCandidates,
@@ -430,6 +436,15 @@ const runStepsWithFallback = async (
 const runInWslForInstall = async (script: string, timeout = 30000): Promise<string> => {
   const args = await buildWslBashArgs(script)
   assertInstallNotCancelled()
+  const stdoutLines: string[] = []
+  const lines: string[] = []
+  const stdoutEmitter = await createTerminalLineEmitter((line) => {
+    stdoutLines.push(line)
+    lines.push(line)
+  })
+  const stderrEmitter = await createTerminalLineEmitter((line) => {
+    lines.push(line)
+  })
 
   return new Promise((resolve, reject) => {
     const child = spawn('wsl', args)
@@ -444,10 +459,17 @@ const runInWslForInstall = async (script: string, timeout = 30000): Promise<stri
       reject(new Error('timeout'))
     }, timeout)
 
-    let stdout = ''
-    let stderr = ''
-    child.stdout.on('data', (d) => (stdout += d.toString()))
-    child.stderr.on('data', (d) => (stderr += d.toString()))
+    child.stdout.on('data', (d: Buffer) => stdoutEmitter.push(d))
+    child.stderr.on('data', (d: Buffer) => stderrEmitter.push(d))
+    child.on('close', () => {
+      stdoutEmitter.flush()
+      stderrEmitter.flush()
+    })
+    child.on('error', () => {
+      stdoutEmitter.flush()
+      stderrEmitter.flush()
+    })
+
     child.on('close', (code) => {
       clearTimeout(timer)
       if (getActiveInstallTask()?.cancelled) {
@@ -455,10 +477,10 @@ const runInWslForInstall = async (script: string, timeout = 30000): Promise<stri
         return
       }
       if (code === 0) {
-        resolve(stdout.replace(/\0/g, '').trim())
+        resolve(stdoutLines.join('\n').trim())
         return
       }
-      reject(new Error(stderr.replace(/\0/g, '').trim() || `exit ${code}`))
+      reject(new Error(lines.join('\n').trim() || `exit ${code}`))
     })
     child.on('error', (error) => {
       clearTimeout(timer)
@@ -601,6 +623,7 @@ export const installOpenClawWsl = async (
   const targetVersion = normalizeOpenclawVersion(version)
   sendStatus(win, 10, t('installer.ocWslInstalling'))
   log(t('installer.ocWslInstalling', { version: targetVersion }))
+  await ensurePackageManagerAvailable(log)
 
   await runStepsWithFallback(
     getOpenclawPackageCandidates(targetVersion).map((candidate) => ({
@@ -608,7 +631,7 @@ export const installOpenClawWsl = async (
       run: () => {
         sendStatus(win, 55, t('installer.ocWslInstalling', { version: targetVersion }), candidate.label)
         return runInWslForInstall(
-          `npm_config_registry=${candidate.registry} npm install -g ${candidate.packageName}`,
+          `npm_config_registry=${candidate.registry} pnpm add -g ${candidate.packageName}`,
           120000
         )
       }
@@ -746,13 +769,15 @@ export const installOpenClaw = async (
   await ensureXcodeCli(log)
   sendStatus(win, 20, t('installer.ocInstalling'))
   const npmEnv = getManagedNpmEnv(getPathEnv())
+  await ensurePackageManagerAvailable(log)
+  const packageManager = getPackageManagerBin()
 
   await runStepsWithFallback(
     getOpenclawPackageCandidates(targetVersion).map((candidate) => ({
       label: candidate.label,
       run: () => {
         sendStatus(win, 55, t('installer.ocInstalling', { version: targetVersion }), candidate.label)
-        return runWithLog('npm', ['install', '-g', candidate.packageName], log, {
+        return runWithLog(packageManager, getPackageManagerGlobalAddArgs(candidate.packageName), log, {
           env: getNpmCommandEnv(candidate.registry, npmEnv)
         })
       }

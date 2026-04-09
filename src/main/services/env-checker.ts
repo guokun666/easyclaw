@@ -77,8 +77,9 @@ const getOpenclawVersion = async (
 
   for (const env of candidates) {
     try {
-      // A broken npm install can still appear in `npm list -g`, so require the CLI
-      // to execute a harmless help command before treating OpenClaw as installed.
+      // A broken global package install can still leave behind binaries or metadata,
+      // so require the CLI to execute a harmless help command before treating
+      // OpenClaw as installed.
       await run(openclawBin, ['doctor', '--help'], env)
     } catch {
       continue

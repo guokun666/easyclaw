@@ -1,5 +1,6 @@
 import { app, BrowserWindow, screen, shell } from 'electron'
 import { join } from 'path'
+import { appendFileSync, existsSync, mkdirSync } from 'fs'
 import { electronApp, optimizer } from '@electron-toolkit/utils'
 import { registerIpcHandlers, applySavedInstallSourceSettings } from './ipc-handlers'
 import { createTray, startPolling, destroyTray } from './services/tray-manager'
@@ -11,6 +12,26 @@ import icon from '../../resources/icon.png?asset'
 let ipcRegistered = false
 let mainWindow: BrowserWindow | null = null
 let isQuitting = false
+
+const writeStartupLog = (message: string): void => {
+  try {
+    const logDir = join(app.getPath('userData'))
+    if (!existsSync(logDir)) mkdirSync(logDir, { recursive: true })
+    appendFileSync(join(logDir, 'startup.log'), `[${new Date().toISOString()}] ${message}\n`)
+  } catch {
+    /* ignore */
+  }
+}
+
+process.on('uncaughtException', (error) => {
+  writeStartupLog(`uncaughtException: ${error.stack ?? error.message}`)
+})
+
+process.on('unhandledRejection', (reason) => {
+  const detail =
+    reason instanceof Error ? reason.stack ?? reason.message : typeof reason === 'string' ? reason : JSON.stringify(reason)
+  writeStartupLog(`unhandledRejection: ${detail}`)
+})
 
 const getWin = (): BrowserWindow | null => mainWindow
 const WINDOW_MARGIN = 48
@@ -59,6 +80,7 @@ const getInitialWindowBounds = (): {
 }
 
 function createWindow(): void {
+  writeStartupLog('createWindow:start')
   const startHidden =
     app.getLoginItemSettings().wasOpenedAsHidden || process.argv.includes('--hidden')
   const { width, height, minWidth, minHeight, zoomFactor } = getInitialWindowBounds()
@@ -83,6 +105,7 @@ function createWindow(): void {
   mainWindow.webContents.setZoomFactor(zoomFactor)
 
   mainWindow.on('ready-to-show', () => {
+    writeStartupLog(`createWindow:ready-to-show hidden=${startHidden}`)
     if (!startHidden) mainWindow?.show()
   })
 
@@ -117,11 +140,13 @@ function createWindow(): void {
   })
 
   if (!ipcRegistered) {
+    writeStartupLog('createWindow:register-ipc')
     registerIpcHandlers(getWin)
     ipcRegistered = true
   }
 
   if (process.env['ELECTRON_RENDERER_URL']) {
+    writeStartupLog('createWindow:loadURL')
     const rendererUrl = process.env['ELECTRON_RENDERER_URL']
     const debugParams = new URLSearchParams()
     if (process.env.EASYCLAW_DEBUG_MINIMAL === '1') debugParams.set('debugMinimal', '1')
@@ -129,6 +154,7 @@ function createWindow(): void {
     const finalUrl = debugParams.size > 0 ? `${rendererUrl}?${debugParams.toString()}` : rendererUrl
     mainWindow.loadURL(finalUrl)
   } else {
+    writeStartupLog('createWindow:loadFile')
     mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
   }
 
@@ -139,6 +165,7 @@ function createWindow(): void {
 }
 
 const gotSingleInstanceLock = app.requestSingleInstanceLock()
+writeStartupLog(`singleInstanceLock=${gotSingleInstanceLock}`)
 
 if (!gotSingleInstanceLock) {
   app.quit()
@@ -157,8 +184,10 @@ app.on('before-quit', () => {
 })
 
 app.whenReady().then(async () => {
+  writeStartupLog('app:ready')
   applySavedInstallSourceSettings()
   await initI18nMain()
+  writeStartupLog('app:i18n-ready')
   electronApp.setAppUserModelId('com.modelfamily.familyclaw')
 
   app.on('browser-window-created', (_, window) => {
@@ -166,6 +195,7 @@ app.whenReady().then(async () => {
   })
 
   createWindow()
+  writeStartupLog('app:window-created')
 
   createTray({
     getWin,
@@ -175,10 +205,12 @@ app.whenReady().then(async () => {
     }
   })
   startPolling()
+  writeStartupLog('app:tray-ready')
 
   // Auto update
   setupAutoUpdater(getWin)
   setTimeout(checkForUpdates, 5000)
+  writeStartupLog('app:updater-ready')
 
   app.on('activate', () => {
     if (mainWindow) {

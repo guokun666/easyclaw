@@ -23,6 +23,8 @@ export const WSL_STATE_ORDER: readonly WslState[] = [
 export const WSL_DISTRO = 'Ubuntu'
 const WSL_USER = 'root'
 const INTERNET_SETTINGS_REG_PATH = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings'
+export const WSL_PNPM_HOME = '/root/.easyclaw-installer/pnpm'
+export const WSL_PNPM_STORE_DIR = '/root/.easyclaw-installer/pnpm-store'
 
 interface ProxyTarget {
   scheme: string
@@ -171,9 +173,22 @@ const buildWslProxyPreamble = async (): Promise<string> => {
   return `${hostResolver}${exports.join('; ')}; fi; `
 }
 
+const buildWslPackageManagerPreamble = (): string =>
+  `export PNPM_HOME="${WSL_PNPM_HOME}"; export PNPM_STORE_DIR="${WSL_PNPM_STORE_DIR}"; mkdir -p "${WSL_PNPM_HOME}" "${WSL_PNPM_STORE_DIR}"; export PATH="${WSL_PNPM_HOME}:$PATH"; `
+
 export const buildWslBashArgs = async (script: string): Promise<string[]> => {
   const proxyPreamble = await buildWslProxyPreamble()
-  return ['-d', WSL_DISTRO, '-u', WSL_USER, '--', 'bash', '-lc', `${proxyPreamble}${script}`]
+  const packageManagerPreamble = buildWslPackageManagerPreamble()
+  return [
+    '-d',
+    WSL_DISTRO,
+    '-u',
+    WSL_USER,
+    '--',
+    'bash',
+    '-lc',
+    `${proxyPreamble}${packageManagerPreamble}${script}`
+  ]
 }
 
 export const getWslProxyRuntimeInfo = async (): Promise<WslProxyRuntimeInfo> => {
