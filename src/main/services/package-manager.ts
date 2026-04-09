@@ -9,6 +9,24 @@ type LogFn = (msg: string) => void
 
 const PNPM_CHECK_TIMEOUT_MS = 15000
 const PNPM_INSTALL_TIMEOUT_MS = 120000
+const OPENCLAW_HOISTED_NODE_LINKER = 'hoisted'
+const OPENCLAW_ALLOW_BUILD_PACKAGES = [
+  'openclaw',
+  'sharp',
+  'protobufjs',
+  '@matrix-org/matrix-sdk-crypto-nodejs',
+  'koffi'
+] as const
+
+const shellEscape = (value: string): string => `'${value.replace(/'/g, `'\\''`)}'`
+
+const isOpenClawPackageSpec = (packageSpec: string): boolean =>
+  packageSpec === 'openclaw' || packageSpec.startsWith('openclaw@')
+
+const getOpenClawGlobalAddArgs = (): string[] => [
+  `--config.node-linker=${OPENCLAW_HOISTED_NODE_LINKER}`,
+  ...OPENCLAW_ALLOW_BUILD_PACKAGES.flatMap((packageName) => ['--allow-build', packageName])
+]
 
 const canRunHostCommand = (cmd: string, args: string[], env: NodeJS.ProcessEnv): Promise<boolean> =>
   new Promise((resolve) => {
@@ -85,7 +103,10 @@ const ensurePnpmOnHost = async (onLog: LogFn = () => {}): Promise<void> => {
 
 const hasPnpmInWsl = async (): Promise<boolean> => {
   try {
-    await runInWsl('command -v pnpm >/dev/null 2>&1 && pnpm --version >/dev/null 2>&1', PNPM_CHECK_TIMEOUT_MS)
+    await runInWsl(
+      'command -v pnpm >/dev/null 2>&1 && pnpm --version >/dev/null 2>&1',
+      PNPM_CHECK_TIMEOUT_MS
+    )
     return true
   } catch {
     return false
@@ -101,7 +122,7 @@ const ensurePnpmInWsl = async (onLog: LogFn = () => {}): Promise<void> => {
     try {
       onLog(`Package manager source candidate: ${candidate.label}`)
       await runInWsl(
-        `npm_config_registry=${candidate.registry} npm install -g ${candidate.packageName}`,
+        `npm_config_registry=${shellEscape(candidate.registry)} npm install -g ${shellEscape(candidate.packageName)}`,
         PNPM_INSTALL_TIMEOUT_MS
       )
       onLog(`Package manager source selected: ${candidate.label}`)
@@ -128,11 +149,27 @@ export const ensurePackageManagerAvailable = async (onLog?: LogFn): Promise<void
 export const getPackageManagerBin = (): string =>
   platform() === 'win32' ? 'pnpm' : resolvePreferredBin('pnpm')
 
-export const getPackageManagerGlobalAddArgs = (packageSpec: string): string[] => [
-  'add',
-  '-g',
-  packageSpec
-]
+export const getPackageManagerGlobalAddArgs = (packageSpec: string): string[] => {
+  const args = ['add', '-g']
+
+  // OpenClaw bundles runtime plugins that import optional provider dependencies
+  // from the package root. pnpm's isolated linker breaks those imports for
+  // commands like `openclaw status`, so force a hoisted global layout here.
+  if (isOpenClawPackageSpec(packageSpec)) {
+    args.push(...getOpenClawGlobalAddArgs())
+  }
+
+  args.push(packageSpec)
+  return args
+}
+
+export const getPackageManagerGlobalAddPreview = (packageSpec: string): string =>
+  `pnpm ${getPackageManagerGlobalAddArgs(packageSpec).join(' ')}`
+
+export const buildPackageManagerGlobalAddCommand = (
+  packageSpec: string,
+  command = 'pnpm'
+): string => [command, ...getPackageManagerGlobalAddArgs(packageSpec)].map(shellEscape).join(' ')
 
 export const getPackageManagerGlobalRemoveArgs = (packageName: string): string[] => [
   'remove',

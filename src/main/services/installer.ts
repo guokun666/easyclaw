@@ -18,6 +18,7 @@ import { getPathEnv } from './path-utils'
 import { getManagedNpmEnv, getManagedBinPath, hasManagedBin } from './npm-paths'
 import {
   ensurePackageManagerAvailable,
+  buildPackageManagerGlobalAddCommand,
   getPackageManagerBin,
   getPackageManagerGlobalAddArgs
 } from './package-manager'
@@ -55,6 +56,8 @@ type InstallPhase = 'node' | 'openclaw'
 
 const INSTALL_CANCELLED_MESSAGE = 'INSTALL_CANCELLED'
 let activeInstallTask: ActiveInstallTask | null = null
+
+const shellEscape = (value: string): string => `'${value.replace(/'/g, `'\\''`)}'`
 
 const sendProgress = (win: BrowserWindow, msg: string): void => {
   win.webContents.send('install:progress', msg)
@@ -185,7 +188,9 @@ const isLikelyNetworkInstallError = (message: string): boolean =>
     message
   )
 
-const getAlternativeSourceLabels = (current: ReturnType<typeof getInstallSourceSettingsFromEnv>['sourceMode']): string => {
+const getAlternativeSourceLabels = (
+  current: ReturnType<typeof getInstallSourceSettingsFromEnv>['sourceMode']
+): string => {
   const options = ['npmmirror', '腾讯云镜像', '官方源']
   if (current === 'npmmirror') return '腾讯云镜像或官方源'
   if (current === 'tencent') return 'npmmirror 或官方源'
@@ -206,11 +211,17 @@ const buildInstallFailureDiagnosis = async (
   let cause = t('installer.networkCauseRegistry')
   if (/certificate|self signed|unable to get local issuer|ssl|tls|cert_/i.test(normalized)) {
     cause = t('installer.networkCauseTls')
-  } else if (/proxy|407|tunneling socket|connect econnrefused 127\.0\.0\.1|connect econnrefused localhost/i.test(normalized)) {
+  } else if (
+    /proxy|407|tunneling socket|connect econnrefused 127\.0\.0\.1|connect econnrefused localhost/i.test(
+      normalized
+    )
+  ) {
     cause = t('installer.networkCauseProxy')
   } else if (/enotfound|eai_again|name resolution|temporary failure|dns/i.test(normalized)) {
     cause = t('installer.networkCauseDns')
-  } else if (/etimedout|timed out|socket hang up|econnreset|network is unreachable/i.test(normalized)) {
+  } else if (
+    /etimedout|timed out|socket hang up|econnreset|network is unreachable/i.test(normalized)
+  ) {
     cause = t('installer.networkCauseTimeout')
   }
 
@@ -231,7 +242,11 @@ const buildInstallFailureDiagnosis = async (
     )
   }
 
-  if (/enotfound|eai_again|name resolution|temporary failure|network is unreachable|timed out/i.test(normalized)) {
+  if (
+    /enotfound|eai_again|name resolution|temporary failure|network is unreachable|timed out/i.test(
+      normalized
+    )
+  ) {
     hints.splice(1, 0, t('installer.networkFixDns'))
   }
 
@@ -272,48 +287,48 @@ const downloadFile = (
     const follow = (u: string): void => {
       assertInstallNotCancelled()
       const request = https.get(u, (res) => {
-          if (
-            res.statusCode &&
-            res.statusCode >= 300 &&
-            res.statusCode < 400 &&
-            res.headers.location
-          ) {
-            res.resume()
-            if (++redirectCount > maxRedirects) {
-              reject(new Error('Too many redirects'))
-              return
-            }
-            follow(res.headers.location)
+        if (
+          res.statusCode &&
+          res.statusCode >= 300 &&
+          res.statusCode < 400 &&
+          res.headers.location
+        ) {
+          res.resume()
+          if (++redirectCount > maxRedirects) {
+            reject(new Error('Too many redirects'))
             return
           }
-          if (!res.statusCode || res.statusCode >= 400) {
-            res.resume()
-            reject(new Error(`HTTP ${res.statusCode}`))
+          follow(res.headers.location)
+          return
+        }
+        if (!res.statusCode || res.statusCode >= 400) {
+          res.resume()
+          reject(new Error(`HTTP ${res.statusCode}`))
+          return
+        }
+        const totalBytes = Number(res.headers['content-length'] ?? 0) || null
+        let downloadedBytes = 0
+        res.on('data', (chunk) => {
+          if (getActiveInstallTask()?.cancelled) {
+            request.destroy(createInstallCancelledError())
             return
           }
-          const totalBytes = Number(res.headers['content-length'] ?? 0) || null
-          let downloadedBytes = 0
-          res.on('data', (chunk) => {
-            if (getActiveInstallTask()?.cancelled) {
-              request.destroy(createInstallCancelledError())
-              return
-            }
-            downloadedBytes += chunk.length
-            onProgress?.(downloadedBytes, totalBytes)
-          })
-          const file = createWriteStream(dest)
-          registerInstallStream(file)
-          res.pipe(file)
-          file.on('finish', () => {
-            file.close()
-            if (getActiveInstallTask()?.cancelled) {
-              reject(createInstallCancelledError())
-              return
-            }
-            resolve()
-          })
-          file.on('error', reject)
+          downloadedBytes += chunk.length
+          onProgress?.(downloadedBytes, totalBytes)
         })
+        const file = createWriteStream(dest)
+        registerInstallStream(file)
+        res.pipe(file)
+        file.on('finish', () => {
+          file.close()
+          if (getActiveInstallTask()?.cancelled) {
+            reject(createInstallCancelledError())
+            return
+          }
+          resolve()
+        })
+        file.on('error', reject)
+      })
       registerInstallRequest(request)
       request.on('error', reject)
     }
@@ -577,7 +592,10 @@ export const installNodeWsl = async (win: BrowserWindow): Promise<void> => {
   sendStatus(win, 10, t('installer.wslPackages'))
   log(t('installer.wslPackages'))
   try {
-    await runInWslForInstall('apt-get update && apt-get install -y curl ca-certificates gnupg', 60000)
+    await runInWslForInstall(
+      'apt-get update && apt-get install -y curl ca-certificates gnupg',
+      60000
+    )
   } catch (error) {
     if (isInstallCancelledError(error)) {
       throw error
@@ -615,10 +633,7 @@ export const installNodeWsl = async (win: BrowserWindow): Promise<void> => {
 }
 
 /** Install openclaw globally inside WSL Ubuntu */
-export const installOpenClawWsl = async (
-  win: BrowserWindow,
-  version?: string
-): Promise<void> => {
+export const installOpenClawWsl = async (win: BrowserWindow, version?: string): Promise<void> => {
   const log = (msg: string): void => sendProgress(win, msg)
   const targetVersion = normalizeOpenclawVersion(version)
   sendStatus(win, 10, t('installer.ocWslInstalling'))
@@ -629,9 +644,14 @@ export const installOpenClawWsl = async (
     getOpenclawPackageCandidates(targetVersion).map((candidate) => ({
       label: candidate.label,
       run: () => {
-        sendStatus(win, 55, t('installer.ocWslInstalling', { version: targetVersion }), candidate.label)
+        sendStatus(
+          win,
+          55,
+          t('installer.ocWslInstalling', { version: targetVersion }),
+          candidate.label
+        )
         return runInWslForInstall(
-          `npm_config_registry=${candidate.registry} pnpm add -g ${candidate.packageName}`,
+          `npm_config_registry=${shellEscape(candidate.registry)} ${buildPackageManagerGlobalAddCommand(candidate.packageName)}`,
           120000
         )
       }
@@ -682,7 +702,9 @@ export const installNodeMac = async (win: BrowserWindow): Promise<void> => {
     )
   } catch (silentErr) {
     // Fallback to GUI pkg installer if silent install fails
-    log(`Silent install failed (${silentErr instanceof Error ? silentErr.message : silentErr}), falling back to GUI installer`)
+    log(
+      `Silent install failed (${silentErr instanceof Error ? silentErr.message : silentErr}), falling back to GUI installer`
+    )
     sendStatus(win, 88, t('installer.nodeInstallerOpening'))
     log(t('installer.nodeInstallerOpening'))
     await runWithLog('open', ['-W', dest], log)
@@ -757,10 +779,7 @@ const ensureXcodeCli = async (log: ProgressCallback): Promise<void> => {
   throw new Error(t('installer.xcodeTimeout'))
 }
 
-export const installOpenClaw = async (
-  win: BrowserWindow,
-  version?: string
-): Promise<void> => {
+export const installOpenClaw = async (win: BrowserWindow, version?: string): Promise<void> => {
   const log = (msg: string): void => sendProgress(win, msg)
   const targetVersion = normalizeOpenclawVersion(version)
   sendStatus(win, 5, t('installer.ocInstalling'))
@@ -776,10 +795,20 @@ export const installOpenClaw = async (
     getOpenclawPackageCandidates(targetVersion).map((candidate) => ({
       label: candidate.label,
       run: () => {
-        sendStatus(win, 55, t('installer.ocInstalling', { version: targetVersion }), candidate.label)
-        return runWithLog(packageManager, getPackageManagerGlobalAddArgs(candidate.packageName), log, {
-          env: getNpmCommandEnv(candidate.registry, npmEnv)
-        })
+        sendStatus(
+          win,
+          55,
+          t('installer.ocInstalling', { version: targetVersion }),
+          candidate.label
+        )
+        return runWithLog(
+          packageManager,
+          getPackageManagerGlobalAddArgs(candidate.packageName),
+          log,
+          {
+            env: getNpmCommandEnv(candidate.registry, npmEnv)
+          }
+        )
       }
     })),
     log
@@ -800,7 +829,9 @@ export const installOpenClaw = async (
       )
       log('Symlinked openclaw to /usr/local/bin')
     } catch (linkErr) {
-      log(`Symlink to /usr/local/bin skipped (${linkErr instanceof Error ? linkErr.message : linkErr})`)
+      log(
+        `Symlink to /usr/local/bin skipped (${linkErr instanceof Error ? linkErr.message : linkErr})`
+      )
     }
   }
 

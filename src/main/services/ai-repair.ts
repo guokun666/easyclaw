@@ -11,6 +11,7 @@ import { buildWslBashArgs, readWslFile, runInWsl, writeWslFile } from './wsl-uti
 import { getPathEnv, resolvePreferredBin } from './path-utils'
 import { installOpenClaw, installOpenClawWsl } from './installer'
 import { ensureFeishuPluginCompatible, ensureFeishuSecretProviderReady } from './onboarder'
+import { getPackageManagerGlobalAddPreview } from './package-manager'
 import {
   getCompatibleLarkPluginPackageSpec,
   getLatestPackageVersion,
@@ -330,7 +331,9 @@ const normalizeRepairHistory = (history?: RepairHistoryEntry[]): RepairHistoryEn
     .map((entry) => ({
       ...entry,
       outputLines: Array.isArray(entry.outputLines)
-        ? entry.outputLines.filter((line) => typeof line === 'string').slice(-MAX_HISTORY_OUTPUT_LINES)
+        ? entry.outputLines
+            .filter((line) => typeof line === 'string')
+            .slice(-MAX_HISTORY_OUTPUT_LINES)
         : []
     }))
 }
@@ -437,8 +440,12 @@ const buildCommandPreview = async (
     trust_lark_plugin: 'openclaw config set plugins.allow ["openclaw-lark"]',
     disable_feishu_channel: 'openclaw config set channels.feishu.enabled false',
     restart_gateway: 'openclaw gateway restart',
-    reinstall_openclaw_current: `pnpm add -g openclaw@${currentOpenclawVersion ?? '<current-version>'}`,
-    install_openclaw_recommended: `pnpm add -g openclaw@${OPENCLAW_RECOMMENDED_VERSION}`,
+    reinstall_openclaw_current: getPackageManagerGlobalAddPreview(
+      `openclaw@${currentOpenclawVersion ?? '<current-version>'}`
+    ),
+    install_openclaw_recommended: getPackageManagerGlobalAddPreview(
+      `openclaw@${OPENCLAW_RECOMMENDED_VERSION}`
+    ),
     run_command: trimCommand(action.command)
   }
 
@@ -542,7 +549,8 @@ const hasFeishuConfig = (config: RawOpenClawConfig | null): boolean => {
   return Boolean(feishu.accounts && Object.keys(feishu.accounts).length > 0)
 }
 
-const getRepairLogText = (context: RepairContext): string => context.recentLogs.join('\n').toLowerCase()
+const getRepairLogText = (context: RepairContext): string =>
+  context.recentLogs.join('\n').toLowerCase()
 
 const writeOpenClawConfig = async (config: RawOpenClawConfig): Promise<void> => {
   const serialized = JSON.stringify(config, null, 2)
@@ -704,9 +712,7 @@ const parsePlanFromText = (rawText: string): RepairPlan | null => {
         }
 
         const runtime =
-          item.runtime === 'host' || item.runtime === 'wsl'
-            ? item.runtime
-            : getDefaultRuntime()
+          item.runtime === 'host' || item.runtime === 'wsl' ? item.runtime : getDefaultRuntime()
 
         actions.push({
           type,
@@ -741,8 +747,7 @@ const buildFallbackPlan = (context: RepairContext, reason: string): RepairPlan =
   const brokenOpenClawInstallDetected =
     /cannot find module|cannot find package|err_module_not_found|package subpath|module not found|missing dependency|openclaw: not found|command not found: openclaw|startup failed/i.test(
       recentLogText
-    ) &&
-    /openclaw|imported from|require stack|dependency|module/i.test(recentLogText)
+    ) && /openclaw|imported from|require stack|dependency|module/i.test(recentLogText)
 
   if (
     context.feishuConfigured &&
@@ -777,7 +782,9 @@ const buildFallbackPlan = (context: RepairContext, reason: string): RepairPlan =
     context.feishuConfigured &&
     context.larkSecretRefDetected &&
     !context.larkSecretProviderConfigured &&
-    /lark-secrets|required secrets are unavailable|secretproviderresolutionerror/.test(recentLogText)
+    /lark-secrets|required secrets are unavailable|secretproviderresolutionerror/.test(
+      recentLogText
+    )
   ) {
     actions.push({
       type: 'disable_feishu_channel',
@@ -932,7 +939,11 @@ const registerPendingPlan = (
   plan: RepairPlan,
   actions: RepairAction[],
   history: RepairHistoryEntry[] = []
-): Promise<{ planId: string; requiresApproval: boolean; describedActions: AiRepairPlanAction[] }> => {
+): Promise<{
+  planId: string
+  requiresApproval: boolean
+  describedActions: AiRepairPlanAction[]
+}> => {
   cleanupPendingRepairPlans()
 
   return Promise.all(actions.map((action) => describeRepairAction(action))).then((described) => {
@@ -1177,7 +1188,10 @@ const planWithModel = async (context: RepairContext): Promise<RepairPlan> => {
   } else if (context.provider === 'google') {
     raw = await callGoogleRepairModel(context.apiKey, context.modelId, prompt)
   } else {
-    return buildFallbackPlan(context, `当前 provider ${context.provider} 暂不支持直接调用模型分析。`)
+    return buildFallbackPlan(
+      context,
+      `当前 provider ${context.provider} 暂不支持直接调用模型分析。`
+    )
   }
 
   return (
@@ -1337,10 +1351,7 @@ class RepairActionExecutionError extends Error {
   detail: string
   outputLines: string[]
 
-  constructor(
-    message: string,
-    result: Partial<RepairActionExecutionResult> = {}
-  ) {
+  constructor(message: string, result: Partial<RepairActionExecutionResult> = {}) {
     super(message)
     this.name = 'RepairActionExecutionError'
     this.changedConfig = result.changedConfig ?? false
@@ -1411,7 +1422,7 @@ const executeCustomCommand = async (
       ? await buildWslBashArgs(command)
       : isWindows
         ? ['-NoProfile', '-Command', command]
-      : ['-lc', command]
+        : ['-lc', command]
   const env = runtime === 'wsl' && isWindows ? process.env : getPathEnv()
   const outputLines: string[] = []
   const captureLine = (msg: string): void => {
@@ -1493,19 +1504,21 @@ const executeRepairAction = async (
         : '语义记忆本来就是关闭状态。'
       emitProgress(
         win,
-        changedConfig ? '[AI修复] 已写入 memorySearch.enabled=false。' : '[AI修复] 语义记忆本来就是关闭状态。'
+        changedConfig
+          ? '[AI修复] 已写入 memorySearch.enabled=false。'
+          : '[AI修复] 语义记忆本来就是关闭状态。'
       )
       return { changedConfig, restarted: false, detail, outputLines: [] }
     }
     case 'set_gateway_mode_local': {
       emitProgress(win, `[AI修复] 正在修正 Gateway 模式：${action.reason}`)
       const changedConfig = await setGatewayModeLocal()
-      const detail = changedConfig
-        ? '已写入 gateway.mode=local。'
-        : 'Gateway 模式已经是 local。'
+      const detail = changedConfig ? '已写入 gateway.mode=local。' : 'Gateway 模式已经是 local。'
       emitProgress(
         win,
-        changedConfig ? '[AI修复] 已写入 gateway.mode=local。' : '[AI修复] Gateway 模式已经是 local。'
+        changedConfig
+          ? '[AI修复] 已写入 gateway.mode=local。'
+          : '[AI修复] Gateway 模式已经是 local。'
       )
       return { changedConfig, restarted: false, detail, outputLines: [] }
     }
@@ -1543,9 +1556,7 @@ const executeRepairAction = async (
         emitProgress(win, msg)
       )
       const changedConfig = autoDisabledByProvider || (await disableFeishuChannel())
-      const detail = changedConfig
-        ? '已停用当前异常的飞书渠道配置。'
-        : '飞书渠道已处于停用状态。'
+      const detail = changedConfig ? '已停用当前异常的飞书渠道配置。' : '飞书渠道已处于停用状态。'
       emitProgress(
         win,
         changedConfig
@@ -1581,7 +1592,9 @@ const executeRepairAction = async (
     case 'reinstall_openclaw_current': {
       const targetVersion = await getInstalledOpenClawVersion()
       if (!targetVersion) {
-        throw new RepairActionExecutionError('当前无法识别已安装的 OpenClaw 版本，无法重装当前版本。')
+        throw new RepairActionExecutionError(
+          '当前无法识别已安装的 OpenClaw 版本，无法重装当前版本。'
+        )
       }
       emitProgress(win, `[AI修复] 正在重装 OpenClaw v${targetVersion}：${action.reason}`)
       if (platform() === 'win32') {
@@ -1607,10 +1620,7 @@ const executeRepairAction = async (
       } else {
         await installOpenClaw(win, OPENCLAW_RECOMMENDED_VERSION)
       }
-      emitProgress(
-        win,
-        `[AI修复] 推荐稳定版 OpenClaw v${OPENCLAW_RECOMMENDED_VERSION} 安装完成。`
-      )
+      emitProgress(win, `[AI修复] 推荐稳定版 OpenClaw v${OPENCLAW_RECOMMENDED_VERSION} 安装完成。`)
       return {
         changedConfig: false,
         restarted: false,
@@ -1803,7 +1813,12 @@ export const executeAiRepairPlan = async (
         restartedInRound = true
       } catch (error) {
         repairHistory.push(
-          buildRepairHistoryEntry(roundNumber, autoRestartAction, false, getActionExecutionResult(error))
+          buildRepairHistoryEntry(
+            roundNumber,
+            autoRestartAction,
+            false,
+            getActionExecutionResult(error)
+          )
         )
         storeRecentRepairHistory(repairHistory)
         throw error
