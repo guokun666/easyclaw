@@ -467,6 +467,25 @@ const compareSemanticVersions = (a: string, b: string): number => {
   return 0
 }
 
+const getSemanticVersionFamily = (raw: string): string | null => {
+  const parsed = parseSemanticVersion(raw)
+  if (!parsed) return null
+  return `${parsed[0]}.${parsed[1]}`
+}
+
+const isLarkPluginCompatibleWithOpenClaw = (
+  openclawVersion: string,
+  pluginVersion: string
+): boolean => {
+  if (compareSemanticVersions(pluginVersion, openclawVersion) === 0) {
+    return true
+  }
+
+  const openclawFamily = getSemanticVersionFamily(openclawVersion)
+  const pluginFamily = getSemanticVersionFamily(pluginVersion)
+  return Boolean(openclawFamily && pluginFamily && openclawFamily === pluginFamily)
+}
+
 const runSimpleCommand = async (
   cmd: string,
   args: string[],
@@ -668,7 +687,7 @@ export const inspectRetainedPluginCompatibility = async (
     }
 
     if (id === LARK_PLUGIN_ID && hasFeishuConfig) {
-      if (version && compareSemanticVersions(version, targetVersion) === 0) {
+      if (version && isLarkPluginCompatibleWithOpenClaw(targetVersion, version)) {
         return {
           id,
           installedVersion: version,
@@ -686,12 +705,19 @@ export const inspectRetainedPluginCompatibility = async (
         id,
         installedVersion: version,
         targetVersion,
-        status: 'auto-sync',
-        message: t('onboarder.pluginCompatibility.autoSync', {
-          pluginId: id,
-          pluginVersion: version ?? 'unknown',
-          targetVersion
-        })
+        status: 'warning',
+        message:
+          version && compareSemanticVersions(version, targetVersion) > 0
+            ? t('onboarder.pluginCompatibility.newerThanTarget', {
+                pluginId: id,
+                pluginVersion: version,
+                targetVersion
+              })
+            : t('onboarder.pluginCompatibility.versionMismatch', {
+                pluginId: id,
+                pluginVersion: version ?? 'unknown',
+                targetVersion
+              })
       }
     }
 
@@ -771,30 +797,7 @@ export const ensureRetainedPluginCompatibility = async (
   const report = await inspectRetainedPluginCompatibility(targetOpenclawVersion)
 
   for (const entry of report.entries) {
-    if (entry.status === 'auto-sync' && entry.id === LARK_PLUGIN_ID) {
-      onLog?.(entry.message)
-      try {
-        await installCompatibleLarkPlugin(report.targetVersion, onLog ?? (() => {}))
-        onLog?.(
-          t('onboarder.pluginCompatibility.autoSyncDone', {
-            pluginId: entry.id,
-            targetVersion: report.targetVersion
-          })
-        )
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error)
-        onLog?.(
-          t('onboarder.pluginCompatibility.autoSyncFailed', {
-            pluginId: entry.id,
-            targetVersion: report.targetVersion,
-            message
-          })
-        )
-      }
-      continue
-    }
-
-    if (entry.status === 'warning') {
+    if (entry.status === 'warning' || entry.status === 'auto-sync') {
       onLog?.(entry.message)
     }
   }
@@ -964,10 +967,8 @@ export const ensureFeishuPluginCompatible = async (
   if (!openclawVersion) return false
 
   const pluginVersion = await getInstalledLarkPluginVersion(config)
-  const compatiblePackageSpec = await getCompatibleLarkPluginPackageSpec(openclawVersion)
-  const compatibleVersion = compatiblePackageSpec.split('@').pop() ?? openclawVersion
 
-  if (pluginVersion && compareSemanticVersions(pluginVersion, compatibleVersion) === 0) {
+  if (pluginVersion && isLarkPluginCompatibleWithOpenClaw(openclawVersion, pluginVersion)) {
     return false
   }
 
@@ -978,14 +979,30 @@ export const ensureFeishuPluginCompatible = async (
     t('onboarder.feishuPluginSyncing', {
       openclawVersion,
       pluginVersion: pluginVersion ?? 'unknown',
-      targetVersion: compatibleVersion
+      targetVersion: openclawVersion
     })
   )
 
   try {
     await installCompatibleLarkPlugin(openclawVersion, onLog)
-    onLog?.(t('onboarder.feishuPluginSynced', { openclawVersion }))
-    return true
+    const refreshedConfig = await readOpenClawConfig()
+    const refreshedPluginVersion = await getInstalledLarkPluginVersion(refreshedConfig ?? config)
+    if (refreshedPluginVersion) {
+      onLog?.(`[plugin] Feishu plugin installed version: ${refreshedPluginVersion}`)
+    }
+    if (
+      refreshedPluginVersion &&
+      isLarkPluginCompatibleWithOpenClaw(openclawVersion, refreshedPluginVersion)
+    ) {
+      onLog?.(t('onboarder.feishuPluginSynced', { openclawVersion }))
+      return true
+    }
+    onLog?.(
+      t('onboarder.feishuPluginSyncFailed', {
+        message: `installed version ${refreshedPluginVersion ?? 'unknown'} is still incompatible`
+      })
+    )
+    return false
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     onLog?.(t('onboarder.feishuPluginSyncFailed', { message }))

@@ -6,6 +6,7 @@ import { createTerminalLineEmitter } from './terminal-output'
 import { buildWslBashArgs, getWslProxyRuntimeInfo } from './wsl-utils'
 import {
   ensureRetainedPluginCompatibility,
+  ensureFeishuPluginCompatible,
   ensureFeishuSecretProviderReady,
   ensureOptionalMemorySearchDisabled
 } from './onboarder'
@@ -57,6 +58,11 @@ const noteGatewayReadySignal = (): void => {
 
 const hasRecentGatewayReadySignal = (): boolean =>
   Date.now() - lastGatewayReadySignalAt <= GATEWAY_READY_SIGNAL_GRACE_MS
+
+const isLikelyFeishuPluginStartupFailure = (message: string): boolean =>
+  /openclaw-lark|lark-secrets|plugin not found: openclaw-lark|required secrets are unavailable|feishu/i.test(
+    message
+  )
 
 const runGateway = (args: string[]): Promise<string> => {
   const openclaw = resolvePreferredBin('openclaw')
@@ -367,7 +373,21 @@ export const startGateway = async (): Promise<GatewayResult> => {
   await ensureFeishuSecretProviderReady((msg) => emitLog(msg))
   const isWin = platform() === 'win32'
   if (isWin) {
-    const result = await startGatewayWsl()
+    let result = await startGatewayWsl()
+    if (
+      result.status !== 'started' &&
+      result.error &&
+      isLikelyFeishuPluginStartupFailure(result.error)
+    ) {
+      emitLog(
+        '[gateway] Gateway startup failed and Feishu plugin compatibility looks risky. Trying a compatible Feishu plugin sync...'
+      )
+      const repaired = await ensureFeishuPluginCompatible((msg) => emitLog(msg))
+      if (repaired) {
+        emitLog('[gateway] Feishu plugin sync finished. Retrying Gateway startup once...')
+        result = await startGatewayWsl()
+      }
+    }
     if (result.status === 'started') {
       await runDoctorFix()
     }
@@ -383,6 +403,24 @@ export const startGateway = async (): Promise<GatewayResult> => {
     const msg = err instanceof Error ? err.message : String(err)
     const isServiceMissing =
       msg.includes('not loaded') || msg.includes('not installed') || msg.includes('bootstrap')
+    if (!isServiceMissing && isLikelyFeishuPluginStartupFailure(msg)) {
+      emitLog(
+        '[gateway] Gateway startup failed and Feishu plugin compatibility looks risky. Trying a compatible Feishu plugin sync...'
+      )
+      const repaired = await ensureFeishuPluginCompatible((repairMsg) => emitLog(repairMsg))
+      if (repaired) {
+        emitLog('[gateway] Feishu plugin sync finished. Retrying Gateway startup once...')
+        try {
+          await runGateway(['start'])
+          await runDoctorFix()
+          emitStatus('running')
+          return { status: 'started' }
+        } catch (retryErr) {
+          const retryMsg = retryErr instanceof Error ? retryErr.message : String(retryErr)
+          return { status: 'error', error: retryMsg }
+        }
+      }
+    }
     if (!isServiceMissing) return { status: 'error', error: msg }
 
     // Auto-install and retry when launchd service is not installed
